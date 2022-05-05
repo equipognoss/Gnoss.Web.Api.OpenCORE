@@ -1,0 +1,50 @@
+{
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iis": {
+      "applicationUrl": "http://api.depuracion.net",
+      "sslPort": 0
+    },
+    "iisExpress": {
+      "applicationUrl": "http://api.depuracion.net",
+      "sslPort": 0
+    }
+  },
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "Gnoss.Web.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "dotnetRunMessages": "true",
+      "applicationUrl": "https://localhost:5001;http://localhost:5000"
+    },
+    "Docker": {
+      "commandName": "Docker",
+      "launchBrowser": true,
+      "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}/swagger",
+      "publishAllPorts": true,
+      "useSSL": true
+    },
+    "IIS": {
+      "commandName": "IIS",
+      "launchBrowser": true,
+      "launchUrl": "http://api.depuracion.net",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
