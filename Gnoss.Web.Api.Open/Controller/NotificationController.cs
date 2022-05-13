@@ -138,7 +138,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
-        //Creacion metodo
+        /// <summary>
+        /// Check the status of a sent e-mail with its identifier (mail_id)
+        /// </summary>
+        /// <param name="mail_id">Mail sent identifier</param>
+        /// <returns></returns>
         [HttpGet, ActionName("mail-state")]
         public MailStateModel ComprobarEstadoCorreo(int mail_id)
         {

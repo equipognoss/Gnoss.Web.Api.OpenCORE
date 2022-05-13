@@ -362,6 +362,24 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         }
 
         /// <summary>
+        /// Borra en el grafo de busqueda el recurso.
+        /// </summary>
+        /// <param name="pDocumentosID"></param>
+        public void BorradoGrafoBusqueda(List<Guid> pDocumentosID, Guid pProyectoActualID)
+        {
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            string urlIntragnoss = (string)ParametrosAplicacionDS.ParametroAplicacion.Find(parametroApp => parametroApp.Parametro.Equals("UrlIntragnoss")).Valor;
+            FacetadoCN facetadoCN = new FacetadoCN(urlIntragnoss, pProyectoActualID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            
+            foreach(Guid documentoID in pDocumentosID)
+            {
+                facetadoCN.BorrarRecurso(pProyectoActualID.ToString(), documentoID, 0, "", false, true, true);
+            }
+
+            docCN.Dispose();
+        }
+
+        /// <summary>
         /// Borra los documentos de la BD rdf de todos los proyectos donde estén compartidos
         /// </summary>
         /// <param name="pDocumentosID">Lista de ids de los documentos a borrar</param>

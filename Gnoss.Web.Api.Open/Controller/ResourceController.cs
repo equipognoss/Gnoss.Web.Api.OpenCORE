@@ -2412,6 +2412,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             try
             {
                 mNombreCortoComunidad = parameters.community_short_name;
+                facetadoCN = new FacetadoCN(UrlIntragnoss, FilaProy.ProyectoID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
                 bool usarReplicacion = false;
 
                 //documento
@@ -2549,7 +2550,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
 
                 #endregion
-                var transac = docCN.IniciarTransaccion();
+
+                documentacionCN.IniciarTransaccion();
                 List<Guid> listaProyectosActualNumRec = new List<Guid>();
                 Dictionary<Guid, Guid> listaBRsConProyectos = new Dictionary<Guid, Guid>();
 
@@ -2581,7 +2583,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 documento.FilaDocumento.FechaModificacion = DateTime.Now;
 
-                //Guardar(null, listaProyectosActualNumRec);
                 mEntityContext.SaveChanges();
 
                 string urlDoc = "";
@@ -2615,6 +2616,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                     documentacionCL.BorrarPrimerosRecursos(proy, tipoDoc);
                 }
+
                 //Borramos la cache de recursos relacionados de las comunidades afectadas, asi como todas las relacionadas
                 //documentacionCL.BorrarRecursosRelacionados(listaProyectosActualYProyectosRelacionados);
                 documentacionCL.Dispose();
@@ -2668,15 +2670,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
                 facetadoAD.IniciarTransaccion();
 
-                facetadoCN.BorrarRecurso(identidad.PerfilID.ToString(), documento.Clave, prioridad);
-                facetadoCN.Dispose();
+                facetadoCN.BorrarRecurso(identidad.PerfilID.ToString(), documento.Clave, prioridad);                
 
                 if (documento.TipoDocumentacion == TiposDocumentacion.Hipervinculo)
                 {
                     ControladorDocumentacion.EstablecePrivacidadRecursoEnMetaBuscador(documento, identidad, true);
                 }
-
-                //SANTI -- Hacer esto para los proyectos que sean distintos del cual ha sido publicado el recurso.
 
                 foreach (Guid proy in listaProyectosActualNumRec)
                 {
@@ -2705,9 +2704,20 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
+                mLoggingService.GuardarLogError(ex);
                 documentacionCN.TerminarTransaccion(false);
                 facetadoCN.TerminarTransaccion(false);
-                throw ex;
+                
+                if (documentacionCN != null)
+                {
+                    documentacionCN.Dispose();
+                }
+                if (facetadoCN != null)
+                {
+                    facetadoCN.Dispose();
+                }
+
+                throw;
             }
         }
 
@@ -2750,10 +2760,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 if (!gestorDoc.ListaDocumentos.ContainsKey(parameters.resource_id))
                 {
                     //Si esta eliminado, probar a eliminar del grafo de la ontologia y del grafo de busqueda
-                    controlApi.BorradoGrafoOntologia(new List<Guid>() { parameters.resource_id}, FilaProy.ProyectoID, UrlIntragnoss);
+                    controlApi.BorradoGrafoOntologia(new List<Guid>() { parameters.resource_id }, FilaProy.ProyectoID, UrlIntragnoss);
 
                     //Borrar los grafos de búsqueda en los que están compartidos los recursos
-                    controlApi.BorrarGrafoBusqueda(new List<Guid>() { parameters.resource_id}, FilaProy.ProyectoID);
+                    controlApi.BorradoGrafoBusqueda(new List<Guid>() { parameters.resource_id }, FilaProy.ProyectoID);
 
                     throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
                 }
@@ -2859,7 +2869,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
 
                 //Borrar los documentos vinculados de la base ácida                
-                controlApi.BorrarDocumentos(idsDocumento);                
+                controlApi.BorrarDocumentos(idsDocumento);
                 facetadoCN.TerminarTransaccion(true);
 
                 if (parameters.end_of_load)
@@ -3801,6 +3811,231 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
+        /// Creates a new massive data load
+        /// </summary>
+        /// <param name="parameters">Parameters of the load</param>
+        /// <returns>True if the load is added to the sql table</returns>
+        [HttpPost, Route("create-massive-load")]
+        public bool CreateMassiveDataLoad(MassiveDataLoadResource parameters)
+        {
+            bool load = false;
+            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            //UsuarioOAuth
+            parameters.project_id = proyCN.ObtenerProyectoIDPorNombreCorto(parameters.community_name);
+            parameters.state = 0;
+            parameters.date_create = DateTime.Now;
+
+            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            List<Guid> listaUsuario = new List<Guid>();
+
+            listaUsuario.Add(UsuarioOAuth);
+            Dictionary<Guid, Guid> dic = personaCN.ObtenerPersonasIDDeUsuariosID(listaUsuario);
+            DataWrapperIdentidad identidades = identCN.ObtenerIdentidadDePersonaEnProyecto(parameters.project_id, dic[UsuarioOAuth]);
+            if (identidades?.ListaIdentidad != null && identidades?.ListaIdentidad.Count > 0)
+            {
+                parameters.identity_id = identidades.ListaIdentidad.FirstOrDefault().IdentidadID;
+                if (proyCN.EsIdentidadAdministradorProyecto(parameters.identity_id, parameters.project_id, TipoRolUsuario.Administrador))
+                {
+                    load = proyCN.CrearNuevaCargaMasiva(parameters.load_id, parameters.state, parameters.date_create, parameters.project_id, parameters.identity_id, parameters.name, ProyectoAD.MetaOrganizacion);
+                }
+                else
+                {
+                    throw new GnossException("Invalid Oauth. Insufficient permissions.", HttpStatusCode.Forbidden);
+                }
+            }
+            else
+            {
+                throw new GnossException("The user doesn't participate in the community", HttpStatusCode.BadRequest);
+            }
+
+            return load;
+        }
+
+        /// <summary>
+        /// Creates a new massive data load package
+        /// </summary>
+        /// <param name="parameters">Parameters of the package</param>
+        /// <returns>True if the package is load to the sql table</returns>
+        [HttpPost, Route("create-massive-load-package")]
+        public bool CreateMassiveDataLoadPackage(MassiveDataLoadPackageResource parameters)
+        {
+            if (parameters == null)
+            {
+                parameters = (MassiveDataLoadPackageResource)ObtenerVariablesDePeticion(typeof(MassiveDataLoadPackageResource).FullName);
+            }
+
+            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            parameters.state = (short)EstadoPaquete.Pendiente;
+            parameters.error = "";
+            parameters.date_creation = DateTime.Now;
+            parameters.date_processing = null;
+            parameters.comprimido = false;
+
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            List<Guid> listaUsuario = new List<Guid>();
+
+            Carga carga = mEntityContext.Carga.Where(item => item.CargaID.Equals(parameters.load_id)).FirstOrDefault();
+            if (carga != null && carga.Estado == 0)
+            {
+                if (proyCN.EsIdentidadAdministradorProyecto(carga.IdentidadID.Value, carga.ProyectoID.Value, TipoRolUsuario.Administrador))
+                {
+                    bool package = proyCN.CrearNuevoPaqueteCargaMasiva(parameters.package_id, parameters.load_id, parameters.ontology_rute, parameters.search_rute, parameters.sql_rute, parameters.state, parameters.error, parameters.date_creation, parameters.ontology, parameters.comprimido, parameters.date_processing);
+
+                    if (package)
+                    {
+                        DatosRabbitCarga datos = new DatosRabbitCarga();
+                        datos.CargaID = parameters.load_id;
+                        datos.PaqueteID = parameters.package_id;
+                        datos.UrlTriplesOntologia = parameters.ontology_rute;
+                        datos.UrlTriplesBusqueda = parameters.search_rute;
+                        datos.UrlDatosAcido = parameters.sql_rute;
+                        datos.BytesDatosAcido = parameters.sql_bytes;
+                        datos.BytesTriplesBusqueda = parameters.search_bytes;
+                        datos.BytesTriplesOntologia = parameters.ontology_bytes;
+
+                        if (parameters.isLast)
+                        {
+                            carga.Estado = 1;
+                            mEntityContext.SaveChanges();
+                        }
+
+                        if (mConfigService.ExistRabbitConnection(RabbitMQClient.BD_SERVICIOS_WIN))
+                        {
+                            using (RabbitMQClient rabbitMq = new RabbitMQClient(RabbitMQClient.BD_SERVICIOS_WIN, "ColaDescargaMasiva", mLoggingService, mConfigService))
+                            {
+                                rabbitMq.AgregarElementoACola(JsonConvert.SerializeObject(datos));
+                            }
+                        }
+
+                    }
+
+                    return package;
+                }
+                else
+                {
+                    throw new GnossException("Invalid Oauth. Insufficient permissions.", HttpStatusCode.Forbidden);
+                }
+            }
+            else
+            {
+                throw new GnossException("The load doesn't exit or is closed.", HttpStatusCode.BadRequest);
+            }
+        }
+
+        [NonAction]
+        public object ObtenerVariablesDePeticion(string pNombreClase)
+        {
+            HttpContext.Request.Body.Position = 0;
+            string parametrosPeticion = new StreamReader(HttpContext.Request.Body).ReadToEnd();
+            object objetoPeticion = System.Reflection.Assembly.GetExecutingAssembly().CreateInstance(pNombreClase);
+
+            string[] listaParametros = parametrosPeticion.Split(",\"".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+
+            List<string> listaVariables = System.Reflection.Assembly.GetExecutingAssembly().CreateInstance(pNombreClase).GetType().GetProperties().Select(item => item.Name).ToList();
+            int contador = 0;
+            foreach (string nombreVariable in listaVariables)
+            {
+                if (parametrosPeticion.Contains($"{nombreVariable}\":"))
+                {
+                    Type tipoVariable = objetoPeticion.GetType().GetProperty(nombreVariable).PropertyType;
+                    string caracteresInicioVariable = "\":";
+                    string caracteresFinalVariable = "\",\"";
+
+                    int inicioValorVariable = parametrosPeticion.IndexOf(caracteresInicioVariable);
+
+                    if (!parametrosPeticion[inicioValorVariable + 2].Equals('\"'))
+                    {
+                        caracteresFinalVariable = ",\"";
+                    }
+                    if (contador + 1 == listaVariables.Count)
+                    {
+                        caracteresFinalVariable = "}";
+                    }
+
+                    int finValorVariable = parametrosPeticion.IndexOf(caracteresFinalVariable) - inicioValorVariable;
+                    string valor = FormatearValor(parametrosPeticion.Substring(inicioValorVariable, finValorVariable));
+                    objetoPeticion.GetType().GetProperty(nombreVariable).SetValue(objetoPeticion, TransformarValor(valor, tipoVariable), null);
+
+                    if (contador + 1 != listaVariables.Count)
+                    {
+                        int inicioSubstring = inicioValorVariable + finValorVariable + 2;
+                        parametrosPeticion = parametrosPeticion.Substring(inicioSubstring, parametrosPeticion.Count() - inicioSubstring);
+                    }
+                }
+
+                contador++;
+            }
+
+            return objetoPeticion;
+        }
+
+        private string FormatearValor(string pValor)
+        {
+            if (pValor.StartsWith("\":\""))
+            {
+                return pValor.Replace("\":\"", "");
+            }
+            else
+            {
+                return pValor.Replace("\":", "");
+            }
+        }
+
+        private object TransformarValor(string pValor, Type pTipoVariable)
+        {
+            if (!string.IsNullOrEmpty(pValor))
+            {
+                if (pTipoVariable.Equals(typeof(Guid)))
+                {
+                    return new Guid(pValor);
+                }
+                else if (pTipoVariable.Equals(typeof(char[])))
+                {
+                    return pValor.ToCharArray();
+                }
+                else if (pTipoVariable.Equals(typeof(byte[])))
+                {
+                    pValor = pValor.Replace("[", "");
+                    pValor = pValor.Replace("]", "");
+                    string[] bytes = pValor.Split(',');
+                    byte[] byteArray = new byte[bytes.Length];
+                    for (int i = 0; i < bytes.Length; i++)
+                    {
+                        if (bytes[i].Contains("-"))
+                        {
+                            int valorNegativo = int.Parse(bytes[i]);
+                            bytes[i] = (256 + valorNegativo).ToString();
+                        }
+                        byteArray[i] = Convert.ToByte(bytes[i]);
+                    }
+
+                    return byteArray;
+                }
+                else if (pTipoVariable.Equals(typeof(DateTime)))
+                {
+                    return Convert.ToDateTime(pValor);
+                }
+                else if (pTipoVariable.Equals(typeof(int)))
+                {
+                    return int.Parse(pValor);
+                }
+                else if (pTipoVariable.Equals(typeof(bool)))
+                {
+                    return bool.Parse(pValor);
+                }
+                else
+                {
+                    return pValor;
+                }
+            }
+
+            return pValor;
+        }
+
+        /// <summary>
         /// Return load state
         /// </summary>
         /// <param name="pLoadId">Load id</param>
@@ -3932,9 +4167,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     #region Categorias del tesauro
 
-                    if (parameters.categories != null && parameters.categories.Count > 0)
+                    if ((parameters.categories != null && parameters.categories.Count > 0) || documentoEdicion != null)
                     {
-                        ReplaceCategories(new List<Guid>(parameters.categories), gestorDoc, documentoEdicion, identidad.Clave);
+                        ReplaceCategories(parameters.categories, gestorDoc, documentoEdicion, identidad.Clave);
                     }
 
                     #endregion
@@ -4444,11 +4679,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         #region Nuevos Métodos Api V3
 
         /// <summary>
-        /// Gets resource identifiers of the modified resources in the community from the date
+        /// Get a list of resources which have been modified from a specific community whose content have been modified or updated from the date provided
         /// </summary>
-        /// <param name="community_short_name">(Optional) Short name of the community</param>
-        /// <param name="search_date">String of date with ISO 8601 format from which the modified resource search begins</param>
-        /// <param name="community_id">(Optional) community identifier</param>
+        /// <param name="search_date">String of date with ISO 8601 format from which the search will filter to get the results</param>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="community_id">Community identifier</param>        
         /// <returns>List of the identifiers of modified resources</returns>
         /// <example>GET resource/get-modified-resources?community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
         [HttpGet, Route("get-modified-resources")]
@@ -4510,12 +4745,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
 
         /// <summary>
-        /// Gets the resource novelties in the community from the search date
+        /// Get a specific resource by its own identifier and community short name where it belongs.
         /// </summary>
         /// <param name="resource_id">Resource identifier</param>
-        /// <param name="search_date">String of date with ISO 8601 format from which the modified resource search begins</param>
-        /// <param name="community_id">(Optional) community identifier</param>
-        /// <param name="community_short_name">(Optional) Short name of the community</param>
+        /// <param name="community_short_name">Community short name</param>
         /// <example>GET resource/get-resource-novelties?resource_id={resource_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
         [HttpGet, Route("get-resource")]
         public Resource GetResource(Guid resource_id, string community_short_name)
@@ -4638,7 +4871,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     {
                         ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
                         servicioImagenes.Url = UrlIntragnossServicios;
-                        byteArray = servicioImagenes.ObtenerImagen(UtilArchivos.ContentImagenesDocumentos + "/" + UtilArchivos.DirectorioDocumento(resource_id), ext);
+                        byteArray = servicioImagenes.ObtenerImagen($"{UtilArchivos.ContentImagenesDocumentos}/{UtilArchivos.DirectorioDocumento(resource_id)}/{resource_id}", ext);
                         if (byteArray != null)
                         {
                             resource.resource_attached_files.Add(new AttachedResource() { file_rdf_property = "", file_property_type = (short)AttachedResourceFilePropertyTypes.image, rdf_attached_file = byteArray, });
@@ -4819,12 +5052,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Gets the resource novelties in the community from the search date
+        /// Get the novelties of a specific resource by its own identifier and either the community short name or identifier.
         /// </summary>
         /// <param name="resource_id">Resource identifier</param>
-        /// <param name="search_date">String of date with ISO 8601 format from which the modified resource search begins</param>
-        /// <param name="community_id">(Optional) community identifier</param>
-        /// <param name="community_short_name">(Optional) Short name of the community</param>
+        /// <param name="search_date">String of date with ISO 8601 format from which the search will filter to get the results</param>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="community_id">Community identifier</param>        
         /// <example>GET resource/get-resource-novelties?resource_id={resource_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
         [HttpGet, Route("get-resource-novelties")]
         public ResourceNoveltiesModel GetResourceNoveltiesFromDate(Guid resource_id, string search_date, string community_short_name = null, Guid? community_id = null)
@@ -4939,10 +5172,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     novedadesDocumento.main_image = documento.FilaDocumento.NombreCategoriaDoc;
 
-                    foreach (AD.EntityModel.Models.Documentacion.DocumentoWebVinBaseRecursos filaDocWebVinBR in documento.GestorDocumental.DataWrapperDocumentacion.ListaDocumentoWebVinBaseRecursos)
+                    foreach (DocumentoWebVinBaseRecursos filaDocWebVinBR in documento.GestorDocumental.DataWrapperDocumentacion.ListaDocumentoWebVinBaseRecursos)
                     {
                         //espacio personal  //"BaseRecursosID='" + filaDocWebVinBR.BaseRecursosID + "'"
-                        List<AD.EntityModel.Models.Documentacion.BaseRecursosUsuario> filaBRUsu = documento.GestorDocumental.DataWrapperDocumentacion.ListaBaseRecursosUsuario.Where(baseRec => baseRec.BaseRecursosID.Equals(filaDocWebVinBR.BaseRecursosID)).ToList();
+                        List<BaseRecursosUsuario> filaBRUsu = documento.GestorDocumental.DataWrapperDocumentacion.ListaBaseRecursosUsuario.Where(baseRec => baseRec.BaseRecursosID.Equals(filaDocWebVinBR.BaseRecursosID)).ToList();
 
                         if (filaBRUsu != null && filaBRUsu.Count > 0)
                         {
@@ -4966,7 +5199,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         }
 
                         //recurso compartido   
-                        List<AD.EntityModel.Models.Documentacion.BaseRecursosProyecto> filaBRUproy = documento.GestorDocumental.DataWrapperDocumentacion.ListaBaseRecursosProyecto.Where(baseRecProy => baseRecProy.BaseRecursosID.Equals(filaDocWebVinBR.BaseRecursosID)).ToList();
+                        List<BaseRecursosProyecto> filaBRUproy = documento.GestorDocumental.DataWrapperDocumentacion.ListaBaseRecursosProyecto.Where(baseRecProy => baseRecProy.BaseRecursosID.Equals(filaDocWebVinBR.BaseRecursosID)).ToList();
 
                         if (filaBRUproy != null && filaBRUproy.Count > 0 && !filaDocWebVinBR.TipoPublicacion.Equals((short)TipoPublicacion.Publicado))
                         {
@@ -5161,11 +5394,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Gets resource identifiers of the modified resources in the community from the date
+        /// Get a list of resources which have been published by a concrete user identifier.
         /// </summary>
-        /// <param name="community_short_name">(Optional) Short name of the community</param>
-        /// <param name="search_date">String of date with ISO 8601 format from which the modified resource search begins</param>
-        /// <param name="community_id">(Optional) community identifier</param>
+        /// <param name="user_id">User identifier</param>
         /// <returns>List of the identifiers of modified resources</returns>
         /// <example>GET resource/get-modified-resources?community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
         [HttpGet, Route("get-documents-published-by-user")]
@@ -5221,7 +5452,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
         }
 
-
+        /// <summary>
+        /// Check whether a given resource is locked or not.
+        /// </summary>
+        /// <param name="resource_id">Resource identifier</param>
         [HttpGet, Route("check-document-is-locked")]
         public bool CheckDocumentIsLocked(Guid resource_id)
         {
@@ -5229,6 +5463,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             return docCN.ObtenerFechaRecursoEnEdicion(resource_id).HasValue;
         }
 
+        /// <summary>
+        /// Lock a specific resource from a concrete community setting the seconds the locking will last.
+        /// </summary>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="resource_id">Resource identifier</param>
+        /// <param name="lock_seconds_duration">Seconds that the resource will be locked</param>
+        /// <param name="timeout_seconds">Timeout. The default timeout is 60 seconds.</param>"
         [HttpPost, Route("lock-document")]
         public string LockDocument(string community_short_name, Guid resource_id, int lock_seconds_duration, int timeout_seconds)
         {
@@ -5297,6 +5538,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
+        /// <summary>
+        /// Unlock a specific resource from a concrete community.
+        /// </summary>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="resource_id">Resource identifier</param>
+        /// <param name="token">Token</param>
         [HttpPost, Route("unlock-document")]
         public void UnlockDocument(string community_short_name, Guid resource_id, string token)
         {
@@ -5340,8 +5587,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
         }
-
-
 
         #endregion
 
@@ -8018,6 +8263,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             return mPropiedadIdiomaBusquedaComunidad;
         }
+
+        /// <summary>
+        /// Set or fomat a string value type into a date type one.
+        /// </summary>
+        /// <param name="pFecha">Value of the date to be formatted</param>
         [NonAction]
         public string FormateDate(DateTime? pFecha)
         {
@@ -8028,16 +8278,26 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             return fecha;
         }
+
+        /// <summary>
+        /// Set, format or normalized a guid value provided into a valid one.
+        /// </summary>
+        /// <param name="pGuid">Value of the Guid to be formatted</param>
         [NonAction]
         public string FormatGuid(Guid? pGuid)
         {
             string guid = "NULL";
             if (pGuid.HasValue)
             {
-                guid = $"'{pGuid.Value.ToString()}'";
+                guid = $"'{pGuid.Value}'";
             }
             return guid;
         }
+
+        /// <summary>
+        /// Set, format or normalized a string value provided into a valid one.
+        /// </summary>
+        /// <param name="cadena">String value to be formatted</param>
         [NonAction]
         public string FormatString(string cadena)
         {
@@ -8051,6 +8311,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             return cadena;
         }
+
+        /// <summary>
+        /// Generate sql inserts for the documents given in the DataWrapper
+        /// </summary>
+        /// <param name="pDataWrappperDocumentacion">DataWrapper with the documents to generate inserts</param>
+        /// <param name="pSbDocumento">StringBuilder that contains the insert to the table 'Documento'</param>
+        /// <param name="pSbDocumentoWebVinBaseRecursos">StringBuilder that contains the insert to the table 'DocumentoWebVinBaseRecursos'</param>
+        /// <param name="pSbDocumentoWebVinBaseRecursosExtra">StringBuilder that contains the insert to the table 'DocumentoWebVinBaseRecursosExtra'</param>
+        /// <param name="pSbColaDocumento">StringBuilder that contains the insert to the table 'ColaDocumento'</param>
+        /// <param name="pSbDocumentoRolGrupoIdentidades">StringBuilder that contains the insert to the table 'DocumentoRolGrupoIdentidad'</param>
+        /// <param name="pSbDocumentoRolIdentidad">StringBuilder that contains the insert to the table 'DocumentoRolIdentidad'</param>
+        /// <param name="pSbDocumentoWebAgCatTesauro">StringBuilder that contains the insert to the table 'DocumentoWebAgCatTesauro'</param>
         [NonAction]
         public void GenerarScriptSql(DataWrapperDocumentacion pDataWrappperDocumentacion, StringBuilder pSbDocumento, StringBuilder pSbDocumentoWebVinBaseRecursos, StringBuilder pSbDocumentoWebVinBaseRecursosExtra, StringBuilder pSbColaDocumento, StringBuilder pSbDocumentoRolGrupoIdentidades, StringBuilder pSbDocumentoRolIdentidad, StringBuilder pSbDocumentoWebAgCatTesauro)
         {
@@ -8064,67 +8336,68 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 pSbDocumento.AppendLine($" ('{item.DocumentoID.ToString()}', {item.OrganizacionID.ToString()}, {item.CompartirPermitido}, {FormatGuid(item.ElementoVinculadoID)}, {FormatString(item.Titulo)}, {FormatString(item.Descripcion)}, {item.Tipo}, {FormatString(item.Enlace)}, {FormateDate(item.FechaCreacion)},{FormatGuid(item.CreadorID)}, {item.TipoEntidad}, '{item.NombreCategoriaDoc}', '{item.NombreElementoVinculado}', {FormatGuid(item.ProyectoID)}, {item.Publico}, {item.Borrador}, {FormatGuid(item.FichaBibliograficaID)}, {item.CreadorEsAutor}, {item.Valoracion}, {FormatString(item.Autor)}, {FormateDate(item.FechaModificacion)},{FormatGuid(item.IdentidadProteccionID)}, {FormateDate(item.FechaProteccion)}, {item.UltimaVersion}, {item.Eliminado}, {item.Protegido}, {item.NumeroComentariosPublicos}, {item.NumeroTotalVotos}, {item.NumeroTotalConsultas}, {item.NumeroTotalDescargas}, {item.VersionFotoDocumento}, {item.Rank}, {item.Rank_Tiempo}, '{item.Licencia}', '{item.Tags}', {item.Visibilidad}),");
             }
 
-            List<AD.EntityModel.Models.Documentacion.DocumentoWebVinBaseRecursos> listaDocumentoWebVinBaseRecursos = pDataWrappperDocumentacion.ListaDocumentoWebVinBaseRecursos.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
+            List<DocumentoWebVinBaseRecursos> listaDocumentoWebVinBaseRecursos = pDataWrappperDocumentacion.ListaDocumentoWebVinBaseRecursos.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
             if (pSbDocumentoWebVinBaseRecursos.Length == 0 && listaDocumentoWebVinBaseRecursos.Count > 0)
             {
                 pSbDocumentoWebVinBaseRecursos.AppendLine($"INSERT INTO DocumentoWebVinBaseRecursos (DocumentoID, BaseRecursosID, IdentidadPublicacionID, FechaPublicacion, TipoPublicacion, Compartido, LinkAComunidadOrigen, Eliminado, NumeroComentarios, NumeroVotos, PublicadorOrgID, PermiteComentarios, NivelCertificacionID, Rank,Rank_Tiempo, IndexarRecurso, PrivadoEditores, FechaCertificacion) VALUES");
             }
-            foreach (AD.EntityModel.Models.Documentacion.DocumentoWebVinBaseRecursos item in listaDocumentoWebVinBaseRecursos)
+            foreach (DocumentoWebVinBaseRecursos item in listaDocumentoWebVinBaseRecursos)
             {
                 bool compartido = item.TipoPublicacion == 0 ? false : true;
                 pSbDocumentoWebVinBaseRecursos.AppendLine($" ('{item.DocumentoID.ToString()}', '{item.BaseRecursosID.ToString()}', {FormatGuid(item.IdentidadPublicacionID)}, {FormateDate(item.FechaPublicacion)}, {item.TipoPublicacion}, {compartido}, {item.LinkAComunidadOrigen}, {item.Eliminado}, {item.NumeroComentarios}, {item.NumeroVotos}, {FormatGuid(item.PublicadorOrgID)}, {item.PermiteComentarios}, {FormatGuid(item.NivelCertificacionID)}, {item.Rank}, {item.Rank_Tiempo}, {item.IndexarRecurso}, {item.PrivadoEditores}, {FormateDate(item.FechaCertificacion)}),");
             }
 
-            List<AD.EntityModel.Models.Documentacion.DocumentoWebVinBaseRecursosExtra> listaDocumentoWebVinBaseRecursosExtra = pDataWrappperDocumentacion.ListaDocumentoWebVinBaseRecursosExtra.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
+            List<DocumentoWebVinBaseRecursosExtra> listaDocumentoWebVinBaseRecursosExtra = pDataWrappperDocumentacion.ListaDocumentoWebVinBaseRecursosExtra.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
             if (pSbDocumentoWebVinBaseRecursosExtra.Length == 0 && listaDocumentoWebVinBaseRecursosExtra.Count > 0)
             {
                 pSbDocumentoWebVinBaseRecursosExtra.AppendLine("INSERT INTO DocumentoWebVinBaseRecursosExtra (DocumentoID, BaseRecursosID, NumeroDescargas, NumeroConsultas, FechaUltimaVisita) VALUES");
             }
-            foreach (AD.EntityModel.Models.Documentacion.DocumentoWebVinBaseRecursosExtra item in listaDocumentoWebVinBaseRecursosExtra)
+            foreach (DocumentoWebVinBaseRecursosExtra item in listaDocumentoWebVinBaseRecursosExtra)
             {
                 pSbDocumentoWebVinBaseRecursosExtra.AppendLine($" ('{item.DocumentoID.ToString()}', '{item.BaseRecursosID.ToString()}', {item.NumeroDescargas}, {item.NumeroConsultas}, {FormateDate(item.FechaUltimaVisita)}),");
             }
 
-            List<AD.EntityModel.Models.Documentacion.ColaDocumento> listaColaDocumento = pDataWrappperDocumentacion.ListaColaDocumento.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
+            List<ColaDocumento> listaColaDocumento = pDataWrappperDocumentacion.ListaColaDocumento.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
             if (pSbColaDocumento.Length == 0 && listaColaDocumento.Count > 0)
             {
                 pSbColaDocumento.AppendLine("INSERT INTO ColaDocumento (DocumentoID, AccionRealizada, Estado, FechaEncolado, FechaProcesado,Prioridad,InfoExtra,EstadoCargaID) VALUES");
             }
-            foreach (AD.EntityModel.Models.Documentacion.ColaDocumento item in listaColaDocumento)
+            foreach (ColaDocumento item in listaColaDocumento)
             {
                 pSbColaDocumento.AppendLine($"({FormatGuid(item.DocumentoID)}, {item.AccionRealizada}, {item.Estado}, {FormateDate(item.FechaEncolado)},{FormateDate(item.FechaProcesado)}, {item.Prioridad}, {FormatString(item.InfoExtra)}, {item.EstadoCargaID}),");
             }
 
-            List<AD.EntityModel.Models.Documentacion.DocumentoRolGrupoIdentidades> listaDocumentoRolGrupoIdentidades = pDataWrappperDocumentacion.ListaDocumentoRolGrupoIdentidades.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
+            List<DocumentoRolGrupoIdentidades> listaDocumentoRolGrupoIdentidades = pDataWrappperDocumentacion.ListaDocumentoRolGrupoIdentidades.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
             if (pSbDocumentoRolGrupoIdentidades.Length == 0 && listaDocumentoRolGrupoIdentidades.Count > 0)
             {
                 pSbDocumentoRolGrupoIdentidades.AppendLine("INSERT INTO DocumentoRolGrupoIdentidades (DocumentoID, GrupoID, Editor) VALUES ");
             }
-            foreach (AD.EntityModel.Models.Documentacion.DocumentoRolGrupoIdentidades item in listaDocumentoRolGrupoIdentidades)
+            foreach (DocumentoRolGrupoIdentidades item in listaDocumentoRolGrupoIdentidades)
             {
                 pSbDocumentoRolGrupoIdentidades.AppendLine($"({FormatGuid(item.DocumentoID)}, {FormatGuid(item.GrupoID)}, {item.Editor}),");
             }
 
-            List<AD.EntityModel.Models.Documentacion.DocumentoRolIdentidad> listaDocumentoRolIdentidad = pDataWrappperDocumentacion.ListaDocumentoRolIdentidad.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
+            List<DocumentoRolIdentidad> listaDocumentoRolIdentidad = pDataWrappperDocumentacion.ListaDocumentoRolIdentidad.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
             if (pSbDocumentoRolIdentidad.Length == 0 && listaDocumentoRolIdentidad.Count > 0)
             {
                 pSbDocumentoRolIdentidad.AppendLine("INSERT INTO DocumentoRolIdentidad (DocumentoID, PerfilID, Editor) VALUES ");
             }
-            foreach (AD.EntityModel.Models.Documentacion.DocumentoRolIdentidad item in listaDocumentoRolIdentidad)
+            foreach (DocumentoRolIdentidad item in listaDocumentoRolIdentidad)
             {
                 pSbDocumentoRolIdentidad.AppendLine($"({FormatGuid(item.DocumentoID)}, {FormatGuid(item.PerfilID)}, {item.Editor}),");
             }
 
-            List<AD.EntityModel.Models.Documentacion.DocumentoWebAgCatTesauro> listaDocumentoWebAgCatTesauro = pDataWrappperDocumentacion.ListaDocumentoWebAgCatTesauro.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
+            List<DocumentoWebAgCatTesauro> listaDocumentoWebAgCatTesauro = pDataWrappperDocumentacion.ListaDocumentoWebAgCatTesauro.Where(doc => mEntityContext.Entry(doc).State.Equals(EntityState.Added)).ToList();
             if (pSbDocumentoWebAgCatTesauro.Length == 0 && listaDocumentoWebAgCatTesauro.Count > 0)
             {
                 pSbDocumentoRolIdentidad.AppendLine("INSERT INTO DocumentoWebAgCatTesauro (Fecha, TesauroID, CategoriaTesauroID, BaseRecursosID, DocumentoID) VALUES ");
             }
-            foreach (AD.EntityModel.Models.Documentacion.DocumentoWebAgCatTesauro item in listaDocumentoWebAgCatTesauro)
+            foreach (DocumentoWebAgCatTesauro item in listaDocumentoWebAgCatTesauro)
             {
                 pSbDocumentoRolIdentidad.AppendLine($"({FormateDate(item.Fecha)}, {FormatGuid(item.TesauroID)}, {FormatGuid(item.CategoriaTesauroID)}, {FormatGuid(item.BaseRecursosID)}, {FormatGuid(item.DocumentoID)}),");
             }
         }
+
         [NonAction]
         private void CambiarIDsElementoOngologia(List<ElementoOntologia> pListaEntidades, Guid pNuevoID)
         {
@@ -8165,6 +8438,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
         }
+
         [NonAction]
         private void CambiarSegundosIDsElementoOngologia(List<ElementoOntologia> pListaEntidades, Dictionary<string, string> pAntiguosNuevosIDs)
         {
@@ -8201,6 +8475,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
         }
+
         [NonAction]
         private void RecuperarIDsElementoOngologia(List<ElementoOntologia> pListaEntidades, Propiedad pPropiedadPadre, List<string> pEntidadesYaAgregadas, Dictionary<string, string> pCambioIDs, List<ElementoOntologia> pEntidadesPrincAntiguas)
         {
@@ -8228,6 +8503,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
         }
+
         [NonAction]
         private string ObtenerIDEntidadAntigua(ElementoOntologia pEntidad, Propiedad pPropiedadPadre, List<string> pEntidadesYaAgregadas, List<ElementoOntologia> pEntidadesPrincAntiguas)
         {
@@ -8809,9 +9085,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (!predicadoEncontrado)
             {
-                throw new Exception("El predicado '" + pPredicado + "' que está intentnado editar no se encuentra en la ontología.");
+                throw new GnossException($"El predicado '{pPredicado}' que está intentnado editar no se encuentra en la ontología.", HttpStatusCode.BadRequest);
             }
         }
+
         [NonAction]
         private void ModificarPropiedad(Guid pDocID, Propiedad pProp, string pPredicado, string pObjetoViejo, string pObjetoNuevo, bool pEsEntidadPrincipal, GnossStringBuilder pSbTriplesInsertar, GnossStringBuilder pSbTriplesEliminar, GnossStringBuilder pSbTriplesInsertarBusqueda, GnossStringBuilder pSbTriplesEliminarBusqueda)
         {
@@ -8820,7 +9097,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 //Eliminamos el valor único de la propiedad
                 if (pProp.FunctionalProperty)
                 {
-                    throw new Exception("No se puede eliminar '" + pObjetoNuevo + "' a una propiedad funcional, siempre tiene que tener un valor.");
+                    throw new GnossException($"No se puede eliminar '{pObjetoNuevo}' a una propiedad funcional, siempre tiene que tener un valor.", HttpStatusCode.BadRequest);
                 }
                 else
                 {
@@ -8860,18 +9137,19 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             }
                             else
                             {
-                                throw new Exception("No se ha encontrado '" + pObjetoViejo + "' en el idioma '" + idioma + "' en la lista de valores de la propiedad '" + pProp.Nombre + "'");
+                                throw new GnossException($"No se ha encontrado '{pObjetoViejo}' en el idioma '{idioma}' en la lista de valores de la propiedad '{pProp.Nombre}'", HttpStatusCode.BadRequest);
                             }
                         }
                         else
                         {
-                            throw new Exception("No se ha encontrado el idioma '" + idioma + "' en la lista de valores de la propiedad '" + pProp.Nombre + "'");
+                            throw new GnossException($"No se ha encontrado el idioma '{idioma}' en la lista de valores de la propiedad '{pProp.Nombre}'", HttpStatusCode.BadRequest);
                         }
                     }
                     else
                     {
                         if (pProp.ListaValores.ContainsKey(pObjetoViejo))
                         {
+                            EliminarEntidadesAuxiliaresRelacionadas(pProp.ListaValores[pObjetoViejo]);
                             pProp.ListaValores.Remove(pObjetoViejo);
                             if (pProp.Tipo.Equals(TipoPropiedad.ObjectProperty))
                             {
@@ -8887,7 +9165,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo));
                             }
                         }
-                        else if (pProp.ListaValores.ContainsKey(UrlIntragnoss + "items/" + pObjetoViejo))
+                        else if (pProp.ListaValores.ContainsKey($"{UrlIntragnoss}items/{pObjetoViejo}"))
                         {
                             pProp.ListaValores.Remove(UrlIntragnoss + "items/" + pObjetoViejo);
 
@@ -9138,8 +9416,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         pSb.AppendLine($"<{pSujeto}> <{pPredicado}> <{pObjeto}> . ");
                     }
                 }
-
-
             }
         }
 
@@ -9243,7 +9519,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             Guid aux = Guid.Empty;
 
-            return (pObjeto.StartsWith("http://gnoss/") && Guid.TryParse(pObjeto.Substring("http://gnoss/".Length), out aux));
+            return pObjeto.StartsWith("http://gnoss/") && Guid.TryParse(pObjeto.Substring("http://gnoss/".Length), out aux);
         }
 
         private DataWrapperFacetas ObtenerFacetasExternasDeProyecto()
@@ -9394,10 +9670,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 List<CategoriaTesauro> listaCategorias = new List<CategoriaTesauro>();
 
-                foreach (Guid clave in pCategoriaIDs)
+                if (pCategoriaIDs != null)
                 {
-                    CategoriaTesauro categoria = pGestorDoc.GestorTesauro.ListaCategoriasTesauro[clave];
-                    listaCategorias.Add(categoria);
+                    foreach (Guid clave in pCategoriaIDs)
+                    {
+                        CategoriaTesauro categoria = pGestorDoc.GestorTesauro.ListaCategoriasTesauro[clave];
+                        listaCategorias.Add(categoria);
+                    }
                 }
 
                 List<CategoriaTesauro> listaCategoriasNuevas = new List<CategoriaTesauro>();
@@ -9649,22 +9928,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 //Grafo de ontología
                 string eliminarGrafoOntologia = $"DELETE FROM GRAPH {grafoOntología} {{?s ?p ?o}} FROM {grafoOntología} WHERE {{?s ?p ?o filter(?p in(<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, <http://www.w3.org/2000/01/rdf-schema#label>) AND ?s = <{sujeto}>)}}";
-                //string eliminarRdfLabelOntologia = $"DELETE FROM GRAPH {grafoOntología} {{?s ?p ?o}} FROM {grafoOntología} WHERE {{?s ?p ?o filter(?p = )}}";
                 string insertarGrafoOntologia = $"INSERT DATA INTO {grafoOntología} {{<{sujeto}> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <{parameters.subtype}> . {Environment.NewLine} <{sujeto}> <http://www.w3.org/2000/01/rdf-schema#label> \"{parameters.subtype}\" .}}";
-                //string insertarRdfLabelOntologia = $"INSERT DATA INTO {grafoOntología} {{}}";
 
 
                 facetadoAD.ActualizarVirtuoso(eliminarGrafoOntologia, nombreOntologia);
-                //facetadoAD.ActualizarVirtuoso(eliminarRdfLabelOntologia, nombreOntologia);
                 facetadoAD.ActualizarVirtuoso(insertarGrafoOntologia, nombreOntologia);
-                //facetadoAD.ActualizarVirtuoso(insertarRdfLabelOntologia, nombreOntologia);
 
                 //Grafo de búsqueda
                 string grafoBusqueda = $"<{UrlIntragnoss}{documento.ProyectoID.ToString().ToLower()}>";
                 string sujetoBusqueda = $"<http://gnoss/{parameters.resource_id.ToString().ToUpper()}>";
 
-
-                //WITH {grafoBusqueda} DELETE {{?s ?p ?o}} WHERE {{?s ?p ?o filter(?p = <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>)}} 
                 string eliminarGrafoBusqueda = $"DELETE FROM GRAPH {grafoBusqueda} {{?s ?p ?o}} FROM {grafoBusqueda} WHERE {{?s ?p ?o filter(?p in (<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, <http://gnoss/type>) AND ?s = {sujetoBusqueda})}}";
                 string insertarGrafoBusqueda = $"INSERT DATA INTO {grafoBusqueda} {{{sujetoBusqueda} <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> \"{nombreOntologia.Replace(".owl", "")}\" . {Environment.NewLine} {sujetoBusqueda} <http://gnoss/type> \"{parameters.subtype}\" .}}";
 
@@ -9672,7 +9945,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 facetadoAD.ActualizarVirtuoso(insertarGrafoBusqueda, documento.ProyectoID.ToString());
 
                 //Elimina el rdf del recurso modificado de base de datos
-                //string deleteQuery = $"DELETE FROM RdfDocumento_{parameters.resource_id.ToString().Substring(0, 3)} WHERE DocumentoID = {parameters.resource_id.ToString()}";
                 ControladorDocumentacion.BorrarRDFDeBDRDF(parameters.resource_id);
 
                 //Reprocesa el recurso por el base
@@ -9695,8 +9967,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                throw new GnossException($"Error: {ex.Message}", HttpStatusCode.InternalServerError);
                 mLoggingService.GuardarLogError($"Error al actualizar virtuoso: {ex.Message}");
+                throw new GnossException($"Error: {ex.Message}", HttpStatusCode.InternalServerError);                
             }
 
         }
@@ -9973,7 +10245,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     foreach (ElementoOntologia eo in instanciasPrincipales)
                     {
-                        if (eo.ID == entidadID || eo.ID == entidadID.Replace(UrlIntragnoss + "items/", ""))
+                        if (eo.ID == entidadID || eo.ID == entidadID.Replace($"{UrlIntragnoss}items/", ""))
                         {
                             entidadesPrinBorrar.Add(eo);
                             break;
@@ -9981,7 +10253,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         else if (mURIEntidadesABorrar.ContainsKey(entidadID))
                         {
                             listaSujetosBorrar.Add($"<{mURIEntidadesABorrar[entidadID]}>");
-                            listaSujetosBorrarBusqueda.Add($"<{mURIEntidadesABorrar[entidadID].ToLower()}>");
+                            if (!mConfigService.ObtenerProcesarStringGrafo())
+                            {
+                                listaSujetosBorrarBusqueda.Add($"<{mURIEntidadesABorrar[entidadID]}>");
+                            }
+                            else
+                            {
+                                listaSujetosBorrarBusqueda.Add($"<{mURIEntidadesABorrar[entidadID].ToLower()}>");
+                            }
                         }
                     }
                 }
@@ -10324,6 +10603,28 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             return ontologia;
+        }
+
+        private void EliminarEntidadesAuxiliaresRelacionadas(ElementoOntologia pElementoOntologia)
+        {
+            if (pElementoOntologia != null && pElementoOntologia.Propiedades != null)
+            {
+                foreach (Propiedad propiedad in pElementoOntologia.Propiedades)
+                {
+                    if (propiedad.Tipo == TipoPropiedad.ObjectProperty && !string.IsNullOrEmpty(propiedad.Rango))
+                    {
+                        foreach (string uriEntidad in propiedad.ValoresUnificados.Keys)
+                        {
+                            if (!mEntidadesABorrar.Contains(uriEntidad))
+                            {
+                                mEntidadesABorrar.Add(uriEntidad);
+                                mURIEntidadesABorrar.Add(uriEntidad, propiedad.ValoresUnificados[uriEntidad].Uri);
+                                EliminarEntidadesAuxiliaresRelacionadas(propiedad.ValoresUnificados[uriEntidad]);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         #endregion

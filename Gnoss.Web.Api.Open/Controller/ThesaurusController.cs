@@ -46,11 +46,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Get the RDF of a semantic thesaurus
+        /// Get a thesaurus ontology form its ontology url
         /// </summary>
-        /// <param name="thesaurus_ontology_url">Ontology URL of the thesaurus</param>
+        /// <param name="thesaurus_ontology_url">Thesaurus ontology url</param>
         /// <param name="community_short_name">Community short name</param>
-        /// <param name="source">Identifier of the thesaurus</param>
+        /// <param name="source">Thesaurus identifier</param>
         /// <returns>RDF of a semantic thesaurus</returns>
         /// <example>GET thesaurus/get-thesaurus?thesaurus_ontology_url=bbvataxonomy.owl&community_short_name=knowledgegraph&source=category</example>
         [HttpGet, Route("get-thesaurus")]
@@ -156,6 +156,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             facetadoCL.Dispose();
         }
 
+        /// <summary>
+        /// Change the name of a thesaurus category
+        /// </summary>
+        /// <param name="parameters">Parameters to change the category name</param>
         [HttpPost, Route("change-category-name")]
         public void ChangeCategoryName(ParamsChangeCategoryName parameters)
         {
@@ -191,6 +195,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
+        /// <summary>
+        /// Create a new thesaurus category
+        /// </summary>
+        /// <param name="parameters">Parameters to create the new category</param>
         [HttpPost, Route("create-category")]
         public void CreateCategory(ParamsCreateCategory parameters)
         {
@@ -233,6 +241,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
+        /// <summary>
+        /// Delete a thesaurus category
+        /// </summary>
+        /// <param name="parameters">Parameters to delete the specific category</param>
         [HttpPost, Route("delete-category")]
         public void DeleteCategory(ParamsDeleteCategory parameters)
         {

@@ -119,6 +119,19 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
+        /// Change email a user
+        /// </summary>
+        /// <param name="user_id">User's identificator</param>
+        /// <param name="email">Email to change</param>
+        /// <example>POST community/block-member</example>
+        [HttpPost, ActionName("change-user-email")]
+        public void CambiarEmailUsuario(Guid user_id, string email)
+        {
+            CambiarEmailUser(user_id, email);
+        }
+
+
+        /// <summary>
         /// Gets the short names of the communities in which the user participates.
         /// </summary>
         /// <returns>Short names of the communities in which the user participates</returns>
@@ -1135,6 +1148,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
+
         /// <summary>
         /// Blocks a user at the platform
         /// </summary>
@@ -1269,11 +1283,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
 
         /// <summary>
-        /// Gets user identifiers of the modified users in the community from the date
+        /// Get a list of users identifiers from a specific community whose information have been modified from the date provided
         /// </summary>
-        /// <param name="community_short_name">Short name of the community</param>
-        /// <param name="search_date">String of date with ISO 8601 format from which the modified users search begins</param>
-        /// <param name="community_id">(Optional) community identifier</param>
+        /// <param name="search_date">String of date with ISO 8601 format from which the search will filter to get the results</param>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="community_id">Community identifier</param>
         /// <returns>List of the identifiers of modified users</returns>
         /// <example>GET resource/get-modified-users?community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
         [HttpGet, Route("get-modified-users")]
@@ -1330,13 +1344,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Gets the user
+        /// Get the novelties from a user by its user identifier. The novelties of the user can also be obtained providing either a community identifier or a community short name.
         /// </summary>
-        /// <param name="user_id">User identifier</param>
-        /// <param name="resource_id">Resource identifier</param>
-        /// <param name="search_date">String of date with ISO 8601 format from which the modified resource search begins</param>
-        /// <param name="community_id">(Optional) community identifier</param>
-        /// <param name="community_short_name">(Optional) Short name of the community</param>
+        /// <param name="user_id"">User identifier</param>
+        /// <param name="search_date">String of date with ISO 8601 format from which the search will filter to get the results</param>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="community_id">Community identifier</param>
         /// <example>GET resource/get-user-novelties?user_id={user_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
         [HttpGet, Route("get-user-novelties")]
         public UserNoveltiesModel GetUserNoveltiesFromDate(Guid user_id, string search_date, string community_short_name = null, Guid? community_id = null)
@@ -1457,11 +1470,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Gets the user
+        /// Add a user's social network login based on their social network type data and user identifier. 
         /// </summary>
         /// <param name="user_id">User identifier</param>
-        /// <param name="resource_id">Resource identifier</param>
-        /// <param name="search_date">String of date with ISO 8601 format from which the modified resource search begins</param>
+        /// <param name="social_network_user_id">Social network user identifier</param>
+        /// <param name="social_network">Social network name</param>
         /// <example>GET resource/get-user-novelties?user_id={user_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
         [HttpPost, Route("add-social-network-login")]
         public void AddSocialNetworkLogin(Guid user_id, string social_network_user_id, string social_network)
@@ -1677,11 +1690,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Adds the Community CMS Admin rol to a user
+        /// Add CMS Admin rol privilege to a specific user.
         /// </summary>
         /// <param name="user_id">User identifier</param>
-        /// <param name="resource_id">Resource identifier</param>
-        /// <example>POST user/add-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="admin_page_type">Administation page type</param>
+        /// <example>POST user/add-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>  
         [HttpPost, Route("add-permission")]
         public void AddPermissionToUser(Guid user_id, string community_short_name, string admin_page_type)
         {
@@ -1735,10 +1749,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Removes the Community CMS Admin rol to a user
+        /// Remove CMS Admin rol privilege to a specific user.
         /// </summary>
-        /// <param name="user_id">User identifier</param>
-        /// <param name="resource_id">Resource identifier</param>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="admin_page_type">Administation page type</param>
         /// <example>POST user/remove-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>
         [HttpPost, Route("remove-permission")]
         public void RemovePermissionToUser(Guid user_id, string community_short_name, string admin_page_type)
@@ -3469,6 +3483,65 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             usuCN.Dispose();
             proyCN.Dispose();
         }
+
+        /// <summary>
+        /// Change email a user
+        /// </summary>
+        /// <param name="user_id">User's identificator</param>
+        /// <param name="email">Email to change</param>
+        /// <example>POST community/block-member</example>
+        private void CambiarEmailUser(Guid user_id, string email)
+        {
+            try
+            {
+                if (!user_id.Equals(Guid.Empty))
+                {
+                    //es administrador quien realiza la petición
+                    if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                    {
+                        DataWrapperPersona dataWrapperPersona = new DataWrapperPersona();
+                        PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                        dataWrapperPersona = personaCN.ObtenerPersonaPorUsuario(user_id);
+
+
+                        AD.EntityModel.Models.PersonaDS.Persona filaPersona = dataWrapperPersona?.ListaPersona.Find(persona => persona.UsuarioID.Equals(user_id));
+
+                        if (filaPersona != null)
+                        {
+                            if (UtilCadenas.ValidarEmail(email))
+                            {
+                                filaPersona.Email = email;
+                                personaCN.ActualizarPersonas(dataWrapperPersona);
+                            }
+                            else
+                            {
+                                throw new GnossException("The email doesn't valid", HttpStatusCode.BadRequest);
+                            }
+                        }
+                        else
+                        {
+                            throw new GnossException("The user doesn't exists", HttpStatusCode.BadRequest);
+                        }
+
+                        personaCN.Dispose();
+                    }
+                    else
+                    {
+                        throw new GnossException("The oauth user does not have permission in the community", HttpStatusCode.Unauthorized);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The user ID can not be empty", HttpStatusCode.BadRequest);
+                }
+            }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex);
+                throw new GnossException("Unexpected error. Try it again later. ", HttpStatusCode.InternalServerError);
+            }
+        }
+
         [NonAction]
         private PermisosPaginasUsuarios CrearFilaPermisosPaginasUsuarios(TipoPaginaAdministracion pPagina, Guid pUsuarioID, Guid pOrganizacionID, Guid pProyectoID)
         {

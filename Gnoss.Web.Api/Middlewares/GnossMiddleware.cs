@@ -29,7 +29,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Middlewares
         {
             Application_BeginRequest(loggingService);
             Application_PreRequestHandlerExecute(loggingService, context, gnossCache, virtuosoAD, pServicesUtilVirtuosoAndReplication);
-            await _next(context);
+            await _next(context);            
             Application_PostRequestHandlerExecute(context, loggingService, virtuosoAD, gnossCache, pServicesUtilVirtuosoAndReplication);
             Application_EndRequest(loggingService);
         }

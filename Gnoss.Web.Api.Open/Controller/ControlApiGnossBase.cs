@@ -1280,23 +1280,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (mUrlServicioInterno == null)
                 {
-                    if (ParametroProyecto != null && ParametroProyecto.ContainsKey(TiposParametrosAplicacion.UrlIntragnossServicios))
-                    {
-                        mUrlServicioInterno = ParametroProyecto[TiposParametrosAplicacion.UrlIntragnossServicios];
-                    }
-                    else
-                    {
-                        List<ParametroAplicacion> filas = ParametrosAplicacionDS.ParametroAplicacion.Where(parametroApp => parametroApp.Parametro.Equals(TiposParametrosAplicacion.UrlIntragnossServicios)).ToList();
-
-                        if (filas.Count > 0)
-                        {
-                            mUrlServicioInterno = filas[0].Valor;
-                        }
-                        else
-                        {
-                            mUrlServicioInterno = "";
-                        }
-                    }
+                    mUrlServicioInterno = mConfigService.ObtenerUrlServicioInterno();
                 }
                 return mUrlServicioInterno;
             }
