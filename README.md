@@ -10,7 +10,7 @@ Configuración estandar de esta aplicación en el archivo docker-compose.yml:
 
 ```yml
 api:
-    image: api
+    image: docker.gnoss.com/api
     env_file: .env
     ports:
      - ${puerto_api}:80
