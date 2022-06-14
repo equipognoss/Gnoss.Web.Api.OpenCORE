@@ -59,7 +59,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(sparql_query.community_short_name);
 
                 string communityQuery = "";
-                string query = JuntarPartesConsultaSparql(sparql_query.ontology, sparql_query.query_select, sparql_query.query_where);
+                string query = JuntarPartesConsultaSparql(new List<string> { sparql_query.ontology }, sparql_query.query_select, sparql_query.query_where);
 
                 try
                 {
@@ -78,6 +78,43 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             return Content(jsonResponse, "application/json");
         }
+
+        /// <summary>
+        /// Get a DataSet with the result of the query
+        /// </summary>
+        /// <param name="sparql_query">Sparql parameters</param>
+        /// <returns>SPARQL Query Results in JSON</returns>
+        [HttpPost, Route("query-multiple-graph")]
+        public ActionResult QueryVirtuosoMultipleGraph(SparqlQueryMultipleGraph sparql_query)
+        {
+            string jsonResponse = string.Empty;
+
+            if (TienePermisoAplicacionEnOntologias(sparql_query.ontology_list))
+            {
+                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(sparql_query.community_short_name);
+
+                string communityQuery = "";
+                string query = JuntarPartesConsultaSparql(sparql_query.ontology_list, sparql_query.query_select, sparql_query.query_where);
+
+                try
+                {
+                    jsonResponse = EjecutarConsultaEnVirtuoso(query, sparql_query.ontology_list[0], sparql_query.ontology_list[0]);
+
+                    if (!string.IsNullOrEmpty(communityQuery) && !proyectoID.Equals(Guid.Empty))
+                    {
+                        jsonResponse = EjecutarConsultaEnVirtuoso(communityQuery, proyectoID.ToString().ToLower(), sparql_query.ontology_list[0]);
+                    }
+                }
+                catch
+                {
+                    throw new GnossException("Error in sparql endpoint.\n\rQuery: '" + query + "'", HttpStatusCode.BadRequest);
+                }
+            }
+
+            return Content(jsonResponse, "application/json");
+        }
+
 
         #endregion
 
@@ -117,40 +154,65 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             
             return true;
         }
-        
+
+        private bool TienePermisoAplicacionEnOntologias(List<string> pOntologias)
+        {
+            foreach(string ontologia in pOntologias)
+            {
+                if (!TienePermisoAplicacionEnOntologia(ontologia))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Junta todas las partes de una consulta SPARQL
         /// </summary>
         /// <param name="pFacetadoCN">FacetadoCN que se va a usar para realizar la consulta</param>
-        /// <param name="pOntologia">Ontología en la que se va a hacer la consulta</param>
+        /// <param name="pGrafos">Ontología en la que se va a hacer la consulta</param>
         /// <param name="pSelect">Parte Select de la consulta</param>
         /// <param name="pWhere">Parte Where de la consulta</param>
         /// <returns>Consulta SPARQL formada</returns>
-        private string JuntarPartesConsultaSparql(string pOntologia, string pSelect, string pWhere)
+        private string JuntarPartesConsultaSparql(List<string> pGrafos, string pSelect, string pWhere)
         {
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, pGrafos[0], mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
 
-            string grafo = pOntologia;
-            Guid test = Guid.Empty;
-            if (Guid.TryParse(grafo, out test))
-            {
-                //Es el grafo de una comunidad
-                facetadoCN.InformacionOntologias = ObtenerPrefijosDeOntologia(pOntologia, true);
-            }
-            else
-            {
-                //Es el grafo de una ontología
-                facetadoCN.InformacionOntologias = ObtenerPrefijosDeOntologia(pOntologia, false);
-                grafo += ".owl";
-            }
+            Dictionary<string, List<string>> conjuntoPrefijosGrafos = new Dictionary<string, List<string>>();
 
+            string from = string.Empty;
+            foreach (string grafo in pGrafos)
+            {
+                string grafoAux = grafo;
+                Guid test = Guid.Empty;
+                if (Guid.TryParse(grafo, out test))
+                {
+                    //Es el grafo de una comunidad
+                    conjuntoPrefijosGrafos = ObtenerPrefijosDeOntologia(grafo, true);                    
+                }
+                else
+                {
+                    //Es el grafo de una ontología
+                    conjuntoPrefijosGrafos = ObtenerPrefijosDeOntologia(grafo, false);                    
+                    grafoAux += ".owl";
+                }
+
+                foreach (string prefijo in conjuntoPrefijosGrafos.Keys)
+                {
+                    if (!facetadoCN.InformacionOntologias.ContainsKey(prefijo))
+                    {
+                        facetadoCN.InformacionOntologias.Add(prefijo, conjuntoPrefijosGrafos[prefijo]);
+                    }
+                }
+
+                from += $"\r\n FROM <{UrlIntragnoss}{grafoAux}>";
+            }
 
             string prefijos = facetadoCN.FacetadoAD.NamespacesVirtuosoLectura;
 
-            string from = "\r\n FROM <" + UrlIntragnoss + grafo + ">";
-
-            string query = prefijos + pSelect + from + pWhere;
+            string query = $"{prefijos}{pSelect}{from}{pWhere}";
 
             facetadoCN.Dispose();
 

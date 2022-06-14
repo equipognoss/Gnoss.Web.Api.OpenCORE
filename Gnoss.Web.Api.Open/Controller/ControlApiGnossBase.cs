@@ -1449,7 +1449,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (mUrlServicioWebDocumentacion == null)
                 {
-                    mUrlServicioWebDocumentacion = mConfigService.ObtenerUrlServicio("urlDocumental");
+                    mUrlServicioWebDocumentacion = mConfigService.ObtenerUrlServicioDocumental();
                 }
                 return mUrlServicioWebDocumentacion;
             }
