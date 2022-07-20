@@ -524,9 +524,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// List of resources to link
         /// </summary>
-        public List<Guid> resoruce_list_to_link{ get; set; }
+        public List<Guid> resoruce_list_to_link { get; set; }
     }
-    
+
     /// <summary>
     /// Parameters to delete a resource
     /// </summary>
@@ -778,6 +778,37 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         public List<Guid> categories { get; set; }
     }
+
+    /// <summary>
+    /// Parameters to upload images of a resource
+    /// </summary>
+    public class UploadImagesParams
+    {
+        /// <summary>
+        /// Community short name
+        /// </summary>
+        [Required]
+        public string community_short_name { get; set; }
+
+        /// <summary>
+        /// Resource attached files
+        /// </summary>
+        [Required]
+        public List<AttachedResource> resource_attached_files { get; set; }
+
+        /// <summary>
+        /// Resource id
+        /// </summary>
+        [Required]
+        public Guid resource_id { get; set; }
+
+        /// <summary>
+        /// Main image
+        /// </summary>
+        [Required]
+        public string main_image { get; set; }
+    }
+
 
     /// <summary>
     /// Parameters to upload a resource
@@ -1366,7 +1397,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         public string main_image { get; set; }
 
         public AumentedReading lecturaAumentada { get; set; }
-        
+
         public string link { get; set; }
 
     }
@@ -1439,7 +1470,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Resource authors (comma separated)
         /// </summary>
         public string authors { get; set; }
-        
+
         /// <summary>
         /// Resource visibility <see cref="ResourceVisibility"/> enumeration
         /// </summary>
@@ -1479,7 +1510,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Resource deleted date in ISO 8601 format by user. <see cref="ResourceDeleteDateByUser"/>
         /// </summary>
         public ResourceDeleteDateByUser delete_date_by_user { get; set; }
-                        
+
         /// <summary>
         /// Path of the resource main image
         /// </summary>
@@ -1669,7 +1700,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         [Required]
         public DateTime comment_date { get; set; }
-        
+
     }
 
     /// <summary>

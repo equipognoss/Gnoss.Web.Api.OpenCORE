@@ -40,6 +40,7 @@ using Es.Riam.Gnoss.Web.Controles.ParametroAplicacionGBD;
 using Es.Riam.Gnoss.Web.Controles.Proyectos;
 using Es.Riam.Gnoss.Web.Controles.ServiciosGenerales;
 using Es.Riam.Gnoss.Web.Controles.Solicitudes;
+using Es.Riam.Gnoss.Web.MVC.Models;
 using Es.Riam.Util;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

@@ -59,6 +59,7 @@ using Es.Riam.Gnoss.Web.Controles.Solicitudes;
 using Es.Riam.Gnoss.Web.MVC.Models.ViewModels;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
 using Es.Riam.Util;
+using Es.Riam.Web.Util;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -561,6 +562,39 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             else
             {
                 throw new GnossException("The user data are not valid", HttpStatusCode.BadRequest);
+            }
+        }
+
+        /// <summary>
+        /// Gets the UserID form Cookie
+        /// </summary>
+        /// <param name="user">User data you want to create</param>
+        /// <returns>User data</returns>
+        /// <example>POST user/get-user-cookie</example>
+        [HttpGet, Route("get-user-cookie")]
+        public Guid DevolverUsuarioDeCookie(string pCookie)
+        {
+            if (pCookie != null)
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    Dictionary<string, string> cookie = UtilCookies.FromLegacyCookieString(pCookie, mEntityContext);
+                    if (cookie != null && cookie.Count != 0)
+                    {
+                        Guid usuarioID = new Guid(cookie["usuarioID"]);
+                        IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                        return usuarioID;
+                    }
+                    return Guid.Empty;
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+            else
+            {
+                throw new GnossException("The param pCookie is empty", HttpStatusCode.BadRequest);
             }
         }
 
@@ -1961,25 +1995,25 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 filaNuevoUsuario.ProvinciaID = pUsuarioJSON.province_id;
             }
 
-            filaNuevoUsuario.Provincia = "";
+            filaNuevoUsuario.Provincia = " ";
             if (pUsuarioJSON.provice != null)
             {
                 filaNuevoUsuario.Provincia = pUsuarioJSON.provice;
             }
 
-            filaNuevoUsuario.Poblacion = "";
+            filaNuevoUsuario.Poblacion = " ";
             if (pUsuarioJSON.city != null)
             {
                 filaNuevoUsuario.Poblacion = pUsuarioJSON.city;
             }
 
-            filaNuevoUsuario.Direccion = "";
+            filaNuevoUsuario.Direccion = " ";
             if (pUsuarioJSON.address != null)
             {
                 filaNuevoUsuario.Direccion = pUsuarioJSON.address;
             }
 
-            filaNuevoUsuario.Sexo = "";
+            filaNuevoUsuario.Sexo = " ";
             if (pUsuarioJSON.sex != null)
             {
                 filaNuevoUsuario.Sexo = pUsuarioJSON.sex;
@@ -1992,7 +2026,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 filaNuevoUsuario.FechaNacimiento = pUsuarioJSON.born_date;
             }
 
-            string dni = "";
+            string dni = " ";
             if (!string.IsNullOrEmpty(pUsuarioJSON.id_card))
             {
                 dni = pUsuarioJSON.id_card;
@@ -3267,7 +3301,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             Usuario filaUsuario = new Usuario();
             filaUsuario.UsuarioID = Guid.NewGuid();
             filaUsuario.Login = pLoginUsuario;
-            filaUsuario.Password = "";
+            filaUsuario.Password = " ";
             filaUsuario.EstaBloqueado = true;
             filaUsuario.NombreCorto = nombreCortoUsuario;
             filaUsuario.Version = 1;

@@ -3780,10 +3780,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// main_image = main image string
         /// </param>
         [HttpPost, Route("upload-images")]
-        public bool UploadImages(LoadResourceParams parameters)
+        public bool UploadImages(UploadImagesParams parameters)
         {
             mNombreCortoComunidad = parameters.community_short_name;
-            bool usarReplicacion = false;
 
             ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
             bool esAdmin = proyCN.EsUsuarioAdministradorProyecto(UsuarioOAuth, FilaProy.ProyectoID) || EsAdministradorProyectoMyGnoss(UsuarioOAuth);
@@ -3791,21 +3790,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (!esAdmin)
             {
-                throw new GnossException("The OAuth user does not manage the community " + parameters.community_short_name + ".", HttpStatusCode.BadRequest);
+                throw new GnossException($"The OAuth user does not manage the community {parameters.community_short_name}.", HttpStatusCode.BadRequest);
             }
 
-            string mainImage = SubirArchivosDelRDF(parameters.resource_id, Guid.Empty, parameters.resource_attached_files, null, parameters.main_image, usarReplicacion);
-
-            //if (!string.IsNullOrEmpty(mainImage))
-            //{
-            //    SetMainImage(new SetMainImageParams() { resource_id = parameters.resource_id, community_short_name = parameters.community_short_name, path = mainImage });
-            //}
-
-            //List<Triple> listaTriples = new List<Triple>();
-            //listaTriples.Add(new Triple() { subject = "", predicate = "", object_t = "" });
-
-            //InsertPropsLoadedResource(new Triples() { resource_id = parameters.resource_id, community_short_name = parameters.community_short_name, end_of_load = true, publish_home = false, triples_list = listaTriples });
-            //parameters.resource_attached_files[0].
+            SubirArchivosDelRDF(parameters.resource_id, parameters.resource_attached_files, null, parameters.main_image);
 
             return true;
         }
@@ -8019,7 +8007,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 mIDEntidadPrincipal = UrlIntragnoss + "items/" + mInstanciasPrincipales[0].ID;
 
                 //Subo archivos del RDF:
-                imagenRepresentanteDoc = SubirArchivosDelRDF(pDocumentoID, pOntologiaID, pArchivosAdjuntos, mInstanciasPrincipales, pImgPrincipal, pUsarColareplicacion);
+                imagenRepresentanteDoc = SubirArchivosDelRDF(pDocumentoID, pArchivosAdjuntos, mInstanciasPrincipales, pImgPrincipal);
 
                 if (pCrearCaptura)
                 {
@@ -8580,7 +8568,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <param name="pImgPrincipal">Cadena con la imagen principal</param>
         /// <returns></returns>
         [NonAction]
-        private string SubirArchivosDelRDF(Guid pDocumentoID, Guid pOntologiaID, List<AttachedResource> pListaArchivosAdjuntos, List<ElementoOntologia> pInstanciasPrincipales, string pImgPrincipal, bool pUsarColareplicacion)
+        private string SubirArchivosDelRDF(Guid pDocumentoID, List<AttachedResource> pListaArchivosAdjuntos, List<ElementoOntologia> pInstanciasPrincipales, string pImgPrincipal)
         {
             string imagenRepresentanteDoc = null;
 
@@ -10287,7 +10275,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 if (parameters.resource_attached_files != null && parameters.resource_attached_files.Count > 0)
                 {
                     //obtener ruta imagen servidor
-                    string rutaImagen = SubirArchivosDelRDF(parameters.resource_id, ontologiaID, parameters.resource_attached_files, instanciasPrincipales, parameters.main_image, usarColaReplicacion);
+                    string rutaImagen = SubirArchivosDelRDF(parameters.resource_id, parameters.resource_attached_files, instanciasPrincipales, parameters.main_image);
 
                     if (!string.IsNullOrEmpty(rutaImagen))
                     {
