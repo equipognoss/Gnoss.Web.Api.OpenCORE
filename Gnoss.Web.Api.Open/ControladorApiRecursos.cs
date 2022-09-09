@@ -483,7 +483,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pDocumentosID">Lista de identificadores de los recursos cuyas imágenes se van a borrar</param>
         public void BorrarImagenRecursos(List<Guid> pDocumentosID)
         {
-            ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+            ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
             servicioImagenes.Url = UrlServicioImagenes;
             string docFallidos = string.Empty;
 
@@ -542,7 +542,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pOntologiaID">Identificador de la ontologia</param>
         public void BorrarArchivosDocumentosOntologia(List<Guid> pDocumentosID, Guid pOntologiaID)
         {
-            GestionDocumental gestionDoc = new GestionDocumental(mLoggingService);
+            GestionDocumental gestionDoc = new GestionDocumental(mLoggingService, mConfigService);
             gestionDoc.Url = UrlServicioWebDocumentacion;
 
             try

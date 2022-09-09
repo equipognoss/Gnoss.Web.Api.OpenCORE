@@ -60,7 +60,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
 
     [Serializable]
-    public  class GnossException : Exception
+    public class GnossException : Exception
     {
         public GnossException(string message, HttpStatusCode status) : base(message)
         {
@@ -106,7 +106,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 UsuarioOAuth = ComprobarPermisosOauth(mHttpContextAccessor.HttpContext.Request);
                 if (UsuarioOAuth.Equals(Guid.Empty))
                 {
-                    mLoggingService.GuardarLog( $"Firma incorrecta: {UtilOAuth.ObtenerUrlGetDePeticionOAuth(Request)}");
+                    mLoggingService.GuardarLog($"Firma incorrecta: {UtilOAuth.ObtenerUrlGetDePeticionOAuth(Request)}");
 
                     controllerContext.Result = Unauthorized("Invalid OAuth signature");
                 }
@@ -156,11 +156,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             string urlPeticionOauth = UtilOAuth.ObtenerUrlGetDePeticionOAuth(mHttpContextAccessor.HttpContext.Request);
 
             string datosPeticion = Environment.NewLine;
-            datosPeticion += "URL: " + urlPeticion + Environment.NewLine;
-            datosPeticion += "Metodo: " + metodoPeticion + Environment.NewLine;
-            datosPeticion += "Params: " + parametrosPeticion + Environment.NewLine;
-            datosPeticion += "OAuth: " + urlPeticionOauth + Environment.NewLine;
-            datosPeticion += "UsuarioOAuth: " + UsuarioOAuth + Environment.NewLine;
+            datosPeticion += $"URL: {urlPeticion}{Environment.NewLine}";
+            datosPeticion += $"Metodo: {metodoPeticion}{Environment.NewLine}";
+            datosPeticion += $"Params: {parametrosPeticion}{Environment.NewLine}";
+            datosPeticion += $"OAuth: {urlPeticionOauth}{Environment.NewLine}";
+            datosPeticion += $"UsuarioOAuth: {UsuarioOAuth}{Environment.NewLine}";
 
             return datosPeticion;
         }
@@ -578,6 +578,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     string result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
                     Guid usuarioID = JsonConvert.DeserializeObject<Guid>(result);
 
+                    if (usuarioID == Guid.Empty)
+                    {
+                        urlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, urlApi, false);
+                        urlPeticionOauth = WebUtility.UrlEncode(urlPeticionOauthOriginal);
+                        result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
+                        usuarioID = JsonConvert.DeserializeObject<Guid>(result);
+                    }
+
                     if (usuarioID != Guid.Empty)
                     {
                         salida = usuarioID;
@@ -629,7 +637,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (valorParam == null && pObligatorio)
             {
-                throw new GnossException("Falta el parámetro: " + pNombreParametro, HttpStatusCode.NotFound);
+                throw new GnossException($"Falta el parámetro: {pNombreParametro}", HttpStatusCode.NotFound);
             }
 
             if (pTipoObjecto.Equals(typeof(List<Guid>)))
@@ -643,7 +651,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                     catch (GnossException ex)
                     {
-                        throw new GnossException("The parameter " + pNombreParametro + " contains some empty or wrong formed guid.", HttpStatusCode.BadRequest);
+                        throw new GnossException($"The parameter {pNombreParametro} contains some empty or wrong formed guid.", HttpStatusCode.BadRequest);
                     }
                 }
             }
@@ -654,13 +662,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     if (id.Equals(Guid.Empty))
                     {
-                        throw new GnossException("The parameter " + pNombreParametro + " can not be empty.", HttpStatusCode.BadRequest);
+                        throw new GnossException($"The parameter {pNombreParametro} can not be empty.", HttpStatusCode.BadRequest);
                     }
                     salida = id;
                 }
                 else
                 {
-                    throw new GnossException("The parameter " + pNombreParametro + " has not the correct format.", HttpStatusCode.BadRequest);
+                    throw new GnossException($"The parameter {pNombreParametro} has not the correct format.", HttpStatusCode.BadRequest);
                 }
 
             }
@@ -668,7 +676,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (string.IsNullOrEmpty(valorParam))
                 {
-                    throw new GnossException("The parameter " + pNombreParametro + " can not be empty.", HttpStatusCode.BadRequest);
+                    throw new GnossException($"The parameter {pNombreParametro} can not be empty.", HttpStatusCode.BadRequest);
                 }
                 salida = valorParam;
             }
@@ -756,7 +764,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             else if (pParametro is byte[])
             {
-                return "<Byte[" + ((byte[])pParametro).Length + "]>";
+                return $"<Byte[{((byte[])pParametro).Length}]>";
             }
             else if (pParametro is byte[][])
             {
@@ -770,7 +778,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                     else
                     {
-                        archs += "<Byte[" + ((byte[])arch).Length + "]>,";
+                        archs += $"<Byte[{arch.Length}]>,";
                     }
                 }
 
@@ -778,7 +786,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             else if (pParametro is int[])
             {
-                return "<int[" + ((int[])pParametro).Length + "]>";
+                return $"<int[{((int[])pParametro).Length}]>";
             }
             else
             {
@@ -790,7 +798,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             if (TomarTiempos)
             {
-                mMensajeTiempos += DateTime.Now.ToString() + ":" + DateTime.Now.Millisecond + " " + pMensaje + Environment.NewLine;
+                mMensajeTiempos += $"{DateTime.Now.ToString()}:{DateTime.Now.Millisecond} {pMensaje}{Environment.NewLine}";
                 EscribirLogTiempos(Guid.Empty);
                 mMensajeTiempos = "";
             }
@@ -802,9 +810,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (GuardarDatosPeticion)
                 {
-                    string directorio = AppDomain.CurrentDomain.SetupInformation.ApplicationBase + "logs";
+                    string directorio = $"{AppDomain.CurrentDomain.SetupInformation.ApplicationBase}logs";
                     Directory.CreateDirectory(directorio);
-                    string rutaFichero = directorio + "\\logDatosPeticion_apiRecursos_" + DateTime.Now.ToString("yyyy-MM-dd") + ".log";
+                    string rutaFichero = $"{directorio}\\logDatosPeticion_apiRecursos_{DateTime.Now.ToString("yyyy-MM-dd")}.log";
 
                     //Si el fichero supera el tamaño máximo lo renombro
                     if (System.IO.File.Exists(rutaFichero))
@@ -813,62 +821,23 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         FileInfo fichero = new FileInfo(rutaFichero);
                         if (fichero.Length > 10000000)
                         {
-                            fichero.CopyTo(rutaFichero.Replace(".log", "_bk_" + DateTime.Now.ToString("hh-mm-ss") + ".log"));
+                            fichero.CopyTo(rutaFichero.Replace(".log", $"_bk_{DateTime.Now.ToString("hh-mm-ss")}.log"));
                             fichero.Delete();
                         }
                     }
 
                     //Añado el error al fichero
-                    using (StreamWriter sw = new StreamWriter(rutaFichero, true, System.Text.Encoding.Default))
+                    using (StreamWriter sw = new StreamWriter(rutaFichero, true, Encoding.Default))
                     {
                         sw.WriteLine("Fecha: " + DateTime.Now);
                         // Escribo los datos
                         sw.Write(pDatos);
-                        sw.WriteLine(Environment.NewLine + "___________________________________________________________________________________________" + Environment.NewLine);
+                        sw.WriteLine($"{Environment.NewLine}___________________________________________________________________________________________{Environment.NewLine}");
                     }
                 }
             }
             catch (Exception) { }
         }
-
-        ///// <summary>
-        ///// Guarda el log del error.
-        ///// </summary>
-        //protected void GuardarLogError(string pError)
-        //{
-        //    string directorio = AppDomain.CurrentDomain.SetupInformation.ApplicationBase + "logs";
-        //    Directory.CreateDirectory(directorio);
-        //    string rutaFichero = directorio + "\\log_apiRecursos_" + DateTime.Now.ToString("yyyy-MM-dd") + ".log";
-
-        //    //Si el fichero supera el tamaño máximo lo elimino
-        //    if (File.Exists(rutaFichero))
-        //    {
-        //        try
-        //        {
-        //            FileInfo fichero = new FileInfo(rutaFichero);
-        //            if (fichero.Length > 10000000)
-        //            {
-        //                fichero.CopyTo(rutaFichero.Replace(".log", "_bk_" + DateTime.Now.ToString("hh-mm-ss") + ".log"));
-        //                fichero.Delete();
-        //            }
-        //        }
-        //        catch (Exception) { }
-        //    }
-
-        //    if (!TomarTiempos)
-        //    {
-        //        pError += mParametrosPeticion;
-        //    }
-
-        //    //Añado el error al fichero
-        //    using (StreamWriter sw = new StreamWriter(rutaFichero, true, System.Text.Encoding.Default))
-        //    {
-        //        sw.WriteLine(Environment.NewLine + "Fecha: " + DateTime.Now + Environment.NewLine + Environment.NewLine);
-        //        // Escribo el error
-        //        sw.Write(pError);
-        //        sw.WriteLine(Environment.NewLine + Environment.NewLine + "___________________________________________________________________________________________" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
-        //    }
-        //}
 
         /// <summary>
         /// Lee los nodos en los que podemos recibir un valor de tipo string o short
@@ -890,7 +859,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     string directorio = AppDomain.CurrentDomain.SetupInformation.ApplicationBase + "logs";
                     Directory.CreateDirectory(directorio);
-                    string rutaFichero = directorio + "\\logTiempos_apiRecursos_" + DateTime.Now.ToString("yyyy-MM-dd") + ".log";
+                    string rutaFichero = $"{directorio}\\logTiempos_apiRecursos_{DateTime.Now.ToString("yyyy-MM-dd")}.log";
 
                     //Si el fichero supera el tamaño máximo lo renombro
                     if (System.IO.File.Exists(rutaFichero))
@@ -900,7 +869,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             FileInfo fichero = new FileInfo(rutaFichero);
                             if (fichero.Length > 10000000)
                             {
-                                fichero.CopyTo(rutaFichero.Replace(".log", "_bk_" + DateTime.Now.ToString("hh-mm-ss") + ".log"));
+                                fichero.CopyTo(rutaFichero.Replace(".log", $"_bk_{DateTime.Now.ToString("hh-mm-ss")}.log"));
                                 fichero.Delete();
                             }
                         }
@@ -910,10 +879,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     //Añado el error al fichero
                     using (StreamWriter sw = new StreamWriter(rutaFichero, true, System.Text.Encoding.Default))
                     {
-                        sw.WriteLine(Environment.NewLine + "Doc: " + pDocumentoID + " Fecha: " + DateTime.Now + Environment.NewLine + Environment.NewLine);
+                        sw.WriteLine($"{Environment.NewLine}Doc: {pDocumentoID} Fecha: {DateTime.Now}{Environment.NewLine}{Environment.NewLine}");
                         // Escribo el error
                         sw.Write(mMensajeTiempos);
-                        sw.WriteLine(Environment.NewLine + Environment.NewLine + "___________________________________________________________________________________________" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
+                        sw.WriteLine($"{Environment.NewLine}{Environment.NewLine}___________________________________________________________________________________________{Environment.NewLine}{Environment.NewLine}{Environment.NewLine}");
                     }
                 }
                 catch (Exception) { }
@@ -997,7 +966,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
-        private Es.Riam.Gnoss.AD.EntityModel.Models.ProyectoDS.Proyecto ObtenerFilaProyecto()
+        private AD.EntityModel.Models.ProyectoDS.Proyecto ObtenerFilaProyecto()
         {
             return DataWrapperProyecto.ListaProyecto.FirstOrDefault();
         }
@@ -1027,7 +996,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (pIdioma != "es")
             {
-                baseUrlIdioma = baseUrlIdioma + pIdioma + "/";
+                baseUrlIdioma = $"{baseUrlIdioma}{pIdioma}/";
             }
             baseUrlIdioma = baseUrlIdioma.Substring(0, baseUrlIdioma.Length - 1);
 
@@ -1065,24 +1034,23 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             string tempString = "";
 
             //TablaBaseProyectoID
-            tempString += id + "|";
+            tempString += $"{id}|";
 
             //Tag
-            tempString += Constantes.ID_TAG_DOCUMENTO + pDocumentoID.ToString() + Constantes.ID_TAG_DOCUMENTO + "," + Constantes.TIPO_DOC + pTipoDoc + Constantes.TIPO_DOC + "|";
+            tempString += $"{Constantes.ID_TAG_DOCUMENTO}{pDocumentoID}{Constantes.ID_TAG_DOCUMENTO},{Constantes.TIPO_DOC}{pTipoDoc}{Constantes.TIPO_DOC}|";
 
             //Tipo de acción (0 agregado) (1 eliminado)
-            tempString += pAccion + "|";
+            tempString += $"{pAccion}|";
 
             //Prioridad de procesado por el servicio base.
-            tempString += pPrioridadBase + "|";
-
+            tempString += $"{pPrioridadBase}|";
 
             //pOtrosArgumentos;
             return tempString;
         }
 
 
-        protected Identidad CargarIdentidad(GestorDocumental pGestorDocumental, Es.Riam.Gnoss.AD.EntityModel.Models.ProyectoDS.Proyecto pFilaProy, Guid pUsuarioID, bool pCargarGnossIdentity)
+        protected Identidad CargarIdentidad(GestorDocumental pGestorDocumental, AD.EntityModel.Models.ProyectoDS.Proyecto pFilaProy, Guid pUsuarioID, bool pCargarGnossIdentity)
         {
             IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
             pGestorDocumental.GestorIdentidades = new GestionIdentidades(identCN.ObtenerPerfilesDeUsuarioEnProyecto(pUsuarioID, pFilaProy.ProyectoID), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
@@ -1109,8 +1077,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 return identidad;
             }
 
-            //ControladorIdentidades controladorIdentidades = new ControladorIdentidades(pGestorDocumental.GestorIdentidades);
-            //controladorIdentidades.CompletarCargaIdentidad(identidad.Clave);
             CompletarCargaIdentidad(identidad.Clave, pGestorDocumental.GestorIdentidades);
 
             if (pCargarGnossIdentity)
@@ -1415,7 +1381,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     if (mFilaProy == null)
                     {
-                        throw new GnossException("The community '" + mNombreCortoComunidad + "' does not exist. ", HttpStatusCode.BadRequest);
+                        throw new GnossException($"The community '{mNombreCortoComunidad}' does not exist. ", HttpStatusCode.BadRequest);
                     }
                 }
                 return mFilaProy;
@@ -1498,7 +1464,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (mUtilIdiomas == null)
                 {
-                    mUtilIdiomas = new UtilIdiomas(System.AppDomain.CurrentDomain.SetupInformation.ApplicationBase + Path.DirectorySeparatorChar + "languages", mHttpContextAccessor.HttpContext.Request.Headers["Accept-Language"], "es", Guid.Empty, Guid.Empty, Guid.Empty, mLoggingService, mEntityContext, mConfigService);
+                    mUtilIdiomas = new UtilIdiomas($"{AppDomain.CurrentDomain.SetupInformation.ApplicationBase}{Path.DirectorySeparatorChar}languages", mHttpContextAccessor.HttpContext.Request.Headers["Accept-Language"], "es", Guid.Empty, Guid.Empty, Guid.Empty, mLoggingService, mEntityContext, mConfigService);
                 }
                 return mUtilIdiomas;
             }
@@ -1562,7 +1528,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 List<ParametroAplicacion> parametrosAplicacion = ParametrosAplicacionDS.ParametroAplicacion.Where(parametroApp => parametroApp.Parametro.Equals(TiposParametrosAplicacion.GoogleDrive)).ToList();
                 if (!mTieneGoogleDriveConfigurado && parametrosAplicacion.FirstOrDefault() != null)
                 {
-                    //mTieneGoogleDriveConfigurado = ParametrosAplicacionDS.ParametroAplicacion.Select("Parametro = '" + TiposParametrosAplicacion.GoogleDrive + "'").Length > 0 && (ParametrosAplicacionDS.ParametroAplicacion.Select("Parametro = '" + TiposParametrosAplicacion.GoogleDrive + "'")[0].Equals("1") || ParametrosAplicacionDS.ParametroAplicacion.Select("Parametro = '" + TiposParametrosAplicacion.GoogleDrive + "'")[0]["Valor"].ToString().ToLower().Equals("true"));
                     mTieneGoogleDriveConfigurado = parametrosAplicacion.Count > 0 && (parametrosAplicacion[0].Equals("1") || parametrosAplicacion[0].Valor.ToString().ToLower().Equals("true"));
                 }
 

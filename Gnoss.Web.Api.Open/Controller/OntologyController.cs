@@ -11,6 +11,7 @@ using Es.Riam.Gnoss.Logica.Documentacion;
 using Es.Riam.Gnoss.Logica.ServiciosGenerales;
 using Es.Riam.Gnoss.Util.Configuracion;
 using Es.Riam.Gnoss.Util.General;
+using Es.Riam.Gnoss.Util.Seguridad;
 using Es.Riam.Gnoss.UtilServiciosWeb;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
 using Microsoft.AspNetCore.Http;
@@ -28,11 +29,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     [Route("[controller]")]
     public class OntologyController : ControlApiGnossBase
     {
+        private TokenBearer mToken;
 
         public OntologyController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
             : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
         {
-
+            CallTokenService callTokenService = new CallTokenService(configService);
+            mToken = callTokenService.CallTokenApi();
         }
 
         /// <summary>
@@ -84,7 +87,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 pNombreFraccion = parameters.file_name,
                                 pFichero = parameters.file
                             };
-                            CallWebMethods.CallPostApi(servArchivosUrl, "GuardarOntologiaFraccionada", item);
+                            CallTokenService callTokenService = new CallTokenService(mConfigService);
+                            TokenBearer token = callTokenService.CallTokenApi();
+                            CallWebMethods.CallPostApiToken(servArchivosUrl, "GuardarOntologiaFraccionada", item,false, "file", token);
 
                             //borra la caché del xml de la ontología
                             DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
@@ -150,7 +155,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 pNombreFraccion = parameters.file_name,
                                 pFichero = parameters.file
                             };
-                            CallWebMethods.CallPostApi(servArchivosUrl, "GuardarXmlOntologiaFraccionado", item);
+                            CallTokenService callTokenService = new CallTokenService(mConfigService);
+                            TokenBearer token = callTokenService.CallTokenApi(); 
+                            CallWebMethods.CallPostApiToken(servArchivosUrl, "GuardarXmlOntologiaFraccionado", item, false, "file", token);
 
                             //borra la caché del xml de la ontología
                             DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);

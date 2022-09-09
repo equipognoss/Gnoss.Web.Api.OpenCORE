@@ -125,7 +125,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <param name="user_id">User's identificator</param>
         /// <param name="email">Email to change</param>
         /// <example>POST community/block-member</example>
-        [HttpPost, ActionName("change-user-email")]
+        [HttpPost, Route("change-user-email")]
         public void CambiarEmailUsuario(Guid user_id, string email)
         {
             CambiarEmailUser(user_id, email);
@@ -1182,6 +1182,17 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
+        /// <summary>
+        /// Return if the user has photo in the current proyect
+        /// </summary>
+        /// <param name="userCommunityModel">Model that contains user id and short name proyect</param>
+        /// <returns>True or false if the user has or not photo</returns>
+        [HttpPost, Route("get-user-photo")]
+        public string ObtenerFotoUsuario(Guid user_id)
+        {
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            return usuarioCN.FotoPerfilPersonalUsuario(user_id);
+        }
 
         /// <summary>
         /// Blocks a user at the platform
@@ -2571,26 +2582,22 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             usuario.community_id = pIdentidad.FilaIdentidad.ProyectoID;
             usuario.community_short_name = pNombreCortoComunidad;
             usuario.user_id = pIdentidad.Persona.UsuarioID;
+            usuario.photo = pIdentidad.UrlImagen;
             if (pIdentidad.PerfilUsuario.NombreCortoUsu != null)
             {
                 usuario.user_short_name = pIdentidad.PerfilUsuario.NombreCortoUsu;
             }
 
-            if (pIdentidad.Persona.Fecha != null)
-            {
-                usuario.born_date = pIdentidad.Persona.Fecha;
-            }
+            usuario.born_date = pIdentidad.Persona.Fecha;
 
-            if (pIdentidad.Persona.PaisID != null && pIdentidad.Persona.PaisID != Guid.Empty)
+            if (pIdentidad.Persona.PaisID != Guid.Empty)
             {
                 usuario.country_id = pIdentidad.Persona.PaisID;
             }
 
-            if (pIdentidad.FilaIdentidad.FechaAlta != null)
-            {
-                usuario.join_community_date = pIdentidad.FilaIdentidad.FechaAlta;
-            }
-            if (pIdentidad.Persona.ProvinciaID != null && pIdentidad.Persona.ProvinciaID != Guid.Empty)
+            usuario.join_community_date = pIdentidad.FilaIdentidad.FechaAlta;
+
+            if (pIdentidad.Persona.ProvinciaID != Guid.Empty)
             {
                 usuario.province_id = pIdentidad.Persona.ProvinciaID;
             }
@@ -2604,21 +2611,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             DataWrapperPais paisDW = paisCL.ObtenerPaisesProvincias();
             paisCL.Dispose();
 
-            if (usuario.country_id != null)
+            Pais filaPais = paisDW.ListaPais.Where(item => item.PaisID.Equals(usuario.country_id)).FirstOrDefault();
+            if (filaPais != null)
             {
-                Pais filaPais = paisDW.ListaPais.Where(item => item.PaisID.Equals(usuario.country_id)).FirstOrDefault();
-                if (filaPais != null)
-                {
-                    usuario.country = filaPais.Nombre;
-                }
+                usuario.country = filaPais.Nombre;
             }
-            if (usuario.province_id != null)
+
+            Provincia filaProvincia = paisDW.ListaProvincia.Where(item => item.ProvinciaID.Equals(usuario.province_id)).FirstOrDefault();
+            if (filaProvincia != null)
             {
-                Provincia filaProvincia = paisDW.ListaProvincia.Where(item => item.ProvinciaID.Equals(usuario.province_id)).FirstOrDefault();
-                if (filaProvincia != null)
-                {
-                    usuario.provice = filaProvincia.Nombre;
-                }
+                usuario.provice = filaProvincia.Nombre;
             }
             else
             {

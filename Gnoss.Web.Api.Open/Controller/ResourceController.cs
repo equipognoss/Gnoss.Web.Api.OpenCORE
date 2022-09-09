@@ -826,285 +826,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             return descompartido;
         }
 
-        /// <summary>
-        /// Inserts properties in Triples format in a loaded resource
-        /// </summary>
-        /// <param name="JsonTripletas">Resource.Triples model object</param>
-        /// <returns>True if the Triples has been inserted. False if not.</returns>
-        ///<example>POST resource/insert-props-loaded-resource</example>
-        [HttpPost, Route("insert-props-loaded-resource")]
-        public bool InsertPropsLoadedResource(Triples JsonTripletas)
-        {
-            bool insertado = false;
-            if (!string.IsNullOrEmpty(JsonTripletas.community_short_name) && !Guid.Empty.Equals(JsonTripletas.resource_id) && JsonTripletas.triples_list != null && ValidarListaTriples(JsonTripletas))
-            {
-                PrioridadBase prioridadBase = PrioridadBase.ApiRecursos;
-                if (JsonTripletas.end_of_load)
-                {
-                    prioridadBase = PrioridadBase.ApiRecursosBorrarCache;
-                }
-
-                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-                Guid proyectoID = proyCN.ObtenerProyectoIDPorNombre(JsonTripletas.community_short_name);
-                if (!proyectoID.Equals(Guid.Empty))
-                {
-                    mNombreCortoComunidad = JsonTripletas.community_short_name;
-
-                    GestorDocumental gestorDoc = new GestorDocumental(new DataWrapperDocumentacion(), mLoggingService, mEntityContext);
-                    DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-                    docCN.ObtenerDocumentoPorIDCargarTotal(JsonTripletas.resource_id, gestorDoc.DataWrapperDocumentacion, true, true, null);
-                    gestorDoc.CargarDocumentos(false);
-
-                    if (gestorDoc.ListaDocumentos.ContainsKey(JsonTripletas.resource_id))
-                    {
-                        Elementos.Documentacion.Documento documento = gestorDoc.ListaDocumentos[JsonTripletas.resource_id];
-
-                        GestionProyecto gestorProyecto = new GestionProyecto(proyCN.ObtenerProyectoCargaLigeraPorID(proyectoID), mLoggingService, mEntityContext);
-                        gestorProyecto.CargarGestor();
-                        Proyecto proyecto = gestorProyecto.ListaProyectos[proyectoID];
-
-                        Identidad identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, true);
-                        bool tienePermisoEdicion = false;
-                        if (identidad != null)
-                        {
-                            tienePermisoEdicion = documento.TienePermisosEdicionIdentidad(identidad, null, proyecto, Guid.Empty, false);
-                        }
-
-                        if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || tienePermisoEdicion)
-                        {
-                            //cargar documento revisar permisos edición sobre documento
-                            string nombreOntologia = docCN.ObtenerEnlaceDocumentoVinculadoADocumento(JsonTripletas.resource_id);
-
-                            //ControladorDocumentacion.AgregarModificacionRecursoModeloBase(docWeb.Clave, docWeb.FilaDocumento.Tipo, proyectoID, PrioridadBase.ApiRecursos);
-                            string infoExtra_Replicacion = ObtenerInfoExtraBaseDocumentoAgregar(JsonTripletas.resource_id, documento.FilaDocumento.Tipo, documento.FilaDocumento.ProyectoID.Value, (short)PrioridadBase.ApiRecursos);
-
-                            //manejar listas de sujetos predicados objetos. Comprobar que tienen el mismo count las 3 listas
-                            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, proyectoID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                            string tripletas = "";
-                            foreach (Triple triple in JsonTripletas.triples_list)
-                            {
-                                ControladorDocumentacion.EscribirTripletaEntidad(triple.subject, triple.predicate, triple.object_t, ref tripletas, new List<TripleWrapper>(), false, triple.language);
-                            }
-
-                            facetadoCN.InsertaTripletas(nombreOntologia.ToLower(), tripletas, 0, false, false, infoExtra_Replicacion);
-
-                            #region Actualizar cola GnossLIVE
-
-                            ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-                            foreach (Guid baseRecurso in documento.BaseRecursos)
-                            {
-                                Guid brProyectoID = gestorDoc.ObtenerProyectoID(baseRecurso);
-
-                                int tipo;
-                                switch (documento.TipoDocumentacion)
-                                {
-                                    case TiposDocumentacion.Debate:
-                                        tipo = (int)TipoLive.Debate;
-                                        break;
-                                    case TiposDocumentacion.Pregunta:
-                                        tipo = (int)TipoLive.Pregunta;
-                                        break;
-                                    default:
-                                        tipo = (int)TipoLive.Recurso;
-                                        break;
-                                }
-
-                                if (AgregarColaLive || JsonTripletas.publish_home)
-                                {
-                                    ControladorDocumentacion.ActualizarGnossLive(brProyectoID, documento.Clave, AccionLive.Editado, tipo, "base", PrioridadLive.Baja);
-                                }
-
-                                List<Guid> listaDocs = new List<Guid>();
-                                listaDocs.Add(JsonTripletas.resource_id);
-                                controDoc.mActualizarTodosProyectosCompartido = true;
-                                controDoc.NotificarAgregarRecursosEnComunidad(listaDocs, brProyectoID, prioridadBase);
-                            }
-
-                            #endregion
-
-                            //borrar rdf del acido de ese recurso
-                            ControladorDocumentacion.BorrarRDFDeBDRDF(JsonTripletas.resource_id);
-                            try
-                            {
-                                //anular cache del documento
-                                ControladorDocumentacion.BorrarCacheControlFichaRecursos(JsonTripletas.resource_id);
-
-                                //borrar cache recursos
-                                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                                facetadoCL.InvalidarResultadosYFacetasDeBusquedaEnProyecto(FilaProy.ProyectoID, FacetadoAD.TipoBusquedaToString(TipoBusqueda.Recursos));
-                            }
-                            catch (Exception)
-                            {
-                            }
-                            insertado = true;
-                        }
-                        else
-                        {
-                            throw new GnossException("The OAuth user has no permission on resource editing.", HttpStatusCode.BadRequest);
-                        }
-                        docCN.Dispose();
-                    }
-                    else
-                    {
-                        throw new GnossException("The resource " + JsonTripletas.resource_id + " does not exist.", HttpStatusCode.BadRequest);
-                    }
-                }
-                else
-                {
-                    throw new GnossException("The community " + JsonTripletas.community_short_name + " does not exist.", HttpStatusCode.BadRequest);
-                }
-            }
-            else
-            {
-                throw new GnossException("The parameter list is not complete or some parameter contains an empty string.", HttpStatusCode.BadRequest);
-            }
-
-            return insertado;
-        }
-
-        /// <summary>
-        /// Deletes properties in Triples format of a loaded resource
-        /// </summary>
-        /// <param name="JsonTripletas">Resource.Triples model object</param>
-        /// <returns>True if the Triples has been deleted. False if not.</returns>
-        ///<example>POST resource/delete-props-loaded-resource</example>
-        [HttpPost, Route("delete-props-loaded-resource")]
-        public bool PutBorrarPropiedadesRecursoYaCargado(Triples JsonTripletas)
-        {
-            bool eliminado = false;
-            if (!string.IsNullOrEmpty(JsonTripletas.community_short_name) && !Guid.Empty.Equals(JsonTripletas.resource_id) && JsonTripletas.triples_list != null && ValidarListaTriples(JsonTripletas))
-            {
-                PrioridadBase prioridadBase = PrioridadBase.ApiRecursos;
-                if (JsonTripletas.end_of_load)
-                {
-                    prioridadBase = PrioridadBase.ApiRecursosBorrarCache;
-                }
-
-                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-                Guid proyectoID = proyCN.ObtenerProyectoIDPorNombre(JsonTripletas.community_short_name);
-                if (!proyectoID.Equals(Guid.Empty))
-                {
-                    mNombreCortoComunidad = JsonTripletas.community_short_name;
-
-                    GestorDocumental gestorDoc = new GestorDocumental(new DataWrapperDocumentacion(), mLoggingService, mEntityContext);
-                    DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-                    docCN.ObtenerDocumentoPorIDCargarTotal(JsonTripletas.resource_id, gestorDoc.DataWrapperDocumentacion, true, true, null);
-                    gestorDoc.CargarDocumentos(false);
-
-                    if (gestorDoc.ListaDocumentos.ContainsKey(JsonTripletas.resource_id))
-                    {
-                        Elementos.Documentacion.Documento documento = gestorDoc.ListaDocumentos[JsonTripletas.resource_id];
-
-                        GestionProyecto gestorProyecto = new GestionProyecto(proyCN.ObtenerProyectoCargaLigeraPorID(proyectoID), mLoggingService, mEntityContext);
-                        gestorProyecto.CargarGestor();
-                        Proyecto proyecto = gestorProyecto.ListaProyectos[proyectoID];
-                        Identidad identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, false);
-                        bool tienePermisoEdicion = false;
-                        if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-                        {
-                            tienePermisoEdicion = true;
-                        }
-                        else if (identidad != null)
-                        {
-                            tienePermisoEdicion = documento.TienePermisosEdicionIdentidad(identidad, null, proyecto, Guid.Empty, false);
-                        }
-
-                        if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || tienePermisoEdicion)
-                        {
-                            string nombreOntologia = docCN.ObtenerEnlaceDocumentoVinculadoADocumento(JsonTripletas.resource_id);
-                            string infoExtra_Replicacion = ObtenerInfoExtraBaseDocumentoAgregar(JsonTripletas.resource_id, documento.FilaDocumento.Tipo, documento.FilaDocumento.ProyectoID.Value, (short)PrioridadBase.ApiRecursos);
-
-                            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, proyectoID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                            string tripletas = "";
-                            List<TripleWrapper> tripletasBorrar = new List<TripleWrapper>();
-                            foreach (Triple triple in JsonTripletas.triples_list)
-                            {
-                                ControladorDocumentacion.EscribirTripletaEntidad(triple.subject, triple.predicate, triple.object_t, ref tripletas, tripletasBorrar, false, triple.language);
-                            }
-
-                            int resultado = facetadoCN.BorrarGrupoTripletasEnLista(nombreOntologia.ToLower(), tripletasBorrar, false, infoExtra_Replicacion);
-
-                            if (resultado <= 0)
-                            {
-                                throw new GnossException("The triples you are deleting not exist.", HttpStatusCode.BadRequest);
-                            }
-                            else
-                            {
-                                #region Actualizar cola GnossLIVE
-
-                                ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-                                foreach (Guid baseRecurso in documento.BaseRecursos)
-                                {
-                                    Guid brProyectoID = gestorDoc.ObtenerProyectoID(baseRecurso);
-
-                                    int tipo;
-                                    switch (documento.TipoDocumentacion)
-                                    {
-                                        case TiposDocumentacion.Debate:
-                                            tipo = (int)TipoLive.Debate;
-                                            break;
-                                        case TiposDocumentacion.Pregunta:
-                                            tipo = (int)TipoLive.Pregunta;
-                                            break;
-                                        default:
-                                            tipo = (int)TipoLive.Recurso;
-                                            break;
-                                    }
-
-                                    if (AgregarColaLive || JsonTripletas.publish_home)
-                                    {
-                                        ControladorDocumentacion.ActualizarGnossLive(proyectoID, documento.Clave, AccionLive.Editado, tipo, "base", PrioridadLive.Baja);
-                                    }
-
-                                    List<Guid> listaDocs = new List<Guid>();
-                                    listaDocs.Add(JsonTripletas.resource_id);
-                                    controDoc.mActualizarTodosProyectosCompartido = true;
-                                    controDoc.NotificarAgregarRecursosEnComunidad(listaDocs, proyectoID, prioridadBase);
-                                }
-
-                                #endregion
-
-                                //borrar rdf del acido de ese recurso
-                                ControladorDocumentacion.BorrarRDFDeBDRDF(JsonTripletas.resource_id);
-                                try
-                                {
-                                    //anular cache del documento
-                                    ControladorDocumentacion.BorrarCacheControlFichaRecursos(JsonTripletas.resource_id);
-
-                                    //borrar cache recursos
-                                    FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                                    facetadoCL.InvalidarResultadosYFacetasDeBusquedaEnProyecto(FilaProy.ProyectoID, FacetadoAD.TipoBusquedaToString(TipoBusqueda.Recursos));
-                                }
-                                catch (Exception)
-                                {
-                                }
-                                eliminado = true;
-                            }
-                        }
-                        else
-                        {
-                            throw new GnossException("The OAuth user has no permission on resource editing.", HttpStatusCode.BadRequest);
-                        }
-                        docCN.Dispose();
-                    }
-                    else
-                    {
-                        throw new GnossException("The resource " + JsonTripletas.resource_id + " does not exist in the community " + JsonTripletas.community_short_name + ".", HttpStatusCode.BadRequest);
-                    }
-                }
-                else
-                {
-                    throw new GnossException("The community short name does not exist.", HttpStatusCode.BadRequest);
-                }
-            }
-            else
-            {
-                throw new GnossException("Some parameter is null or empty.", HttpStatusCode.BadRequest);
-            }
-
-            return eliminado;
-        }
-
         #endregion
 
         #region Métodos migrados Api SOAP
@@ -2461,7 +2182,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         {
                             if (documento.TipoDocumentacion == TiposDocumentacion.FicheroServidor)
                             {
-                                GestionDocumental gd = new GestionDocumental(mLoggingService);
+                                GestionDocumental gd = new GestionDocumental(mLoggingService, mConfigService);
                                 gd.Url = UrlServicioWebDocumentacion;
                                 mLoggingService.AgregarEntrada("Obtiene espacio de la base de recursos del usuario");
                                 if (identidad.IdentidadOrganizacion == null)
@@ -2484,7 +2205,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             }
                             else if (documento.TipoDocumentacion == TiposDocumentacion.Imagen)
                             {
-                                ServicioImagenes sI = new ServicioImagenes(mLoggingService);
+                                ServicioImagenes sI = new ServicioImagenes(mLoggingService, mConfigService);
                                 sI.Url = UrlServicioImagenes;
                                 mLoggingService.AgregarEntrada("Comprueba si imagen es documento personal");
                                 if (identidad.IdentidadOrganizacion == null)
@@ -2692,7 +2413,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (documento.TipoDocumentacion == TiposDocumentacion.Semantico)
                 {
-                    ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+                    ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                     servicioImagenes.Url = UrlServicioImagenes;
 
                     string directorio = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticasAntiguo + "\\" + parameters.resource_id.ToString();
@@ -2825,7 +2546,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             {
                                 //Borramos la imagen del servidor
                                 string directorioImg = UtilArchivos.ContentImagenesDocumentos + "/" + UtilArchivos.DirectorioDocumentoFileSystem(documento.Clave) + "/" + documento.Clave + documento.Extension;
-                                ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+                                ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                                 servicioImagenes.Url = UrlServicioImagenes;
                                 servicioImagenes.BorrarImagenDeDirectorio(directorioImg);
                             }
@@ -2852,7 +2573,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             else
                             {
                                 //Borramos el fichero del servidor
-                                GestionDocumental gd = new GestionDocumental(mLoggingService);
+                                GestionDocumental gd = new GestionDocumental(mLoggingService, mConfigService);
                                 gd.Url = UrlServicioWebDocumentacion;
                                 TipoEntidadVinculadaDocumento tipoEntidaVinDoc = TipoEntidadVinculadaDocumento.Web;
                                 string tipoEntidadTexto = ControladorDocumentacion.ObtenerTipoEntidadAdjuntarDocumento(tipoEntidaVinDoc);
@@ -4847,7 +4568,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     if (documento.TipoDocumentacion.Equals(TiposDocumentacion.FicheroServidor))
                     {
 
-                        GestionDocumental gestorDocumental = new GestionDocumental(mLoggingService);
+                        GestionDocumental gestorDocumental = new GestionDocumental(mLoggingService, mConfigService);
                         gestorDocumental.Url = UrlServicioWebDocumentacion;
                         byteArray = gestorDocumental.ObtenerDocumento("BaseRecursos", FilaProy.OrganizacionID, FilaProy.ProyectoID, resource_id, ext);
                         if (byteArray != null)
@@ -4857,7 +4578,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                     else
                     {
-                        ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+                        ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                         servicioImagenes.Url = UrlIntragnossServicios;
                         byteArray = servicioImagenes.ObtenerImagen($"{UtilArchivos.ContentImagenesDocumentos}/{UtilArchivos.DirectorioDocumento(resource_id)}/{resource_id}", ext);
                         if (byteArray != null)
@@ -4994,7 +4715,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 else if (estilo.TipoCampo.Equals(TipoCampoOntologia.Archivo))
                                 {
                                     byte[] byteArray;
-                                    GestionDocumental gestorDocumental = new GestionDocumental(mLoggingService);
+                                    GestionDocumental gestorDocumental = new GestionDocumental(mLoggingService, mConfigService);
                                     gestorDocumental.Url = UrlServicioWebDocumentacion;
                                     string directorio = UtilArchivos.ContentDocumentosSemAntiguo + "\\" + pDocumento.ElementoVinculadoID.ToString().Substring(0, 3) + "\\" + pDocumento.ElementoVinculadoID.ToString();
                                     if (!string.IsNullOrEmpty(idioma))
@@ -6779,7 +6500,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             imagen.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
                             byte[] buffer = ms.ToArray();
 
-                            ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+                            ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                             servicioImagenes.Url = UrlServicioImagenes;
                             servicioImagenes.AgregarImagenADirectorio(buffer, "../imagenesEnlaces/" + UtilArchivos.DirectorioDocumento(doc.Clave), doc.Clave.ToString(), ".jpg");
 
@@ -7814,13 +7535,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     accion = 0;
                     extensionArchivo = pNombreFichero.Substring(pNombreFichero.LastIndexOf("."));
 
-                    ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+                    ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                     servicioImagenes.Url = UrlServicioImagenes;
                     bool correcto = servicioImagenes.AgregarImagenADirectorio(buffer1, UtilArchivos.ContentImagenesDocumentos + "/" + UtilArchivos.DirectorioDocumento(pDocumentoID), pDocumentoID.ToString(), extensionArchivo);
 
                     if (correcto)
                     {
-                        GestionDocumental gd = new GestionDocumental(mLoggingService);
+                        GestionDocumental gd = new GestionDocumental(mLoggingService, mConfigService);
                         gd.Url = UrlServicioWebDocumentacion;
                         //gd.Timeout = 600000;
                         mLoggingService.AgregarEntrada("Adjunto archivo al gestor documental");
@@ -7860,7 +7581,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     else
                     {
                         //Subimos el fichero al servidor
-                        GestionDocumental gd = new GestionDocumental(mLoggingService);
+                        GestionDocumental gd = new GestionDocumental(mLoggingService, mConfigService);
                         gd.Url = UrlServicioWebDocumentacion;
 
                         TipoEntidadVinculadaDocumento tipoEntidaVinDoc = TipoEntidadVinculadaDocumento.Web;
@@ -8574,10 +8295,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (pListaArchivosAdjuntos != null && pListaArchivosAdjuntos.Count > 0)
             {
-                GestionDocumental gd = new GestionDocumental(mLoggingService);
+                GestionDocumental gd = new GestionDocumental(mLoggingService, mConfigService);
                 gd.Url = UrlServicioWebDocumentacion;
 
-                ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+                ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                 servicioImagenes.Url = UrlServicioImagenes;
 
                 //TODO Javier migrar peticion rest
@@ -9727,7 +9448,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             if (pListaIdsMantener.Count > 0)
             {
-                ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService);
+                ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                 servicioImagenes.Url = UrlServicioImagenes;
 
                 string directorio = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticasAntiguo + "\\" + pDocumentoID.ToString();
