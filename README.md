@@ -47,6 +47,9 @@ api:
      Virtuoso__Escritura__VirtuosoLecturaPruebasGnoss_v4: ${Virtuoso__Escritura__VirtuosoLecturaPruebasGnoss_v4}
      BidirectionalReplication__VirtuosoLecturaPruebasGnoss_v3: ${BidirectionalReplication__VirtuosoLecturaPruebasGnoss_v3}
      BidirectionalReplication__VirtuosoLecturaPruebasGnoss_v4: ${BidirectionalReplication__VirtuosoLecturaPruebasGnoss_v3}
+     scopeIdentity: ${scopeIdentity}
+     clientIDIdentity: ${clientIDIdentity}
+     clientSecretIdentity: ${clientIDIdentity}
     volumes:
       - ./logs/api:/app/logs
 
