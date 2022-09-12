@@ -2,6 +2,8 @@
 
 # Gnoss.Web.Api.OpenCORE
 
+![](https://github.com/equipognoss/Gnoss.Web.Api.OpenCORE/workflows/BuildApi/badge.svg)
+
 Aplicación Web que ofrece un interfaz de programación para que otras aplicaciones puedan realizar consultas o modificaciones en los datos almacenados en la plataforma de manera automatizada. Permite crear y gestionar comunidades, recursos, usuarios, etc.
 
 Esta aplicación está protegida por OAuth 1.0 y cualquier petición que se realice a ella debe ir firmada bajo ese protocolo. 
