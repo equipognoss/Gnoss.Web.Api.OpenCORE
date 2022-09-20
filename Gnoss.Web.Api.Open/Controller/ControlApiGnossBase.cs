@@ -54,6 +54,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 using System.Xml;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
@@ -147,13 +148,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             if (mHttpContextAccessor.HttpContext.Request.Headers.ContainsKey("Authorization"))
             {
-                mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Headers["Authorization"]}");
+                //mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Headers["Authorization"]}");
             }
             else if (mHttpContextAccessor.HttpContext.Request.Query.ContainsKey("oauth_signature"))
             {
-                mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Query["oauth_signature"]}");
+                //mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Query["oauth_signature"]}");
             }
+
             string urlPeticionOauth = UtilOAuth.ObtenerUrlGetDePeticionOAuth(mHttpContextAccessor.HttpContext.Request);
+
+
 
             string datosPeticion = Environment.NewLine;
             datosPeticion += $"URL: {urlPeticion}{Environment.NewLine}";
