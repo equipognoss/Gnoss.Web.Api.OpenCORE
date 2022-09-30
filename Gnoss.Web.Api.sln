@@ -43,6 +43,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Es.Riam.OpenReplication", "
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Es.Riam.Open", "..\Gnoss.Commons\Es.Riam.Open\Es.Riam.Open.csproj", "{37B28990-DA76-49C1-9E8C-543753FF34AD}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gnoss.Web.LabelerService", "..\Gnoss.Commons\Gnoss.Web.LabelerService\Gnoss.Web.LabelerService.csproj", "{0DCD97E8-C011-4E27-9182-61D77E60C45A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -129,6 +131,10 @@ Global
 		{37B28990-DA76-49C1-9E8C-543753FF34AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{37B28990-DA76-49C1-9E8C-543753FF34AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{37B28990-DA76-49C1-9E8C-543753FF34AD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0DCD97E8-C011-4E27-9182-61D77E60C45A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0DCD97E8-C011-4E27-9182-61D77E60C45A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0DCD97E8-C011-4E27-9182-61D77E60C45A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0DCD97E8-C011-4E27-9182-61D77E60C45A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
