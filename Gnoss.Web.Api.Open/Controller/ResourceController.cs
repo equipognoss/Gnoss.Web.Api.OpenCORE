@@ -3749,7 +3749,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// </summary>
         /// <param name="pLoadId">Load id</param>
         /// <returns>Load state</returns>
-        [HttpPost, ActionName("load-state")]
+        [HttpPost, Route("load-state")]
         public EstadoCargaModel LoadState([FromBody] Guid pLoadId)
         {
             ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
@@ -3791,6 +3791,53 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             return estadoCarga;
         }
 
+        /// <summary>
+        /// Test a massive data load
+        /// </summary>
+        /// <param name="resource">Massive data load test resource</param>
+        [HttpPost, Route("test-massive-load")]
+        public bool TestMassiveDataLoad(MassiveDataLoadTestResource resource)
+        {
+            try
+            {
+                //download nq file
+                WebClient client = new WebClient();
+                byte[] downloadedData = client.DownloadData(resource.url);
+
+                //summarie of downloaded nq file
+                byte[] downloadedFileHash = new MD5CryptoServiceProvider().ComputeHash(downloadedData);
+
+                //if the summaries are different, something is wrong
+                if (!resource.fileHash.SequenceEqual(downloadedFileHash))
+                {
+                    Console.Error.Write("The connection to the server could not be established or nq files are not supported.");
+                    throw new WebException("The connection to the server could not be established or nq files are not supported.");
+                }
+                return true;
+            }
+            catch (Exception)
+            {
+                throw new WebException($"The connection to the server could not be established or nq files are not supported. {resource.url}");
+            }
+        }
+
+        /// <summary>
+        /// Close a massive data load
+        /// </summary>
+        /// <param name="resource">Massive data load identifier</param>
+        /// <returns>True if the load is closed</returns>
+        [HttpPost, Route("close-massive-load")]
+        public bool CloseMassiveDataLoad(CloseMassiveDataLoadResource resource)
+        {
+            Carga carga = mEntityContext.Carga.Where(x => x.CargaID.Equals(resource.DataLoadIdentifier)).FirstOrDefault();
+            if (carga != null)
+            {
+                carga.Estado = 1;
+                mEntityContext.SaveChanges();
+                return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Modify a categories resource
@@ -7833,7 +7880,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     try
                     {
                         //Guardado de los triples en el modelo ACID.
-                        ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, pDocumentoID, FilaProy.ProyectoID, rdfDS);
+                        //ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, pDocumentoID, FilaProy.ProyectoID, rdfDS);
                     }
                     catch (Exception)
                     {
@@ -10037,7 +10084,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                         try
                         {
-                            ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, parameters.resource_id, documento.FilaDocumento.ProyectoID.Value, rdfDS);
+                            //ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, parameters.resource_id, documento.FilaDocumento.ProyectoID.Value, rdfDS);
 
                             Guardar(listaProyectosActualNumRec, gestorDoc, documentoEdicion);
 
