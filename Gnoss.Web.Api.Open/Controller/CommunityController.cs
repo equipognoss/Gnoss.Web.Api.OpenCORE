@@ -15,7 +15,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
-
+using System.Net;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
@@ -85,6 +85,35 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 mLoggingService.GuardarLogError(ex, $"community_short_name = {community_short_name} community_id = {proyID}");
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Gets the identifier of a community by its short name
+        /// </summary>
+        /// <param name="community_short_name">Short name of the community</param>
+        /// <returns>Returns the identifier of the community</returns>
+        /// <example>GET get-community-id</example>
+        [HttpGet, Route("get-community-id")]
+        public Guid ObtenerProyectoIDPorNombreCorto(string community_short_name)
+        {
+            if (!string.IsNullOrEmpty(community_short_name))
+            {
+                ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                Guid proyectoID = pry.ObtenerProyectoIDPorNombre(community_short_name);
+                pry.Dispose();
+                if (!proyectoID.Equals(Guid.Empty))
+                {
+                    return proyectoID;
+                }
+                else
+                {
+                    throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The community short name can not be empty", HttpStatusCode.BadRequest);
             }
         }
 

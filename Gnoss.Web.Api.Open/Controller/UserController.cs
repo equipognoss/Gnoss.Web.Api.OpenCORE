@@ -1195,6 +1195,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
+        /// Gets userID by login or email
+        /// </summary>
+        /// <param name="pLogin">User's login or email</param>
+        /// <returns>UserID Guid?</returns>
+        [HttpGet, Route("get-user-id-by-login")]
+        public Guid? ObtenerUsuarioIDPorLogin(string pLogin)
+        {
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);          
+            return usuarioCN.ObtenerUsuarioIDPorLoginOEmail(pLogin);
+        }
+
+        /// <summary>
         /// Blocks a user at the platform
         /// </summary>
         /// <param name="user_id">User's identificator</param>
