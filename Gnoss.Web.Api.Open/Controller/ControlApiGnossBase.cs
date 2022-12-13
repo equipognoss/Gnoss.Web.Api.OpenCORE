@@ -43,6 +43,7 @@ using Es.Riam.Gnoss.Web.Controles.Solicitudes;
 using Es.Riam.Gnoss.Web.MVC.Models;
 using Es.Riam.Util;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Newtonsoft.Json;
@@ -560,6 +561,24 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             return pObjeto;
         }
 
+        protected Guid ComprobarUsuarioOauthHttpHttps(HttpRequest pPeticion, string pUrlApi)
+        {
+            string UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi);
+            string urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
+            string servicioOauthUrl = mConfigService.ObtenerUrlServicio("urlOauth");
+            string result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
+            Guid usuarioID = JsonConvert.DeserializeObject<Guid>(result);
+
+            if (usuarioID == Guid.Empty)
+            {
+                UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi, false);
+                urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
+                result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
+                usuarioID = JsonConvert.DeserializeObject<Guid>(result);
+            }
+            return usuarioID;
+        }
+
         /// <summary>
         /// Comprueba si la petición tiene permisos para realizarse
         /// </summary>
@@ -576,20 +595,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 try
                 {
                     string urlApi = mConfigService.ObtenerUrlServicio("urlApi");
-                    urlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, urlApi);
-                    string urlPeticionOauth = WebUtility.UrlEncode(urlPeticionOauthOriginal);
-                    string servicioOauthUrl = mConfigService.ObtenerUrlServicio("urlOauth");
-                    string result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
-                    Guid usuarioID = JsonConvert.DeserializeObject<Guid>(result);
-
+                    Guid usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
                     if (usuarioID == Guid.Empty)
                     {
-                        urlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, urlApi, false);
-                        urlPeticionOauth = WebUtility.UrlEncode(urlPeticionOauthOriginal);
-                        result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
-                        usuarioID = JsonConvert.DeserializeObject<Guid>(result);
+                        if(!pPeticion.IsHttps && string.IsNullOrEmpty(urlApi))
+                        {       
+                            urlApi = $"https://{new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Authority}";
+                            mLoggingService.GuardarLog($"Uri de llamada con https {urlApi}");
+                            usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
+                        }
                     }
-
                     if (usuarioID != Guid.Empty)
                     {
                         salida = usuarioID;
