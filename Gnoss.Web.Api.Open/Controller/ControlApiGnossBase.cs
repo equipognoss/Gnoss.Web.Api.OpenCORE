@@ -596,15 +596,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     string urlApi = mConfigService.ObtenerUrlServicio("urlApi");
                     Guid usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
-                    mLoggingService.GuardarLog($"valor del usuarioID al hacer la llamada tal y como le llega {usuarioID} || valor del urlApi {urlApi}");
-                    mLoggingService.GuardarLog($"Authority: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Authority} || scheme: {pPeticion.HttpContext.Request.Scheme} || Host: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Host} || URI: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request))}");
+                    mLoggingService.GuardarLogError($"valor del usuarioID al hacer la llamada tal y como le llega {usuarioID} || valor del urlApi {urlApi}");
+                    mLoggingService.GuardarLogError($"Authority: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Authority} || scheme: {pPeticion.HttpContext.Request.Scheme} || Host: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Host} || URI: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request))}");
                     if (usuarioID == Guid.Empty)
                     {
-                        mLoggingService.GuardarLog($"Uri de llamada sin https {urlApi}");
+                        mLoggingService.GuardarLogError($"Uri de llamada sin https {urlApi}");
                         if (!pPeticion.IsHttps && string.IsNullOrEmpty(urlApi))
                         {       
                             urlApi = $"https://{new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Authority}";
-                            mLoggingService.GuardarLog($"Uri de llamada con https {urlApi}");
+                            mLoggingService.GuardarLogError($"Uri de llamada con https {urlApi}");
                             usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
                         }
                     }
