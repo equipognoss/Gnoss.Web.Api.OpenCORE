@@ -582,7 +582,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-
+                if (!string.IsNullOrEmpty(pUrlApi))
+                {
+                    mLoggingService.GuardarLogError(ex, $"Fallo al lanzar la peticion al schema: {pPeticion.Scheme}");
+                }
             }
             return usuarioID;
         }
@@ -604,15 +607,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     string urlApi = mConfigService.ObtenerUrlServicio("urlApi");
                     Guid usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
-                    mLoggingService.GuardarLogError($"valor del usuarioID al hacer la llamada tal y como le llega {usuarioID} || valor del urlApi {urlApi}");
-                    mLoggingService.GuardarLogError($"Authority: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Authority} || scheme: {pPeticion.HttpContext.Request.Scheme} || Host: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Host} || URI: {new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request))}");
                     if (usuarioID == Guid.Empty)
                     {
-                        mLoggingService.GuardarLogError($"Uri de llamada sin https {urlApi}");
                         if (!pPeticion.IsHttps && string.IsNullOrEmpty(urlApi))
                         {       
                             urlApi = $"https://{new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Authority}";
-                            mLoggingService.GuardarLogError($"Uri de llamada con https {urlApi}");
                             usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
                         }
                     }
