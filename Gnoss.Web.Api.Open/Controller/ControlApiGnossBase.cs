@@ -563,18 +563,26 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
         protected Guid ComprobarUsuarioOauthHttpHttps(HttpRequest pPeticion, string pUrlApi)
         {
-            string UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi);
-            string urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
-            string servicioOauthUrl = mConfigService.ObtenerUrlServicio("urlOauth");
-            string result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
-            Guid usuarioID = JsonConvert.DeserializeObject<Guid>(result);
-
-            if (usuarioID == Guid.Empty)
+            Guid usuarioID = Guid.Empty;
+            try
             {
-                UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi, false);
-                urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
-                result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
+                string UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi);
+                string urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
+                string servicioOauthUrl = mConfigService.ObtenerUrlServicio("urlOauth");
+                string result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
                 usuarioID = JsonConvert.DeserializeObject<Guid>(result);
+
+                if (usuarioID == Guid.Empty)
+                {
+                    UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi, false);
+                    urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
+                    result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
+                    usuarioID = JsonConvert.DeserializeObject<Guid>(result);
+                }
+            }
+            catch (Exception ex)
+            {
+
             }
             return usuarioID;
         }
