@@ -48,6 +48,7 @@ namespace Gnoss.Web.Api
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
             EscribirLogTiempos("Application_Start Inicio");
             Conexion.ServicioWeb = true;
             services.AddControllers().AddNewtonsoftJson(options =>
@@ -133,6 +134,10 @@ namespace Gnoss.Web.Api
                 });
             }
             var sp = services.BuildServiceProvider();
+
+            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
+
             // Resolve the services from the service provider
             var configService = sp.GetService<ConfigService>();
             configService.ObtenerProcesarStringGrafo();
