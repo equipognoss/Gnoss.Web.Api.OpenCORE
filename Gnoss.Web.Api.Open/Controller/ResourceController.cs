@@ -2584,7 +2584,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         {
                             mLoggingService.GuardarLogError(ex);
                             EscribirLogTiempos(Guid.Empty);
-                            throw ex;
+                            throw;
                         }
                     }
                 }
@@ -2614,7 +2614,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 docCN.TerminarTransaccion(false);
                 facetadoCN.TerminarTransaccion(false);
-                throw exception;
+                throw;
             }
         }
 
@@ -7395,6 +7395,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (XmlException ex)
             {
+                mLoggingService.GuardarLogError(ex);
                 throw new GnossException("Invalid RDF xml description.", HttpStatusCode.BadRequest);
             }
 
@@ -7686,10 +7687,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (pOntologia != null)
             {
+                string lineaRDF = null;
                 try
                 {
                     StreamReader reader = new StreamReader(new MemoryStream(pFichero));
-                    string lineaRDF = reader.ReadToEnd();
+                    lineaRDF = reader.ReadToEnd();
                     reader.Close();
                     reader.Dispose();
                     reader = null;
@@ -7699,7 +7701,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception("El RDF del recurso no es correcto. " + ex.Message);
+                    mLoggingService.GuardarLogError(ex, $"El RDF del recurso no es correcto. Ontologia: {nombreOntologia} RDF: {lineaRDF}");
+                    throw new Exception($"El RDF del recurso no es correcto. Ontologia: {nombreOntologia} RDF: {lineaRDF}", ex);
                 }
                 //Comprobar los Idiomas.
                 List<string> idiomasDisponible = new List<string>();
