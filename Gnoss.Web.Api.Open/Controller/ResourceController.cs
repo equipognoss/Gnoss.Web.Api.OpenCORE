@@ -110,7 +110,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <summary>
         /// Already loaded ontologies.
         /// </summary>
-        public volatile static Dictionary<Guid, KeyValuePair<Guid, Ontologia>> OntologiasCargadas = new Dictionary<Guid, KeyValuePair<Guid, Ontologia>>();
+        public volatile static ConcurrentDictionary<Guid, KeyValuePair<Guid, Ontologia>> OntologiasCargadas = new ConcurrentDictionary<Guid, KeyValuePair<Guid, Ontologia>>();
+        private static object BLOQUEO_ONTOLOGIAS_CARGADAS = new object();
 
         /// <summary>
         /// Returns the service URL documentation links.
@@ -10334,24 +10335,28 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (!OntologiasCargadas.ContainsKey(pOntologiaId) || OntologiasCargadas[pOntologiaId].Key != xmlID)
                 {
-                    if (OntologiasCargadas.ContainsKey(pOntologiaId))
+                    lock (BLOQUEO_ONTOLOGIAS_CARGADAS)
                     {
-                        OntologiasCargadas.Remove(pOntologiaId);
-                    }
+                        if (OntologiasCargadas.ContainsKey(pOntologiaId))
+                        {
+                            KeyValuePair<Guid, Ontologia> salida;
+                            OntologiasCargadas.TryRemove(pOntologiaId, out salida);
+                        }
 
-                    Dictionary<string, List<EstiloPlantilla>> listaEstilos = new Dictionary<string, List<EstiloPlantilla>>();
-                    byte[] arrayOnto = ControladorDocumentacion.ObtenerOntologia(pOntologiaId, out listaEstilos, FilaProy.ProyectoID);
+                        Dictionary<string, List<EstiloPlantilla>> listaEstilos = new Dictionary<string, List<EstiloPlantilla>>();
+                        byte[] arrayOnto = ControladorDocumentacion.ObtenerOntologia(pOntologiaId, out listaEstilos, FilaProy.ProyectoID);
 
-                    //Leo la ontología:
-                    ontologia = new Ontologia(arrayOnto, true);
-                    ontologia.OntologiaID = pOntologiaId;
-                    ontologia.LeerOntologia();
-                    ontologia.EstilosPlantilla = listaEstilos;
-                    try
-                    {
-                        OntologiasCargadas.Add(pOntologiaId, new KeyValuePair<Guid, Ontologia>(xmlID.Value, ontologia));
+                        //Leo la ontología:
+                        ontologia = new Ontologia(arrayOnto, true);
+                        ontologia.OntologiaID = pOntologiaId;
+                        ontologia.LeerOntologia();
+                        ontologia.EstilosPlantilla = listaEstilos;
+                        try
+                        {
+                            OntologiasCargadas.TryAdd(pOntologiaId, new KeyValuePair<Guid, Ontologia>(xmlID.Value, ontologia));
+                        }
+                        catch (Exception) {/*error al añadir la ontologia*/}
                     }
-                    catch (Exception) {/*error al añadir la ontologia*/}
                 }
 
                 ontologia = OntologiasCargadas[pOntologiaId].Value;
