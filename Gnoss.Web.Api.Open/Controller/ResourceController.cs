@@ -4401,13 +4401,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             else if (!objeto.StartsWith("\"") || !objeto.EndsWith("\""))
             {
                 // El objeto no está envuelto en dobles comillas, se las añado
-                objeto = $"\"{objeto.Replace("\"", "''")}\"{pLanguage}";
+                objeto = $"\"{objeto.Replace("\"", "\\\"")}\"{pLanguage}";
             }
             else
             {
                 // El objeto está envuelto en dobles comillas, 
                 // por si acaso se las quito, reemplazo el resto de dobles comillas y se las vuelvo a poner
-                objeto = $"\"{objeto.Trim('\"').Replace("\"", "''")}\"{pLanguage}";
+                objeto = $"\"{objeto.Trim('\"').Replace("\"", "\\\"")}\"{pLanguage}";
             }
 
             pStringBuilder.AppendLine($"<{sujeto}> <{predicado}> {objeto}. ");
@@ -9186,7 +9186,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 pIdioma = $"@{pIdioma}";
             }
             pObjeto = pObjeto.Replace("\n", "").Replace("\r", "").Replace("\\", "\\\\");
-            return $"\"{pObjeto.Replace("\"", "''")}\"{pIdioma}";
+            return $"\"{pObjeto.Replace("\"", "\\\"")}\"{pIdioma}";
         }
 
         private string GenerarTripleBusqueda(Guid pDocID, bool pEsEntidadPrincipal, Propiedad pPropiedad, string pValor, string pIdioma = null)
