@@ -28,10 +28,15 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using Es.Riam.AbstractsOpen;
+using System.Text;
+using Universal.Common.Extensions;
+using System.Data;
+using static Es.Riam.Gnoss.Web.MVC.Models.Tesauro.TesauroModels;
+using Es.Riam.Gnoss.AD.EntityModel.Models.ProyectoDS;
+using Microsoft.Azure.Amqp.Framing;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
-
     /// <summary>
     /// Use it to create / modify / delete nodes in a thesaurus
     /// </summary>
@@ -39,11 +44,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     [Route("[controller]")]
     public class ThesaurusController : ControlApiGnossBase
     {
-
         public ThesaurusController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
             : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
         {
         }
+
+        #region Public
 
         /// <summary>
         /// Get a thesaurus ontology form its ontology url
@@ -52,7 +58,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <param name="community_short_name">Community short name</param>
         /// <param name="source">Thesaurus identifier</param>
         /// <returns>RDF of a semantic thesaurus</returns>
-        /// <example>GET thesaurus/get-thesaurus?thesaurus_ontology_url=bbvataxonomy.owl&community_short_name=knowledgegraph&source=category</example>
+        /// <example>GET thesaurus/get-thesaurus?thesaurus_ontology_url=bbvataxonomy.owl&community_short_name=knowledgegraph&source=category</example>        
         [HttpGet, Route("get-thesaurus")]
         public string GetNodoTesauroSemantico(string thesaurus_ontology_url, string community_short_name, string source)
         {
@@ -99,24 +105,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 reader.Dispose();
 
                 return rdfTexto;
-
-                //HttpResponseMessage response = new HttpResponseMessage();
-                //response.StatusCode = HttpStatusCode.OK;
-                //response.Content = new StreamContent(buffer);
-                //response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/rdf");
-                //response.Content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment")
-                //{
-                //    FileName = source + ".rdf"
-                //};
-                //return response;
-
             }
             else
             {
                 throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
             }
         }
-
 
         /// <summary>
         /// Move a category of a semantic thesaurus another parent given its full path from the root
@@ -324,7 +318,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("There is no ontology resource with the specified URL", HttpStatusCode.BadRequest);
             }
 
-            ControladorDocumentacion.EliminarCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, parameters.resources_ontology_url, UrlIntragnoss, BaseURLFormulariosSem, parameters.category_id, parameters.path, docOnto, gestorDoc.ListaDocumentos[elementoVinculadoID], true, ProyectoTraerOntosID);
+            ControladorDocumentacion.EliminarCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, parameters.resources_ontology_url, UrlIntragnoss, BaseURLFormulariosSem, parameters.category_id, docOnto, gestorDoc.ListaDocumentos[elementoVinculadoID], true, ProyectoTraerOntosID);
             FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
             facetadoCL.InvalidarCacheTesauroFaceta(ProyectoTraerOntosID);
             facetadoCL.Dispose();
@@ -333,10 +327,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <summary>
         /// Add a category as a parent of another
         /// </summary>
-        /// <param name="url_ontology_thesaurus">URL ontology semantic thesaurus</param>
-        /// <param name="short_community_name">URL of the community is raised semantic ontology thesaurus</param>
-        /// <param name="catergory_parent_key">URI of the parent category</param>
-        /// <param name="category_child_key">URI of the category child</param>
+        /// <param name="parameters">Model with the requiered parameter to add new node to a thesaurus</param>
         /// <example>POST thesaurus/set-node-parent</example>
         [HttpPost, Route("set-node-parent")]
         public void AgregarPadreANodoTesauroSemantico(ParamsParentNode parameters)
@@ -357,15 +348,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             string triplesInsertar = "";
             List<TripleWrapper> triplesComInsertar = new List<TripleWrapper>();
 
-            List<string> propiedades = new List<string>();
-            propiedades.Add(arrayTesSem[4]);//hasHijo
-            propiedades.Add(arrayTesSem[7]);//hasPadre
+            List<string> propiedades = new List<string>() { arrayTesSem[4], arrayTesSem[7] };
 
             FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
 
             //Obtengo categoría:
             FacetadoDS dataSetCategorias = facCN.ObtenerValoresPropiedadesEntidad(parameters.thesaurus_ontology_url, parameters.child_category_id, propiedades);
-
             if (dataSetCategorias.Tables[0].Rows.Count == 0)
             {
                 facCN.Dispose();
@@ -373,7 +361,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             List<string> padres = FacetadoCN.ObtenerObjetosDataSetSegunPropiedad(dataSetCategorias, parameters.child_category_id, arrayTesSem[7]);
-
             if (padres.Count == 0)
             {
                 facCN.Dispose();
@@ -381,7 +368,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             FacetadoDS dataSetCategoriasPadre = facCN.ObtenerValoresPropiedadesEntidad(parameters.thesaurus_ontology_url, parameters.parent_catergory_id, false);
-
             if (dataSetCategoriasPadre.Tables[0].Rows.Count == 0)
             {
                 facCN.Dispose();
@@ -423,10 +409,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <summary>
         /// Modifies the name of a category of semantic thesaurus
         /// </summary>
-        /// <param name="url_ontology_thesaurus">URL ontology semantic thesaurus</param>
-        /// <param name="short_community_name">UURL of the community is raised semantic ontology thesaurus</param>
-        /// <param name="category_key">URI of the category</param>
-        /// <param name="category_name">Name category, supports multi language with format: nombre@es|||name@en|||</param>
+        /// <param name="parameters">Model with the parameters for change the node name</param>
         /// <example>POST thesaurus/change-node-name</example>
         [HttpPost, Route("change-node-name")]
         public void CambiarNombreANodoTesauroSemantico(ParamsChangeName parameters)
@@ -451,9 +434,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <summary>
         /// Enter a category in a semantic thesaurus.
         /// </summary>
-        /// <param name="url_ontology_thesaurus">URL ontology semantic thesaurus</param>
-        /// <param name="short_community_name">UURL of the community is raised semantic ontology thesaurus</param>
-        /// <param name="rdf_category">Rdf insert category</param>
+        /// <param name="parameters">Model with the parameters to add a category to a Thesaurus</param>
         /// <example>POST thesaurus/insert-node</example>
         [HttpPost, Route("insert-node")]
         public void InsertarNodoTesauroSemantico(ParamsInsertNode parameters)
@@ -478,7 +459,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 throw new GnossException("There is no ontology thesaurus with the specified URL", HttpStatusCode.BadRequest);
             }
-
 
             string nombreOntologia = docOnto.FilaDocumento.Enlace;
             GestionOWL gestorOWL = new GestionOWL();
@@ -524,14 +504,693 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 throw new GnossException("The ontology can not be empty", HttpStatusCode.BadRequest);
             }
-
         }
 
         /// <summary>
-        /// Ajusta la URL del grafo poniendole la UrlIntragnoss actual.
+        /// Create a Thesaurus with the Collections and Concepts in the parameters
         /// </summary>
-        /// <param name="pUrlGrafo">Url del grafo</param>
-        /// <returns>URL del grafo poniendole la UrlIntragnoss actual</returns>
+        /// <param name="thesaurus">Thesaurus that will be loaded</param>
+        [HttpPost, Route("create-thesaurus")]
+        public void CreateThesaurus(Thesaurus thesaurus)
+        {
+            mNombreCortoComunidad = thesaurus.CommunityShortName;
+
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
+
+            thesaurus.Ontology = ParsearOntologia(thesaurus.Ontology);
+
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, thesaurus.Ontology))
+            {
+                throw new Exception($"La ontología {thesaurus.Ontology} no existe en el proyecto {thesaurus.CommunityShortName} con id {proyectoID}");
+            }
+
+            string urlIntragnoss = UrlIntragnoss;
+            if (!urlIntragnoss.EndsWith('/'))
+            {
+                urlIntragnoss += $"{urlIntragnoss}/";
+            }
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            facetadoCN.IniciarTransaccion();
+
+            try
+            {
+                CrearTesauro(thesaurus, urlIntragnoss, proyectoID, facetadoCN);
+                AgregarProyectoConfigExtraSem(proyectoID, thesaurus.Source, thesaurus.Collection.ScopeNote, thesaurus.Collection.Subject, thesaurus.Ontology, urlIntragnoss);
+            }
+            catch (Exception ex)
+            {
+                facetadoCN.TerminarTransaccion(false);
+                throw new Exception(ex.Message, ex);
+            }
+            facetadoCN.TerminarTransaccion(true);
+        }
+
+        /// <summary>
+        /// Modify the indicated Thesaurus. Replace current data with the list of Collection and Concept given.
+        /// </summary>
+        /// <param name="thesaurus">Thesaurus that will be loaded</param>
+        [HttpPost, Route("modify-thesaurus")]
+        public void ModifyThesaurus(Thesaurus thesaurus)
+        {
+            mNombreCortoComunidad = thesaurus.CommunityShortName;
+
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
+
+            thesaurus.Ontology = ParsearOntologia(thesaurus.Ontology);
+
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, thesaurus.Ontology))
+            {
+                throw new Exception($"La ontología {thesaurus.Ontology} no existe en el proyecto {thesaurus.CommunityShortName} con id {proyectoID}");
+            }
+
+            string urlIntragnoss = UrlIntragnoss;
+            if (!urlIntragnoss.EndsWith('/'))
+            {
+                urlIntragnoss += $"{urlIntragnoss}/";
+            }
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            facetadoCN.IniciarTransaccion();
+
+            try
+            {
+                EliminarTesauroOntologiaBusqueda(thesaurus.Ontology, thesaurus.Source, proyectoID, facetadoCN);
+                if (thesaurus.Collection != null)
+                {
+                    CrearTesauro(thesaurus, urlIntragnoss, proyectoID, facetadoCN);
+                }
+            }
+            catch (Exception ex)
+            {
+                facetadoCN.TerminarTransaccion(false);
+                throw new Exception(ex.Message, ex);
+            }
+            facetadoCN.TerminarTransaccion(true);
+        }
+
+        /// <summary>
+        /// Add new category with they narrowers at the thesaurus
+        /// </summary>
+        /// <param name="conceptToAdd">Model with the params to add a concept</param>
+        /// <exception cref="Exception"></exception>
+        [HttpPost, Route("add-thesaurus-category")]
+        public void AddCategory(ConceptToAddModel conceptToAdd)
+        {
+            mNombreCortoComunidad = conceptToAdd.CommunityShortName;
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
+
+            StringBuilder triplesGrafoOntologia = new StringBuilder();
+            StringBuilder triplesGrafoBusqueda = new StringBuilder();
+
+            conceptToAdd.Ontology = ParsearOntologia(conceptToAdd.Ontology);
+
+            GenerarTriplesConcept(conceptToAdd.Concept, conceptToAdd.Source, UrlIntragnoss, triplesGrafoOntologia, triplesGrafoBusqueda, conceptToAdd.ParentCategorySubject);
+
+            if (string.IsNullOrEmpty(conceptToAdd.ParentCategorySubject))
+            {
+                GenerarMemberCollection(conceptToAdd.Concept, conceptToAdd.Source, triplesGrafoOntologia, triplesGrafoBusqueda, facetadoCN);
+            }
+            else
+            {
+                GenerarNarrowerPadre(conceptToAdd.ParentCategorySubject, conceptToAdd.Concept, conceptToAdd.Source, triplesGrafoOntologia, triplesGrafoBusqueda);
+            }
+
+            facetadoCN.IniciarTransaccion();
+
+            try
+            {
+                InsertarTriplesConcept(conceptToAdd.Ontology, proyectoID, triplesGrafoOntologia, triplesGrafoBusqueda, facetadoCN);
+            }
+            catch (Exception ex)
+            {
+                facetadoCN.TerminarTransaccion(false);
+                throw new Exception(ex.Message, ex);
+            }
+
+            facetadoCN.TerminarTransaccion(true);
+        }
+
+        /// <summary>
+        /// Modify the concept given by parameter and its narrowers if you indicated it
+        /// </summary>
+        /// <param name="conceptToModify">Model with the concept to modify</param>
+        [HttpPost, Route("modify-thesaurus-category")]
+        public void ModifyCategory(ConceptToModifyModel conceptToModify)
+        {
+            mNombreCortoComunidad = conceptToModify.CommunityShortName;
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
+
+            conceptToModify.Ontology = ParsearOntologia(conceptToModify.Ontology);
+
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, conceptToModify.Ontology))
+            {
+                throw new Exception($"La ontología {conceptToModify.Ontology} no existe en el proyecto {conceptToModify.CommunityShortName} con id {proyectoID}");
+            }
+
+            StringBuilder triplesGrafoOntologia = new StringBuilder();
+            StringBuilder triplesGrafoBusqueda = new StringBuilder();
+
+            conceptToModify.Ontology = ParsearOntologia(conceptToModify.Ontology);
+
+            if (!conceptToModify.ModifyNarrower)
+            {
+                conceptToModify.Concept.Narrower = null;
+            }
+
+            GenerarTriplesConcept(conceptToModify.Concept, conceptToModify.Source, UrlIntragnoss, triplesGrafoOntologia, triplesGrafoBusqueda, conceptToModify.ParentCategorySubject);
+
+            if (string.IsNullOrEmpty(conceptToModify.ParentCategorySubject))
+            {
+                GenerarMemberCollection(conceptToModify.Concept, conceptToModify.Source, triplesGrafoOntologia, triplesGrafoBusqueda, facetadoCN);
+            }
+            else
+            {
+                GenerarNarrowerPadre(conceptToModify.ParentCategorySubject, conceptToModify.Concept, conceptToModify.Source, triplesGrafoOntologia, triplesGrafoBusqueda);
+            }
+
+            facetadoCN.IniciarTransaccion();
+
+            try
+            {
+                EliminarConcept(conceptToModify.Ontology, conceptToModify.Concept, proyectoID, conceptToModify.Source, facetadoCN, conceptToModify.ModifyNarrower);
+                InsertarTriplesConcept(conceptToModify.Ontology, proyectoID, triplesGrafoOntologia, triplesGrafoBusqueda, facetadoCN);
+            }
+            catch (Exception ex)
+            {
+                facetadoCN.TerminarTransaccion(false);
+                throw new Exception(ex.Message, ex);
+            }
+
+            facetadoCN.TerminarTransaccion(true);
+        }
+
+        /// <summary>
+        /// Delete the thesaurus indicated by the source given by parameter
+        /// </summary>
+        /// <param name="thesaurus"></param>
+        /// <exception cref="Exception"></exception>
+        [HttpPost, Route("delete-thesaurus")]
+        public void DeleteThesaurus(ThesaurusToDeleteModel thesaurus)
+        {
+            mNombreCortoComunidad = thesaurus.CommunityShortName;
+
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
+
+            thesaurus.Ontology = ParsearOntologia(thesaurus.Ontology);
+
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, thesaurus.Ontology))
+            {
+                throw new Exception($"La ontología {thesaurus.Ontology} no existe en el proyecto {thesaurus.CommunityShortName} con id {proyectoID}");
+            }
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            facetadoCN.IniciarTransaccion();
+
+            try
+            {
+                EliminarTesauroOntologiaBusqueda(thesaurus.Ontology, thesaurus.Source, proyectoID, facetadoCN);
+            }
+            catch (Exception ex)
+            {
+                facetadoCN.TerminarTransaccion(false);
+                throw new Exception(ex.Message, ex);
+            }
+            facetadoCN.TerminarTransaccion(true);
+        }
+
+        /// <summary>
+        /// Delete the concept indicated and they childrens
+        /// </summary>
+        /// <param name="pConceptToDelete">Model with the subject of the concept to delete</param>
+        /// <exception cref="Exception"></exception>
+        [HttpPost, Route("delete-thesaurus-category")]
+        public void DeleteThesaurusCategory(ConceptToDeleteModel pConceptToDelete)
+        {
+            mNombreCortoComunidad = pConceptToDelete.CommunityShortName;
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
+
+            pConceptToDelete.Ontology = ParsearOntologia(pConceptToDelete.Ontology);
+
+            facetadoCN.IniciarTransaccion();
+
+            try
+            {
+                EliminarTriplesConceptGrafos(facetadoCN, proyectoID, pConceptToDelete.ConceptSubject, pConceptToDelete.Ontology, true);
+            }
+            catch (Exception ex)
+            {
+                facetadoCN.TerminarTransaccion(false);
+                throw new Exception(ex.Message, ex);
+            }
+
+            facetadoCN.TerminarTransaccion(true);
+        }
+
+        #endregion
+
+        #region Private
+
+        /// <summary>
+        /// Genera una propiedad member del Collection del tesauro para el Concept indicado
+        /// </summary>
+        /// <param name="pConcept">Concept que estamos cargando</param>
+        /// <param name="pSource">Source del tesauro</param>
+        /// <param name="pTriplesGrafoOntologia">Conjunto de triples para el grafo de ontología</param>
+        /// <param name="pTriplesGrafoBusqueda">Conjunto de triples para el frafo de búsqeeda</param>
+        /// <param name="pFacetadoCN">FacetadoCN inicializado</param>
+        private void GenerarMemberCollection(Concept pConcept, string pSource, StringBuilder pTriplesGrafoOntologia, StringBuilder pTriplesGrafoBusqueda, FacetadoCN pFacetadoCN)
+        {
+            string sujetoCollection = string.Empty;
+
+            string querySujetoCollection = $"select distinct(?s) where {{ ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2008/05/skos#Collection> . ?s <http://purl.org/dc/elements/1.1/source> \"{pSource}\" . }}";
+
+            FacetadoDS resultadoConsulta = pFacetadoCN.LeerDeVirtuoso(querySujetoCollection, "Collection", string.Empty);
+
+            foreach (DataRow fila in resultadoConsulta.Tables["Collection"].Rows)
+            {
+                sujetoCollection = fila["s"].ToString();
+            }
+
+            if (string.IsNullOrEmpty(sujetoCollection))
+            {
+                throw new GnossException($"No hay ningún Collection asociado al source \"{pSource}\" y estás cargando un Concept de primer nivel. Revisa el Collection cargado para este source por favor.", HttpStatusCode.BadRequest);
+            }
+
+            pTriplesGrafoOntologia.AppendLine($"<{sujetoCollection}> <http://www.w3.org/2008/05/skos#member> <{GenerarSujetoConcept(pConcept, UrlIntragnoss, pSource)}> . ");
+            pTriplesGrafoBusqueda.AppendLine($"<{sujetoCollection}> <http://www.w3.org/2008/05/skos#member> <{GenerarSujetoConcept(pConcept, UrlIntragnoss, pSource)}> . ");
+        }
+
+        /// <summary>
+        /// Genera la relación narrower del concept que estamos cargando con su padre
+        /// </summary>
+        /// <param name="pSujetoPadre">Sujeto del padre del concept que estamos cargando</param>
+        /// <param name="pConcept">Concept que estamos cargando</param>
+        /// <param name="pSource">Source del tesauro</param>
+        /// <param name="pTriplesGrafoOntologia">Conjunto de triples para el grafo de ontología</param>
+        /// <param name="pTriplesGrafoBusqueda">Conjunto de triples para el grafo de búsqueda</param>
+        private void GenerarNarrowerPadre(string pSujetoPadre, Concept pConcept, string pSource, StringBuilder pTriplesGrafoOntologia, StringBuilder pTriplesGrafoBusqueda)
+        {
+            pTriplesGrafoBusqueda.AppendLine($"<{pSujetoPadre}> <http://www.w3.org/2008/05/skos#narrower> <{GenerarSujetoConcept(pConcept, UrlIntragnoss, pSource)}>");
+            pTriplesGrafoOntologia.AppendLine($"<{pSujetoPadre}> <http://www.w3.org/2008/05/skos#narrower> <{GenerarSujetoConcept(pConcept, UrlIntragnoss, pSource)}>");
+        }
+
+        /// <summary>
+        /// Create a thesaurus according the parameters given
+        /// </summary>
+        /// <param name="pTesauro">Thesaurus with the Collection and the Concept to create</param>
+        /// <param name="pUrlIntragnoss">UrlIntragnoss</param>
+        /// <param name="pProyectoID">Identifier of the project</param>
+        /// <param name="pFacetadoCN">FacetadoCN initialized</param>
+        private void CrearTesauro(Thesaurus pTesauro, string pUrlIntragnoss, Guid pProyectoID, FacetadoCN pFacetadoCN)
+        {
+            InsertarTriplesCollection(pTesauro, pUrlIntragnoss, pProyectoID, pFacetadoCN);
+            InsertarTriplesConcept(pTesauro, pUrlIntragnoss, pProyectoID, pFacetadoCN);
+        }
+
+        /// <summary>
+        /// Delete current data of the Thesaurus indicated in the Ontology param from ontology and searhc graph
+        /// </summary>
+        /// <param name="pOntologia">Ontology of the thesaurus to remove</param>
+        /// <param name="pProyectoID">Identifier of the project</param>
+        /// <param name="pFacetadoCN">FacetadoCN initialized</param>
+        private void EliminarTesauroOntologiaBusqueda(string pOntologia, string pSource, Guid pProyectoID, FacetadoCN pFacetadoCN)
+        {
+            List<string> listaSujetos = pFacetadoCN.ObtenerListaSujetosTesauroDeGrafoPorSource(pOntologia, pSource);
+
+            //Eliminamos los triples del grafo de búsqueda
+            EliminarTriplesDeSujeto(pProyectoID.ToString(), listaSujetos, pFacetadoCN);
+
+            //Eliminamos los triples del grafo de ontología
+            EliminarTriplesDeSujeto(pOntologia, listaSujetos, pFacetadoCN);
+        }
+
+        /// <summary>
+        /// Delete current data of the Concept indicated in the param from ontology and search graph
+        /// </summary>
+        /// <param name="pOntologia">Ontology of the thesaurus to remove</param> 
+        /// <param name="pConcept">Concept to delete</param>
+        /// <param name="pProyectoID">Identifier of the project</param>
+        /// <param name="pSource"></param>
+        /// <param name="pFacetadoCN">FacetadoCN initialized</param>
+        /// <param name="pModificarNarrower">Indicates if the narrower of the concept will be modify</param>
+        private void EliminarConcept(string pOntologia, Concept pConcept, Guid pProyectoID, string pSource, FacetadoCN pFacetadoCN, bool pModificarNarrower)
+        {
+            string sujetoConcept = GenerarSujetoConcept(pConcept, UrlIntragnoss, pSource);
+
+            EliminarTriplesConceptGrafos(pFacetadoCN, pProyectoID, sujetoConcept, pOntologia, pModificarNarrower);
+        }
+
+        /// <summary>
+        /// Get all the triples of the subjet given from ontology and search graph. Then remove it less broader and narrower if it's indicated
+        /// </summary>
+        /// <param name="pFacetadoCN">FacetadoCN initialized</param>
+        /// <param name="pProyectoID">Identifier of the project</param>
+        /// <param name="pSujetoConcept">Subject of the concept to delete</param>
+        /// <param name="pOntologia">Ontology of the thesaurus to remove</param> 
+        /// <param name="pEliminarHijos">Indicates if childrens of the concept will be removed</param>
+        private void EliminarTriplesConceptGrafos(FacetadoCN pFacetadoCN, Guid pProyectoID, string pSujetoConcept, string pOntologia, bool pEliminarHijos)
+        {
+            pFacetadoCN.EliminarConceptEHijos(pOntologia, pSujetoConcept, pEliminarHijos);
+            pFacetadoCN.EliminarConceptEHijos(pProyectoID.ToString(), pSujetoConcept, pEliminarHijos);
+        }
+
+        /// <summary>
+        /// Get all the triples of the graph and subject indicated
+        /// </summary>
+        /// <param name="pGrafo">graph from will be geted the triples</param>
+        /// <param name="pFacetadoCN">FacetadoCN initialiced</param>
+        /// <param name="pSujetoConcept">Subject of the concept to get all their triples</param>
+        /// <param name="pConjuntoTriples">StringBuilder when the triples will be loaded</param>
+        private void ObtenerTriplesConceptBorrarGrafo(string pGrafo, FacetadoCN pFacetadoCN, string pSujetoConcept, StringBuilder pConjuntoTriples)
+        {
+            List<string> listaTriplesConcept = pFacetadoCN.ObtenerListaTriplesDeSujeto(pGrafo, pSujetoConcept);
+
+            foreach (string tripleConcept in listaTriplesConcept)
+            {
+                pConjuntoTriples.AppendLine(tripleConcept);
+                if (tripleConcept.Contains("<http://www.w3.org/2008/05/skos#narrower>"))
+                {
+                    string sujetoConceptHijo = tripleConcept.Split(" ")[2];
+                    ObtenerTriplesConceptBorrarGrafo(pGrafo, pFacetadoCN, sujetoConceptHijo, pConjuntoTriples);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Delete the triples with the given Subjects in the graph of the parameters
+        /// </summary>
+        /// <param name="pGrafo">Graph where the triples will be deleted</param>
+        /// <param name="pListaSujetos">List with the Subject of the triples to delete</param>
+        /// <param name="pFacetadoCN">FacetadoCN initialized</param>
+        /// <exception cref="Exception"></exception>
+        private void EliminarTriplesDeSujeto(string pGrafo, List<string> pListaSujetos, FacetadoCN pFacetadoCN)
+        {
+            int numCiclos = pListaSujetos.Count / 500;
+            if (pListaSujetos.Count % 500 != 0)
+            {
+                numCiclos++;
+            }
+
+            try
+            {
+                for (int i = 0; i < numCiclos; i++)
+                {
+                    List<string> listaSujetosAuxiliar = pListaSujetos.Skip(500 * i).Take(500).ToList();
+
+                    pFacetadoCN.BorrarListaTriplesDeSujeto(pGrafo, listaSujetosAuxiliar);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"An error has ocurred while deleting the triples in the graph <{UrlIntragnoss}{pGrafo}>", ex);
+            }
+        }
+
+        /// <summary>
+        /// Insert all the triples for the list of the Concepts given in the Thesaurus parameter
+        /// </summary>
+        /// <param name="pTesauro">Thesaurus to load</param>
+        /// <param name="pUrlIntragnoss">Url intragnoss</param>
+        /// <param name="pProyectoID">Identifier of the project</param>
+        /// <param name="pFacetadoCN">FacetadoCN initializated</param>
+        /// <exception cref="Exception"></exception>
+        private void InsertarTriplesConcept(Thesaurus pTesauro, string pUrlIntragnoss, Guid pProyectoID, FacetadoCN pFacetadoCN)
+        {
+            StringBuilder triplesConceptGrafoOntologia = new StringBuilder();
+            StringBuilder triplesConceptGrafoBusqueda = new StringBuilder();
+
+            foreach (Concept concept in pTesauro.Collection.Member)
+            {
+                GenerarTriplesConcept(concept, pTesauro.Source, pUrlIntragnoss, triplesConceptGrafoOntologia, triplesConceptGrafoBusqueda);
+            }
+
+            try
+            {
+                pFacetadoCN.InsertaTripletas(pTesauro.Ontology, triplesConceptGrafoOntologia.ToString(), 1);
+                pFacetadoCN.InsertaTripletas(pProyectoID.ToString(), triplesConceptGrafoBusqueda.ToString(), 1);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ha ocurrido un error al escribir los triples de los Concept en virtuoso.\n {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Insert all the triples for the list of the Concepts given in the Thesaurus parameter
+        /// </summary>
+        /// <param name="pOntology">Ontology of the thesaurus</param>
+        /// <param name="pTriplesGrafoOntologia">StringBuilder where the triples of the ontology graph will be storage</param>
+        /// <param name="pTriplesGrafoBusqueda">StringBuilder where the triples of the search graph will be storage</param>
+        /// <param name="pProyectoID">Identifier of the project</param>
+        /// <param name="pFacetadoCN">FacetadoCN initializated</param>
+        /// <exception cref="Exception"></exception>
+        private void InsertarTriplesConcept(string pOntology, Guid pProyectoID, StringBuilder pTriplesGrafoOntologia, StringBuilder pTriplesGrafoBusqueda, FacetadoCN pFacetadoCN)
+        {
+            try
+            {
+                pFacetadoCN.InsertaTripletas(pOntology, pTriplesGrafoOntologia.ToString(), 1);
+                pFacetadoCN.InsertaTripletas(pProyectoID.ToString(), pTriplesGrafoBusqueda.ToString(), 1);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ha ocurrido un error al escribir los triples de los Concept en virtuoso.\n {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Generate the triples of the Concept given by parameter
+        /// </summary>
+        /// <param name="pConcept">Concept to generate the triples</param>
+        /// <param name="pSource">Source of the Thesaurus</param>
+        /// <param name="pUrlIntragnoss">UrlIntragnoss</param>
+        /// <param name="pTriplesGrafoOntologia">StringBuilder where the triples of the ontology graph will be storage</param>
+        /// <param name="pTriplesGrafoBusqueda">StringBuilder where the triples of the search graph will be storage</param>
+        /// <param name="pSujetoPadre">Subject of the parenth. Nullable</param>
+        private void GenerarTriplesConcept(Concept pConcept, string pSource, string pUrlIntragnoss, StringBuilder pTriplesGrafoOntologia, StringBuilder pTriplesGrafoBusqueda, string pSujetoPadre = "")
+        {
+            string sujeto = GenerarSujetoConcept(pConcept, pUrlIntragnoss, pSource);
+
+            GenerarTriplesConceptGrafoOntologia(pConcept, pTriplesGrafoOntologia, sujeto, pSource);
+            GenerarTriplesConceptGrafoBusqueda(pConcept, pTriplesGrafoBusqueda, sujeto, pSource);
+            GenerarPrefLabelMultiIdioma(pConcept, pTriplesGrafoOntologia, pTriplesGrafoBusqueda, sujeto);
+            GenerarTriplesRelacionesConcept(pConcept, pTriplesGrafoOntologia, pTriplesGrafoBusqueda, sujeto, pUrlIntragnoss, pSource, pSujetoPadre);
+
+            if (pConcept.Narrower != null)
+            {
+                foreach (Concept pConceptHijo in pConcept.Narrower)
+                {
+                    GenerarTriplesConcept(pConceptHijo, pSource, pUrlIntragnoss, pTriplesGrafoOntologia, pTriplesGrafoBusqueda, sujeto);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Insert all the triples for the list of the Collections given in the Thesaurus parameter
+        /// </summary>
+        /// <param name="pTesauro">Thesaurus to load</param>
+        /// <param name="pUrlIntragnoss">Url intragnoss</param>
+        /// <param name="pProyectoID">Identifier of the project</param>
+        /// <param name="pFacetadoCN">FacetadoCN initializated</param>
+        /// <exception cref="Exception"></exception>
+        private void InsertarTriplesCollection(Thesaurus pTesauro, string pUrlIntragnoss, Guid pProyectoID, FacetadoCN pFacetadoCN)
+        {
+            pFacetadoCN.InsertarTriplesCollection(pTesauro, pUrlIntragnoss, pProyectoID);
+        }
+
+        /// <summary>
+        /// Add triples to the string builder to generate the Concept in the ontology graph (RdfType, Label, Symbol, Source, Identifier)
+        /// </summary>
+        /// <param name="pConcept">Concept to be generated</param>
+        /// <param name="pStringBuilder">StringBuilder where the triples will be stored</param>
+        /// <param name="pSujeto">Subject of the Concept to generate</param>
+        /// <param name="pSource">Source of the thesaurus</param>
+        private void GenerarTriplesConceptGrafoOntologia(Concept pConcept, StringBuilder pStringBuilder, string pSujeto, string pSource)
+        {
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2008/05/skos#Concept> . ");
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://www.w3.org/2000/01/rdf-schema#label> \"http://www.w3.org/2008/05/skos#Concept\" . ");
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#symbol> \"{pConcept.Symbol}\" . ");
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://purl.org/dc/elements/1.1/source> \"{pSource}\" . ");
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://purl.org/dc/elements/1.1/identifier> \"{pConcept.Identifier}\" . ");
+        }
+
+        /// <summary>
+        /// Add triples to the string builder to generate the Concept in the ontology graph (Symbol, Source, Identifier)
+        /// </summary>
+        /// <param name="pConcept">Concept to be generated</param>
+        /// <param name="pStringBuilder">StringBuilder where the triples will be stored</param>
+        /// <param name="pSujeto">Subject of the Concept to generate</param>
+        private void GenerarTriplesConceptGrafoBusqueda(Concept pConcept, StringBuilder pStringBuilder, string pSujeto, string pSource)
+        {
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#symbol> \"{pConcept.Symbol}\"^^<http://www.w3.org/2001/XMLSchema#int> . ");
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://purl.org/dc/elements/1.1/source> \"{pSource}\" . ");
+            pStringBuilder.AppendLine($"<{pSujeto}> <http://purl.org/dc/elements/1.1/identifier> \"{pConcept.Identifier}\" . ");
+        }
+
+        /// <summary>
+        /// Generate the triples of the property PrefLabel with their language
+        /// </summary>
+        /// <param name="pConcept">Concept that has the property preflabel</param>
+        /// <param name="pStringBuilderOntologia">StringBuilder where the triples of the ontology graph will be storage</param>
+        /// <param name="pStringBuilderBusqueda">StringBuilder where the triples of the search graph will be storage</param>
+        /// <param name="pSujeto">Subject of the Concept</param>
+        private void GenerarPrefLabelMultiIdioma(Concept pConcept, StringBuilder pStringBuilderOntologia, StringBuilder pStringBuilderBusqueda, string pSujeto)
+        {
+            foreach (string clave in pConcept.PrefLabel.Keys)
+            {
+                pStringBuilderOntologia.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#prefLabel> \"{pConcept.PrefLabel[clave]}\"@{clave} . ");
+                pStringBuilderBusqueda.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#prefLabel> \"{pConcept.PrefLabel[clave]}\"@{clave} . ");
+            }
+        }
+
+        /// <summary>
+        /// Generate the triples that define the relation between the Concepts. (Broader, Narrower, Related)
+        /// </summary>
+        /// <param name="pConcept">Concept that will be generated</param>
+        /// <param name="pStringBuilderOntologia">StringBuilder where the triples of the ontology graph will be storage</param>
+        /// <param name="pStringBuilderBusqueda">StringBuilder where the triples of the search graph will be storage</param>
+        /// <param name="pSujeto">Subject of the concept</param>
+        /// <param name="pUrlIntraGnoss">UrlIntragnoss</param>
+        /// <param name="pSource">Souce of the thesaurus</param>
+        /// <param name="pSujetoPadre">Subject of the parent of the Concept</param>
+        private void GenerarTriplesRelacionesConcept(Concept pConcept, StringBuilder pStringBuilderOntologia, StringBuilder pStringBuilderBusqueda, string pSujeto, string pUrlIntraGnoss, string pSource, string pSujetoPadre = "")
+        {
+            if (pConcept.Narrower != null)
+            {
+                foreach (Concept narrower in pConcept.Narrower)
+                {
+                    pStringBuilderOntologia.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#narrower> <{GenerarSujetoConcept(narrower, pUrlIntraGnoss, pSource)}> . ");
+                    pStringBuilderBusqueda.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#narrower> <{GenerarSujetoConcept(narrower, pUrlIntraGnoss, pSource)}> . ");
+                }
+            }
+            if (!pSujetoPadre.IsNullOrEmpty())
+            {
+                pStringBuilderOntologia.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#broader> <{GenerarSujetoString(pSujetoPadre, pUrlIntraGnoss)}> . ");
+                pStringBuilderBusqueda.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#broader> <{GenerarSujetoString(pSujetoPadre, pUrlIntraGnoss)}> . ");
+            }
+            if (pConcept.RelatedTo != null)
+            {
+                foreach (Concept relatedTo in pConcept.RelatedTo)
+                {
+                    pStringBuilderOntologia.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#related> <{GenerarSujetoConcept(relatedTo, pUrlIntraGnoss, pSource)}> . ");
+                    pStringBuilderBusqueda.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#related> <{GenerarSujetoConcept(relatedTo, pUrlIntraGnoss, pSource)}> . ");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Add the row that represents the thesaurus in the database
+        /// </summary>
+        /// <param name="pProyectoID">ProyectID</param>
+        /// <param name="pSource">Source of the thesaurus to load</param>
+        /// <param name="pScopeNote">Scope note of the Collection</param>
+        /// <param name="pSujeto">Subject of the Collection</param>
+        /// <param name="pOntologia">Ontology</param>
+        /// <param name="pUrlIntragnoss">Url intragnoss</param>
+        private void AgregarProyectoConfigExtraSem(Guid pProyectoID, string pSource, Dictionary<string, string> pScopeNote, string pSujeto, string pOntologia, string pUrlIntragnoss)
+        {
+            ProyectoConfigExtraSem filaConfig = new ProyectoConfigExtraSem();
+            filaConfig.ProyectoID = pProyectoID;
+            filaConfig.Tipo = 0;
+            filaConfig.Editable = true;
+            filaConfig.Nombre = pSource.First().ToUpper() + pSource.Substring(1);
+            filaConfig.SourceTesSem = pSource;
+            if (!string.IsNullOrEmpty(pSujeto))
+            {
+                if (pSujeto.StartsWith(pUrlIntragnoss))
+                {   
+                    filaConfig.PrefijoTesSem = pSujeto.Substring(pSujeto.LastIndexOf('/') + 1);
+                }
+                else
+                {
+                    filaConfig.PrefijoTesSem = pSujeto;
+                }
+            }
+            else
+            {
+                filaConfig.PrefijoTesSem = pSource;
+            }
+
+            List<string> listaIdiomas = pScopeNote.Keys.ToList();
+            string idiomas = string.Empty;
+            foreach (string idioma in listaIdiomas)
+            {
+                idiomas += $"{idioma},";
+            }
+            idiomas = idiomas.Substring(0, idiomas.Length - 1);
+
+            filaConfig.Idiomas = idiomas;
+            filaConfig.UrlOntologia = pOntologia;
+
+            if (mEntityContext.ProyectoConfigExtraSem.FirstOrDefault(proy => proy.ProyectoID.Equals(filaConfig.ProyectoID) && proy.UrlOntologia.Equals(filaConfig.UrlOntologia) && proy.SourceTesSem.Equals(filaConfig.SourceTesSem)) == null)
+            {
+                mEntityContext.ProyectoConfigExtraSem.Add(filaConfig);
+                mEntityContext.SaveChanges();
+            }
+        }
+
+        /// <summary>
+        /// Generate the Subject of the Concept given by parameter
+        /// </summary>
+        /// <param name="pConcept">Concept to generate the Subject</param>
+        /// <param name="pUrlIntragnoss">UrlIntragnoss</param>
+        /// <param name="pSource">Source of the tesaurus</param>
+        /// <returns>The Subject of the Concept</returns>
+        private string GenerarSujetoConcept(Concept pConcept, string pUrlIntragnoss, string pSource)
+        {
+            string sujeto = pConcept.Subject;
+            if (string.IsNullOrEmpty(sujeto))
+            {
+                sujeto = $"{pUrlIntragnoss}items/{pSource}_{pConcept.Identifier}";
+            }
+
+            if (!sujeto.StartsWith(pUrlIntragnoss))
+            {
+                sujeto = $"{pUrlIntragnoss}items/{sujeto}";
+            }
+
+            return sujeto;
+        }
+
+        /// <summary>
+        /// Generate the Subject of the Concept given by parameter
+        /// </summary>
+        /// <param name="pConceptSubject">Concept to generate the Subject</param>
+        /// <param name="pUrlIntragnoss">UrlIntragnoss</param>
+        /// <returns>The Subject of the Concept</returns>
+        private string GenerarSujetoString(string pConceptSubject, string pUrlIntragnoss)
+        {
+            string sujeto = pConceptSubject;
+
+            if (!sujeto.StartsWith(pUrlIntragnoss))
+            {
+                sujeto = $"{pUrlIntragnoss}items/{sujeto}";
+            }
+
+            return sujeto;
+        }
+
+        /// <summary>
+        /// Adjust the url of the graph adding the current UrlIntragnoss.
+        /// </summary>
+        /// <param name="pUrlGrafo">Url of the graph</param>
+        /// <returns>URL of the graph adding the current UrlIntragnoss</returns>
         private string AjustarUrlGrafoSegunUrlIntragnoss(string pUrlGrafo)
         {
             if (pUrlGrafo.Contains("/"))
@@ -546,5 +1205,22 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             return UrlIntragnoss + pUrlGrafo;
         }
+
+        /// <summary>
+        /// Makes sure that the ontology end with .owl if it dont, if it end with with .owl don't do nothing
+        /// </summary>
+        /// <param name="pOntology">Ontology name</param>
+        /// <returns>The ontology name ending with .owl</returns>
+        private string ParsearOntologia(string pOntology)
+        {
+            if (!pOntology.EndsWith(".owl"))
+            {
+                pOntology += ".owl";
+            }
+
+            return pOntology;
+        }
+
+        #endregion
     }
 }

@@ -22,6 +22,7 @@ namespace Gnoss.Web.Api
                 {
                     webBuilder.UseStartup<Startup>();
                     webBuilder.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 1000000000); // Maximo tamaño de subida ~ 1Gb
+                    AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
                 });
     }
 }

@@ -1058,7 +1058,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (gestorDocumental.ListaDocumentos.ContainsKey(documentoID))
                 {
-                    UtilIdiomas = new Recursos.UtilIdiomas(parameters.language, mLoggingService, mEntityContext, mConfigService);
+                    UtilIdiomas = new UtilIdiomas(parameters.language, mLoggingService, mEntityContext, mConfigService);
                     Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[documentoID];
                     urlDocumento = mControladorBase.UrlsSemanticas.GetURLBaseRecursosFicha(UrlIntragnoss, UtilIdiomas, parameters.community_short_name, null, documento, false);
                     ResponseGetUrl claveValor = new ResponseGetUrl();
@@ -1191,7 +1191,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Sets the readers of the resuorce
+        /// Set the readers of the resuorce
         /// </summary>
         /// <param name="parameters">
         /// resource_id = resource identifier Guid
@@ -2129,13 +2129,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         public void Delete(DeleteParams parameters)
         {
             DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            mNombreCortoComunidad = parameters.community_short_name;
             FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, FilaProy.ProyectoID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
             try
             {
-                mNombreCortoComunidad = parameters.community_short_name;
-                facetadoCN = new FacetadoCN(UrlIntragnoss, FilaProy.ProyectoID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                
                 bool usarReplicacion = false;
-
                 //documento
                 GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
                 DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
@@ -2391,7 +2390,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
                 facetadoAD.IniciarTransaccion();
 
-                facetadoCN.BorrarRecurso(identidad.PerfilID.ToString(), documento.Clave, prioridad);                
+                facetadoCN.BorrarRecurso(identidad.PerfilID.ToString(), documento.Clave, prioridad);
 
                 if (documento.TipoDocumentacion == TiposDocumentacion.Hipervinculo)
                 {
@@ -2428,7 +2427,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 mLoggingService.GuardarLogError(ex);
                 documentacionCN.TerminarTransaccion(false);
                 facetadoCN.TerminarTransaccion(false);
-                
+
                 if (documentacionCN != null)
                 {
                     documentacionCN.Dispose();
@@ -3469,7 +3468,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             try
             {
-                mLoggingService.GuardarLogError("Entra en  CreateComplexOntologyResource");
+                //mLoggingService.GuardarLogError("Entra en  CreateComplexOntologyResource");
 
                 parameters.priority = (int)PrioridadBase.ApiRecursos;
                 if (parameters.end_of_load)
@@ -4187,7 +4186,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             Dictionary<Guid, List<MetaKeyword>> dicMetaKeywords = new Dictionary<Guid, List<MetaKeyword>>();
             if (documento != null)
             {
-                CallFileService servicioArch = new CallFileService(mConfigService);
+                CallFileService servicioArch = new CallFileService(mConfigService, mLoggingService);
                 byte[] byteArray = servicioArch.ObtenerXmlOntologiaBytes(documento.DocumentoID);
 
                 if (byteArray != null)
@@ -4400,13 +4399,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             else if (!objeto.StartsWith("\"") || !objeto.EndsWith("\""))
             {
                 // El objeto no está envuelto en dobles comillas, se las añado
-                objeto = $"\"{objeto.Replace("\"", "''")}\"{pLanguage}";
+                objeto = $"\"{objeto.Replace("\"", "\\\"")}\"{pLanguage}";
             }
             else
             {
                 // El objeto está envuelto en dobles comillas, 
                 // por si acaso se las quito, reemplazo el resto de dobles comillas y se las vuelvo a poner
-                objeto = $"\"{objeto.Trim('\"').Replace("\"", "''")}\"{pLanguage}";
+                objeto = $"\"{objeto.Trim('\"').Replace("\"", "\\\"")}\"{pLanguage}";
             }
 
             pStringBuilder.AppendLine($"<{sujeto}> <{predicado}> {objeto}. ");
@@ -4626,7 +4625,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     else
                     {
                         ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
-                        servicioImagenes.Url = UrlIntragnossServicios;
+                        servicioImagenes.Url = UrlServicioInterno;
                         byteArray = servicioImagenes.ObtenerImagen($"{UtilArchivos.ContentImagenesDocumentos}/{UtilArchivos.DirectorioDocumento(resource_id)}/{resource_id}", ext);
                         if (byteArray != null)
                         {
@@ -5344,6 +5343,52 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
+        /// <summary>
+        /// Get an attached file from a semantic resource
+        /// </summary>
+        /// <param name="resource_id">Identifier of the resource</param>
+        /// <param name="file_name">Name of the file attached with extension</param>
+        /// <param name="community_short_name">Short name of the community where the resource are</param>
+        /// <param name="language">Only if the property is multilanguage. The language which we want the file. es, en, de, ca, eu, fr, gl, it, pt</param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        [HttpGet, Route("get-attached-file-semantic-resource")]
+        public byte[] GetAttachedFileFromSemanticResource(Guid resource_id, string file_name, string community_short_name, string language)
+        {
+            mNombreCortoComunidad = community_short_name;
+            
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(community_short_name);
+
+            if (proyectoID.Equals(Guid.Empty))
+            {
+                throw new Exception($"Project short name {community_short_name} doesn't exist.");
+            }
+
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            
+            if(!documentacionCN.ExisteDocumentoEnProyecto(proyectoID, resource_id))
+            {
+                throw new Exception($"The document {resource_id} doesn't exist in the proyect {community_short_name}");
+            }
+
+            string nombreFichero = file_name.Substring(0, file_name.LastIndexOf('.'));
+            string extension = $"{file_name.Substring(file_name.LastIndexOf('.'))}";
+
+            GestionDocumental gestorDocumental = new GestionDocumental(mLoggingService, mConfigService);
+            gestorDocumental.Url = UrlServicioWebDocumentacion;
+                        
+            string directorio = Path.Combine(UtilArchivos.ContentDocumentosSem, resource_id.ToString().Substring(0, 2), resource_id.ToString().Substring(0, 4), resource_id.ToString());
+            if (!string.IsNullOrEmpty(language))
+            {
+                directorio = Path.Combine(directorio, language);
+            }
+
+            byte[] byteArray = gestorDocumental.ObtenerDocumentoDeDirectorio(directorio, nombreFichero, extension);
+
+            return byteArray;
+        }
+        
         #endregion
 
         #region Métodos privados
@@ -5360,17 +5405,24 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 long ticks;
                 if (fechaDocumentoEnEdicion.HasValue && long.TryParse(token, out ticks) && ticks.Equals(fechaDocumentoEnEdicion.Value.Ticks))
                 {
-                    //TODO Javier UtilPeticion.AgregarObjetoAPeticionActual("X-Correlation-ID", ticks);
                     DateTime? fecha = docCN.ActualizarFechaRecursoEnEdicion(pDocumentoID, fechaDocumentoEnEdicion.Value);
 
                     if (fecha.HasValue)
                     {
                         // Añadir en el response la cabecera X-Correlation-ID
                         mHttpContextAccessor.HttpContext.Response.Headers.Add("X-Correlation-ID", fecha.Value.Ticks.ToString());
+                        return false;
                     }
                     else
                     {
                         throw new GnossException($"The resource {pDocumentoID} has been blocked by other updates for more than 60 seconds. Try again later ", HttpStatusCode.Conflict);
+                    }
+                }
+                else if (!fechaDocumentoEnEdicion.HasValue || DateTime.UtcNow > fechaDocumentoEnEdicion.Value)
+                {
+                    if (fechaDocumentoEnEdicion.HasValue)
+                    {
+                        docCN.FinalizarEdicionRecurso(pDocumentoID);
                     }
                 }
                 else
@@ -5378,9 +5430,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     throw new GnossException($"The resource {pDocumentoID} has been blocked by other updates for more than 60 seconds. Try again later ", HttpStatusCode.Conflict);
                 }
             }
-            else
+
+            if (!documentoBloqueado)
             {
                 DocumentoEnEdicion filaEdicion = docCN.ComprobarDocumentoEnEdicion(pDocumentoID, pIdentidadID);
+
+                if (mHttpContextAccessor.HttpContext.Request.Headers != null && !string.IsNullOrEmpty(mHttpContextAccessor.HttpContext.Request.Headers["X-Correlation-ID"]))
+                {
+                    mHttpContextAccessor.HttpContext.Response.Headers.Add("X-Correlation-ID", filaEdicion.FechaEdicion.Ticks.ToString());
+                }
 
                 if (filaEdicion != null)
                 {
@@ -7017,7 +7075,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         {
                             //Solo hay que eliminarlo de virtuoso si estamos versionando.
                             ControladorDocumentacion.BorrarRDFDeVirtuoso(documentoEdicion.Clave.ToString(), nombreOntologia, UrlIntragnoss, null, FilaProy.ProyectoID, usarReplicacion);
-                            //ControladorDocumentacion.BorrarRDFDeBDRDF(documentoEdicion.Clave);
+                            ControladorDocumentacion.BorrarRDFDeBDRDF(documentoEdicion.Clave);
                             //throw;
                         }
                         else //Borro de BD RDF para que vaya a virtuoso a por el la Web:
@@ -7028,7 +7086,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 {
                                     //Guardar en Virtuoso lo que hay en la BD RDF (que es lo que había antes en Virtuoso, es decir, el rdf viejo)
                                     ControladorDocumentacion.GuardarRDFEnVirtuoso(entidadesPrincAntiguas, nombreOntologia, UrlIntragnoss, "acid", FilaProy.ProyectoID, parameters.resource_id.ToString(), false, "", false, usarReplicacion, (short)parameters.priority);
-                                    //ControladorDocumentacion.GuardarRDFEnBDRDF(rdfTexto, documentoEdicion.Clave, FilaProy.ProyectoID);
+                                    ControladorDocumentacion.GuardarRDFEnBDRDF(rdfTexto, documentoEdicion.Clave, FilaProy.ProyectoID);
                                     //throw;
                                 }
                             }
@@ -7709,9 +7767,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 EstablecerIdiomasRecurso(pOntologia, mInstanciasPrincipales, idiomasDisponible);
 
-
-
-
                 //validar categorias(si no es semantico validar las categorias en el metodo anterior en la pila) y rdf
                 //lista que almacena las categorias y si en la comunidad no es obligatorio categorizar sobre el tesauro de GNOSS
                 List<object> listaParametrosCategorias = new List<object>();
@@ -7880,7 +7935,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     try
                     {
                         //Guardado de los triples en el modelo ACID.
-                        //ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, pDocumentoID, FilaProy.ProyectoID, rdfDS);
+                        ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, pDocumentoID, FilaProy.ProyectoID, rdfDS);
                     }
                     catch (Exception)
                     {
@@ -8218,7 +8273,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                                 foreach (string valor in listaValores.Keys)
                                 {
-                                    propiedad.ListaValores.Add(valor.Replace(antiguoID, pAntiguosNuevosIDs[antiguoID]), listaValores[valor]);
+                                    string key = valor.Replace(antiguoID, pAntiguosNuevosIDs[antiguoID]);
+                                    if (!propiedad.ListaValores.ContainsKey(key))
+                                    {
+                                        propiedad.ListaValores.Add(key, listaValores[valor]);
+                                    }
                                 }
                             }
                         }
@@ -8348,9 +8407,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                 servicioImagenes.Url = UrlServicioImagenes;
 
-                //TODO Javier migrar peticion rest
-                //ServicioDocumentosLink servDocLink = new ServicioDocumentosLink();
-                //servDocLink.Url = UrlServicioDocumentosLink;
+                CallInterntService servDocLink = new CallInterntService(mConfigService, mLoggingService);
 
                 foreach (AttachedResource adjunto in pListaArchivosAdjuntos)
                 {
@@ -8539,11 +8596,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 throw new GnossException("The link attachments do not correspond to those indicated in the RDF. Perhaps the property that is being given a value is not set as 'ArchivoLink'.", HttpStatusCode.BadRequest);
                             }
 
-                            //TODO Javier descomentar
-                            /*if (!servDocLink.AgregarDocumento(adjunto.rdf_attached_file, pDocumentoID, idioma + nombreDefArc, extension))
+                            if (!servDocLink.AgregarDocumento(adjunto.rdf_attached_file, pDocumentoID, idioma + nombreDefArc, extension))
                             {
                                 throw new GnossException("Incorrect attached link files.", HttpStatusCode.BadRequest);
-                            }*/
+                            }
                         }
                     }
                 }
@@ -9155,14 +9211,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             else
             {
-                Uri uri = null;
-                Uri.TryCreate(pObjeto, UriKind.Absolute, out uri);
+                //Uri uri = null;
+                //Uri.TryCreate(pObjeto, UriKind.Absolute, out uri);
 
-                if (uri != null && pObjeto.Contains("http://") && !pObjeto.Contains("|") && !pObjeto.Contains(" ") && !pObjeto.Contains(","))
-                {
-                    pSb.AppendLine($"<{pSujeto}> <{pPredicado}> <{pObjeto}> . ");
-                }
-                else
+                //if (uri != null && pObjeto.Contains("http://") && !pObjeto.Contains("|") && !pObjeto.Contains(" ") && !pObjeto.Contains(","))
+                //{
+                //    pSb.AppendLine($"<{pSujeto}> <{pPredicado}> <{pObjeto}> . ");
+                //}
+                //else
                 {
                     pSb.AppendLine($"<{pSujeto}> <{pPredicado}> {GenerarObjetoStringParaTriple(pObjeto, pIdioma)} . ");
 
@@ -9182,7 +9238,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 pIdioma = $"@{pIdioma}";
             }
             pObjeto = pObjeto.Replace("\n", "").Replace("\r", "").Replace("\\", "\\\\");
-            return $"\"{pObjeto.Replace("\"", "''")}\"{pIdioma}";
+            return $"\"{pObjeto.Replace("\"", "\\\"")}\"{pIdioma}";
         }
 
         private string GenerarTripleBusqueda(Guid pDocID, bool pEsEntidadPrincipal, Propiedad pPropiedad, string pValor, string pIdioma = null)
@@ -9671,7 +9727,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
                 string grafoOntología = $"<{UrlIntragnoss}{nombreOntologia}>";
 
-                FacetadoDS facetadoDS = facetadoAD.LeerDeVirtuoso($"SELECT ?s FROM {grafoOntología} WHERE {{<{UrlIntragnoss}{parameters.resource_id}> <http://gnoss/hasEntidad> ?s. ?s rdf:type <{parameters.previous_type}>}}", "Uri", nombreOntologia);
+                FacetadoDS facetadoDS = facetadoAD.LeerDeVirtuoso($"SELECT ?s FROM {grafoOntología} WHERE {{<{UrlIntragnoss}{parameters.resource_id}> <http://gnoss/hasEntidad> ?s. ?s rdf:type <{parameters.previous_type}>}}", "Uri", nombreOntologia, true);
                 string sujeto = null;
                 if (facetadoDS.Tables["Uri"].Rows.Count > 0)
                 {
@@ -9724,7 +9780,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             catch (Exception ex)
             {
                 mLoggingService.GuardarLogError($"Error al actualizar virtuoso: {ex.Message}");
-                throw new GnossException($"Error: {ex.Message}", HttpStatusCode.InternalServerError);                
+                throw new GnossException($"Error: {ex.Message}", HttpStatusCode.InternalServerError);
             }
 
         }
@@ -10070,7 +10126,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
 
                     // SemWeb
-
                     try
                     {
                         listaTriplesSemanticos = ControladorDocumentacion.GuardarRDFEnVirtuoso(instanciasPrincipales, nombreOntologia, UrlIntragnoss, "acid", documento.FilaDocumento.ProyectoID.Value, parameters.resource_id.ToString(), false, infoExtra_Replicacion, documento.EsBorrador, usarColaReplicacion, (short)prioridadBase, sbTriplesInsertar, sbTriplesEliminar);
@@ -10084,8 +10139,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                         try
                         {
-                            //ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, parameters.resource_id, documento.FilaDocumento.ProyectoID.Value, rdfDS);
-
+                            ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, parameters.resource_id, documento.FilaDocumento.ProyectoID.Value, rdfDS);
                             Guardar(listaProyectosActualNumRec, gestorDoc, documentoEdicion);
 
                             if (documentoEdicion.TipoDocumentacion == TiposDocumentacion.Semantico)
@@ -10135,8 +10189,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     docCN.FinalizarEdicionRecurso(parameters.resource_id);
                 }
             }
-            // Actualizar cola GnossLIVE
 
+            // Actualizar cola GnossLIVE
             ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
             foreach (Guid baseRecurso in documentoEdicion.BaseRecursos)
             {

@@ -109,12 +109,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
                 foreach (TripleWrapper triple in triplesComInsertar)
                 {
-                    triplesComInsertarDef += facetadoAD.GenerarTripletaSinConversionesAbsurdas(PasarObjetoALower(triple.Subject, listaAux), triple.Predicate, PasarObjetoALower(triple.Object, listaAux), triple.ObjectLanguage, triple.ObjectType);
+                    triplesComInsertarDef += facetadoAD.GenerarTripletaSinConversionesAbsurdas(triple.Subject.ToLowerSearchGraph(), triple.Predicate, triple.Object.ToLowerSearchGraph(), triple.ObjectLanguage, triple.ObjectType);
                 }
 
                 foreach (TripleWrapper triple in triplesComBorrar)
                 {
-                    triplesComBorrarDef.Add(new TripleWrapper { Subject = PasarObjetoALower(triple.Subject, listaAux), Predicate = triple.Predicate, Object = PasarObjetoALower(triple.Object, listaAux), ObjectLanguage = triple.ObjectLanguage, ObjectType = triple.ObjectType });
+                    triplesComBorrarDef.Add(new TripleWrapper { Subject = triple.Subject.ToLowerSearchGraph(), Predicate = triple.Predicate, Object = triple.Object.ToLowerSearchGraph(), ObjectLanguage = triple.ObjectLanguage, ObjectType = triple.ObjectType });
                 }
 
                 FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
@@ -123,6 +123,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 facCN.BorrarGrupoTripletasEnLista(nombreOntologia, triplesComBorrar, true);
                 facCN.InsertaTripletas(nombreOntologia, triplesInsertar, (short)PrioridadBase.ApiRecursos, true);
 
+                //Se añade el proyecto por si es un proyecto hijo, ya que en este caso la ontologia pertenece al padre y no se guardan los triples en el grafo de busqueda de la hija
+                if (!docOnto.ListaProyectos.Contains(Proyecto.Clave))
+                {
+                    docOnto.ListaProyectos.Add(Proyecto.Clave);
+                }
                 //Guardo triples en los proyectos en los que está subido y compartido el grafo:
                 foreach (Guid proyectoID in docOnto.ListaProyectos)
                 {
