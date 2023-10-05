@@ -1,8 +1,10 @@
-﻿using System;
+﻿using Microsoft.Azure.Amqp.Framing;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Web;
+using static Es.Riam.Gnoss.Web.MVC.Models.Tesauro.TesauroModels;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
 {
@@ -249,4 +251,125 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         public Guid parent_category_id { get; set; }
     }
+
+    
+
+    /// <summary>
+    /// Model with the parameters to add a new Concept to a Thesaurus
+    /// </summary>
+    public class ConceptToAddModel
+    {
+		/// <summary>
+		/// Represents a Concept according to the Ontology
+		/// </summary>
+		[Required]
+        public Concept Concept { get; set; }
+
+		/// <summary>
+		/// Source of the Thesaurus to load
+		/// </summary>
+		[Required]
+        public string Source {get;set;}
+
+		/// <summary>
+		/// Name of the ontology
+		/// </summary>
+		[Required]
+        public string Ontology { get; set; }
+
+        /// <summary>
+        /// Subject parent of the category to load
+        /// </summary>
+        public string ParentCategorySubject { get; set; }
+
+        /// <summary>
+        /// Short name of the community
+        /// </summary>
+        public string CommunityShortName { get; set; }
+	}
+
+	/// <summary>
+	/// Model with the parameters to add a new Concept to a Thesaurus
+	/// </summary>
+	public class ConceptToDeleteModel
+	{
+        /// <summary>
+        /// Subject of the concept to delete
+        /// </summary>
+        public string ConceptSubject { get; set; }        
+
+		/// <summary>
+		/// Name of the ontology
+		/// </summary>
+		[Required]
+		public string Ontology { get; set; }
+
+		/// <summary>
+		/// Short name of the community
+		/// </summary>
+		public string CommunityShortName { get; set; }
+	}
+
+	/// <summary>
+	/// Model with the parameters to modify a Concept for the Thesaurus
+	/// </summary>
+	public class ConceptToModifyModel
+	{
+		/// <summary>
+		/// Represents a Concept according to the Ontology
+		/// </summary>
+		[Required]
+		public Concept Concept { get; set; }
+
+		/// <summary>
+		/// Source of the Thesaurus to load
+		/// </summary>
+		[Required]
+		public string Source { get; set; }
+
+		/// <summary>
+		/// Name of the ontology
+		/// </summary>
+		[Required]
+		public string Ontology { get; set; }
+
+		/// <summary>
+		/// Short name of the community
+		/// </summary>
+		public string CommunityShortName { get; set; }
+
+        /// <summary>
+        /// Indicates if the method has to modify the narrowers
+        /// </summary>
+        public bool ModifyNarrower { get; set; }
+
+		/// <summary>
+		/// Subject parent of the category to load
+		/// </summary>
+		public string ParentCategorySubject { get; set; }
+	}
+
+	/// <summary>
+	/// Model with the params to delete the indicated thesaurus
+	/// </summary>
+	public class ThesaurusToDeleteModel
+	{
+		/// <summary>
+		/// Short name of the community when the thesaurus will be deleted
+		/// </summary>
+		[Required]
+		public string CommunityShortName { get; set; }
+
+		/// <summary>
+		/// Name of the ontology
+		/// </summary>
+		[Required]
+		public string Ontology { get; set; }
+
+		/// <summary>
+		/// Source of the Thesaurus to delete
+		/// </summary>
+		[Required]
+		public string Source { get; set; }
+	}
 }

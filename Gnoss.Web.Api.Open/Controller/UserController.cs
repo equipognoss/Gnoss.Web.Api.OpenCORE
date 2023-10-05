@@ -871,7 +871,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         [HttpPost, Route("add-user-to-organization")]
         public void AltaUsuarioEnOrganizacion(ParamsAddUserOrg parameters)
         {
-            if (!string.IsNullOrEmpty(parameters.organization_short_name) && !string.IsNullOrEmpty(parameters.position))
+             if (!string.IsNullOrEmpty(parameters.organization_short_name) && !string.IsNullOrEmpty(parameters.position))
             {
                 UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
                 if (usuCN.ExisteUsuarioEnBD(parameters.user_id))
@@ -888,6 +888,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             Guid organizacionID = orgCN.ObtenerOrganizacionesIDPorNombre(parameters.organization_short_name);
                             List<Guid> listaProyectosID = new List<Guid>();
                             ValidarNombresProyectosYOrganizacion(organizacionID, parameters.communities_short_names, out listaProyectosID);
+
+                            //Comprobar si el usuario participa ya en alguna de las comunidades
+                            if (comprobarUsuarioExisteConIdentitidadEnProyecto(parameters.user_id, listaProyectosID))
+                            {
+                                throw new GnossException("The user exist in the community", HttpStatusCode.BadRequest);
+                            }
 
                             //Necesitamos cargar la tabla: OrganizacionParticipaProy para registrar a la org en esas comunidades...
                             GestionOrganizaciones gestOrg = new GestionOrganizaciones(orgCN.ObtenerOrganizacionPorID(organizacionID), mLoggingService, mEntityContext);
@@ -1088,7 +1094,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("The parameters organization_short_name and position cannot be null or empty", HttpStatusCode.BadRequest);
             }
         }
-
         /// <summary>
         /// Add a user to organization groups
         /// </summary>
@@ -1850,6 +1855,21 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
         #region Métodos privados
 
+        private bool comprobarUsuarioExisteConIdentitidadEnProyecto(Guid pUserID, List<Guid> pListaProyectosID)
+        {
+            bool tieneIdentidadEnProyecto = false;
+            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            foreach (Guid proyectoID in pListaProyectosID)
+            {
+                if (identCN.ObtenerIdentidadUsuarioEnProyecto(pUserID, proyectoID).Equals(Guid.Empty))
+                {
+                    return true;
+                }
+            }
+            return tieneIdentidadEnProyecto;
+            
+        }
+
         /// <summary>
         /// Da de alta a un nuevo usuario en Gnoss y en una serie de comunidades.
         /// </summary>
@@ -1876,22 +1896,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             string RegExPatternPass = "(?!^[0-9]*$)(?!^[a-zA-ZñÑüÜ]*$)^([a-zA-ZñÑüÜ0-9#_$*]{6,12})$";
             Regex r = new Regex(RegExPatternPass);
 
-            //se quita la validación de la contraseña porque para integrar el método en entornos en los que la contraseña nos viene heredada,
-            //no podemos imponer nuestras restricciones
-            //if (!string.IsNullOrEmpty(pPassword) && !r.IsMatch(pPassword))
-            //{
-            //    error = "Error: El dato 'password' no tiene un formato correcto. La contraseña debe tener entre 6 y 12 caracteres, al menos una letra y un número, y no puede contener caracteres especiales, excepto: '#', '_', '$' y '*'.";
-            //    GuardarLogError(error);
-            //    throw new Exception(error);
-            //}
-            /*
-            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService);
-            if (personaCN.ExisteEmail(pUsuarioJSON.email))
-            {
-                throw new GnossException("The email is already being used", HttpStatusCode.BadRequest);
-            }
-            personaCN.Dispose();*/
-
             //Comprobar sexo
             if (!string.IsNullOrEmpty(pUsuarioJSON.sex) && pUsuarioJSON.sex != "H" && pUsuarioJSON.sex != "M")
             {
@@ -1910,20 +1914,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             personaCN.Dispose();
 
             //Comprobamos que no exista el usuario:
-            int count = 0;
             UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            //no es necesario esto
-            /*while (usuarioCN.ExisteUsuarioEnBD(login))
-            {
-                if (count > 0)
-                {
-                    login = login.Substring(0, login.Length - count.ToString().Length);
-                }
-
-                count++;
-                login += count.ToString();
-            }*/
-
+           
             string password = "";
             if (!string.IsNullOrEmpty(pUsuarioJSON.password))
             {
@@ -2273,7 +2265,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             try
             {
-                ControladorIdentidades.NotificarEdicionPerfilEnProyectos(TipoAccionExterna.Registro, filaPersona.PersonaID, "", "");
+                ControladorIdentidades.NotificarEdicionPerfilEnProyectos(TipoAccionExterna.Registro, filaPersona.PersonaID, "", "", filaIdentidad.ProyectoID);
             }
             catch (Exception ex)
             {
@@ -2676,6 +2668,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     usuario.preferences.Add(ObtenerCategoriasJerarquicas(filaCat.CategoriaTesauroID, gestorTesauro.ListaCategoriasTesauro));
                 }
             }
+
+            //Contadores
+            UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            usuario.num_access = usuCN.ObtenerContadorDeAccesosDeUsuario(pIdentidad.Persona.UsuarioID);
+            usuario.last_login = usuCN.ObtenerFechaUltimoAccesoDeUsuario(pIdentidad.Persona.UsuarioID);
+            usuCN.Dispose();
 
             return usuario;
         }
@@ -3255,44 +3253,27 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             identidadCL.InvalidarCachesMultiples(listaClavesInvalidar);
             identidadCL.Dispose();
         }
+
         [NonAction]
         private string GenerarLoginUsuario(string pNombre, string pApellidos, ref int pHashNumUsu)
         {
-            string loginUsuario = UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pNombre) + '-' + UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pApellidos);
+            string loginUsuario = $"{UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pNombre)}-{UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pApellidos)}";
             if (loginUsuario.Length > 12)
             {
                 loginUsuario = loginUsuario.Substring(0, 12);
             }
+
             UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
             if (usuarioCN.ExisteUsuarioEnBD(loginUsuario))
             {
                 loginUsuario = usuarioCN.ObtenerLoginLibre(loginUsuario);
             }
 
-            //Antes de la migracion del V2 Incidencia LRE-145
-            //while (usuarioCN.ExisteUsuarioEnBD(loginUsuario))
-            //{
-            //    loginUsuario = loginUsuario.Substring(0, loginUsuario.Length - pHashNumUsu.ToString().Length) + pHashNumUsu.ToString();
-            //    pHashNumUsu++;
-            //}
             usuarioCN.Dispose();
 
             return loginUsuario;
         }
 
-        //Antes de la migracion del V2 Incidencia LRE-145
-        //private string GenerarNombreCortoUsuario(string pLoginUsuario, ref int hashNumUsu)
-        //{
-        //    UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService);
-        //    string nombreCortoUsuario = pLoginUsuario;
-        //    while (usuarioCN.ExisteNombreCortoEnBD(nombreCortoUsuario))
-        //    {
-        //        nombreCortoUsuario = nombreCortoUsuario.Substring(0, nombreCortoUsuario.Length - hashNumUsu.ToString().Length) + hashNumUsu.ToString();
-        //        hashNumUsu++;
-        //    }
-        //    usuarioCN.Dispose();
-        //    return nombreCortoUsuario;
-        //}
         [NonAction]
         public string GenerarNombreCortoUsuario(ref string pLoginUsuario, string pNombre, string pApellidos, DataWrapperUsuario pDataWrapperUsuario, int pIntentos = 0)
         {

@@ -805,7 +805,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// Main image
         /// </summary>
-        [Required]
         public string main_image { get; set; }
     }
 
@@ -1120,7 +1119,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// Bytes of the attached file
         /// </summary>
-        [Required]
         public byte[] rdf_attached_file { get; set; }
 
         /// <summary>

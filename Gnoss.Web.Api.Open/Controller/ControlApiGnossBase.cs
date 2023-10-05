@@ -18,6 +18,7 @@ using Es.Riam.Gnoss.CL.Identidad;
 using Es.Riam.Gnoss.CL.ParametrosAplicacion;
 using Es.Riam.Gnoss.CL.ServiciosGenerales;
 using Es.Riam.Gnoss.CL.Tesauro;
+using Es.Riam.Gnoss.CL.Trazas;
 using Es.Riam.Gnoss.Elementos.Documentacion;
 using Es.Riam.Gnoss.Elementos.Identidad;
 using Es.Riam.Gnoss.Elementos.ParametroAplicacion;
@@ -84,6 +85,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         protected EntityContextBASE mEntityContextBASE;
         protected ControladorBase mControladorBase;
         protected IServicesUtilVirtuosoAndReplication mServicesUtilVirtuosoAndReplication;
+        private static object BLOQUEO_COMPROBACION_TRAZA = new object();
+        private static DateTime HORA_COMPROBACION_TRAZA;
 
         public ControlApiGnossBase(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
         {
@@ -111,6 +114,32 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     mLoggingService.GuardarLog($"Firma incorrecta: {UtilOAuth.ObtenerUrlGetDePeticionOAuth(Request)}");
 
                     controllerContext.Result = Unauthorized("Invalid OAuth signature");
+                }
+                //Comprobar traza
+                if (DateTime.Now > HORA_COMPROBACION_TRAZA)
+                {
+                    lock (BLOQUEO_COMPROBACION_TRAZA)
+                    {
+                        if (DateTime.Now > HORA_COMPROBACION_TRAZA)
+                        {
+                            HORA_COMPROBACION_TRAZA = DateTime.Now.AddSeconds(15);
+                            TrazasCL trazasCL = new TrazasCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+                            string tiempoTrazaResultados = trazasCL.ObtenerTrazaEnCache("api");
+
+                            if (!string.IsNullOrEmpty(tiempoTrazaResultados))
+                            {
+                                int valor = 0;
+                                int.TryParse(tiempoTrazaResultados, out valor);
+                                LoggingService.TrazaHabilitada = true;
+                                LoggingService.TiempoMinPeticion = valor; //Para sacar los segundos
+                            }
+                            else
+                            {
+                                LoggingService.TrazaHabilitada = false;
+                                LoggingService.TiempoMinPeticion = 0;
+                            }
+                        }
+                    }
                 }
 
                 base.OnActionExecuting(controllerContext);

@@ -51,7 +51,20 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (!string.IsNullOrEmpty(parameters.subject) && !string.IsNullOrEmpty(parameters.message))
                 {
-                    if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+					Guid proyectoID = ProyectoAD.MyGnoss;
+
+					if (!string.IsNullOrEmpty(parameters.community_short_name))
+					{
+						ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+						proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(parameters.community_short_name);
+
+						if (proyectoID.Equals(Guid.Empty))
+						{
+							proyectoID = ProyectoAD.MyGnoss;
+						}
+					}
+					
+                    if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || EsAdministradorProyecto(UsuarioOAuth, proyectoID))
                     {
                         List<string> listaEmails = new List<string>();
                         List<string> noEncontrados = new List<string>();
@@ -97,20 +110,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 noEncontrados.Add(destinatario);
                             }
                         }
-
-                        Guid proyectoID = ProyectoAD.MyGnoss;
-
-                        if (!string.IsNullOrEmpty(parameters.community_short_name))
-                        {
-                            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                            proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(parameters.community_short_name);
-
-                            if (proyectoID.Equals(Guid.Empty))
-                            {
-                                proyectoID = ProyectoAD.MyGnoss;
-                            }
-                        }
-
+                       
                         if (parameters.transmitter_mail_configuration == null)
                         {
                             EnviarNotificacion(listaEmails, parameters.subject, parameters.message, parameters.is_html, parameters.sender_mask, proyectoID);

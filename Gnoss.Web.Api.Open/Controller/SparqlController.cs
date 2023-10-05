@@ -83,6 +83,42 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// Get a DataSet with the result of the query
         /// </summary>
         /// <param name="sparql_query">Sparql parameters</param>
+        /// <returns>SPARQL Query Results in CSV</returns>
+        [HttpPost, Route("querycsv")]
+        public ActionResult QueryVirtuosoCSV(SparqlQuery sparql_query)
+        {
+            string csvResponse = string.Empty;
+
+            if (TienePermisoAplicacionEnOntologia(sparql_query.ontology))
+            {
+                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(sparql_query.community_short_name);
+
+                string communityQuery = "";
+                string query = JuntarPartesConsultaSparql(new List<string> { sparql_query.ontology }, sparql_query.query_select, sparql_query.query_where);
+
+                try
+                {
+                    csvResponse = EjecutarConsultaEnVirtuosoCSV(query, sparql_query.ontology, sparql_query.ontology);
+
+                    if (!string.IsNullOrEmpty(communityQuery) && !proyectoID.Equals(Guid.Empty))
+                    {
+                        csvResponse = EjecutarConsultaEnVirtuosoCSV(communityQuery, proyectoID.ToString().ToLower(), sparql_query.ontology);
+                    }
+                }
+                catch
+                {
+                    throw new GnossException("Error in sparql endpoint.\n\rQuery: '" + query + "'", HttpStatusCode.BadRequest);
+                }
+            }
+
+            return Content(csvResponse, "text/csv");
+        }
+
+        /// <summary>
+        /// Get a DataSet with the result of the query
+        /// </summary>
+        /// <param name="sparql_query">Sparql parameters</param>
         /// <returns>SPARQL Query Results in JSON</returns>
         [HttpPost, Route("query-multiple-graph")]
         public ActionResult QueryVirtuosoMultipleGraph(SparqlQueryMultipleGraph sparql_query)
@@ -235,7 +271,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             try
             {
                 facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pNombreTabla, pOntologia);
+                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pNombreTabla, pOntologia, false, true);
                 
             }
             catch (Exception)
@@ -254,7 +290,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
 
-                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pOntologia, pOntologia);
+                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pOntologia, pOntologia, false, true);
             }
             finally
             {
@@ -266,6 +302,55 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             return jsonResultado;
+        }
+
+        /// <summary>
+        /// Lee de virtuosos a partir de una consulta SPARQL. Si hay errores por culpa de un checkpoint, la consulta se reintenta
+        /// </summary>
+        /// <param name="pDataSet">DataSet a cargar (null si es una consulta de actualización)</param>
+        /// <param name="pQuery">Query a ejecutar</param>
+        /// <param name="pOntologia">Ontología en la que se va a realizar la consulta</param>
+        /// <param name="pNombreTabla">Nombre de la tabla a cargar en el DataSet (null si es una consulta de actualización)</param>
+        /// <param name="pEsActualizacion">Verdad si es una consulta de actualización, falso si es una consulta de lectura</param>
+        private string EjecutarConsultaEnVirtuosoCSV(string pQuery, string pOntologia, string pNombreTabla)
+        {
+            FacetadoCN facetadoCN = null;
+            string csvResultado = string.Empty;
+
+            try
+            {
+                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pNombreTabla, pOntologia, false, true);
+
+            }
+            catch (Exception)
+            {
+                //Cerramos las conexiones
+                ControladorConexiones.CerrarConexiones();
+
+                DateTime horaActual = DateTime.Now;
+
+                //Realizamos una consulta ask a virtuoso para comprobar si está funcionando
+                while (!UtilidadesVirtuoso.ServidorOperativo("acid", UrlIntragnoss) && DateTime.Now < horaActual.AddMinutes(2))
+                {
+                    //Dormimos 30 segundos
+                    Thread.Sleep(30 * 1000);
+                }
+
+                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+
+                csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pOntologia, pOntologia, false, true);
+            }
+            finally
+            {
+                if (facetadoCN != null)
+                {
+                    facetadoCN.Dispose();
+                    facetadoCN = null;
+                }
+            }
+
+            return csvResultado;
         }
 
         /// <summary>
