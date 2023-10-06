@@ -2047,12 +2047,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 dni = pUsuarioJSON.id_card;
             }
 
-            if (pUsuarioJSON.extra_data != null && pUsuarioJSON.extra_data.Count > 0)
+            /*if (pUsuarioJSON.extra_data != null && pUsuarioJSON.extra_data.Count > 0)
             {
                 filaNuevoUsuario.ClausulasAdicionales = ObtenerClausulasAdicionales(pUsuarioJSON.community_id, pUsuarioJSON.extra_data);
 
                 GuardarDatosExtraSolicitud(solicitudDW, filaSolicitud, pUsuarioJSON.extra_data, filaSolicitud.OrganizacionID, pUsuarioJSON.community_id, pUsuarioJSON.community_id.Equals(ProyectoAD.MyGnoss));
-            }
+            }*/
 
             if (!string.IsNullOrEmpty(pUsuarioJSON.languaje))
             {
@@ -2080,7 +2080,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             #endregion
 
-            AceptarUsuario(filaSolicitud.SolicitudID, TipoDocumentoAcreditativo.DNI, dni, password, filaNuevoUsuario.Idioma, dataWrapperUsuario, solicitudDW);
+            AceptarUsuario(filaSolicitud.SolicitudID, TipoDocumentoAcreditativo.DNI, dni, password, filaNuevoUsuario.Idioma, dataWrapperUsuario, solicitudDW, pUsuarioJSON.extra_data, pUsuarioJSON.community_id);
             salida.Add(login, filaNuevoUsuario.UsuarioID);
 
             AgregarTraza("Acabado AceptarUsuario.");
@@ -2094,7 +2094,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// </summary>
         /// <param name="pIdSolicitud">Identificador de solicitud</param>
         /// <param name="pPassword">Contraseña</param>
-        private void AceptarUsuario(Guid pIdSolicitud, TipoDocumentoAcreditativo pTipoDocumentoAcreditativo, string pDNI, string pPassword, string pIdioma, DataWrapperUsuario pDataWrapperUsuario, DataWrapperSolicitud pDataWrapperSolicitud)
+        private void AceptarUsuario(Guid pIdSolicitud, TipoDocumentoAcreditativo pTipoDocumentoAcreditativo, string pDNI, string pPassword, string pIdioma, DataWrapperUsuario pDataWrapperUsuario, DataWrapperSolicitud pDataWrapperSolicitud, List<ExtraUserData> pDatosExtra, Guid pProyecto)
         {
             AgregarTraza("Empiezo AceptarUsuario");
 
@@ -2256,9 +2256,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             gestorUsuarios.CompletarUsuarioNuevo(filaUsuario, utilIdiomas.GetText("TESAURO", "RECURSOSPUBLICOS"), utilIdiomas.GetText("TESAURO", "RECURSOSPRIVADOS"));
 
             AgregarTraza("Completado usuario");
+            mEntityContext.SaveChanges();
+            IdentidadCN idenCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            IdentidadCL idenCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Identidad identidadnuevo = new GestionIdentidades(idenCN.ObtenerIdentidadPorID(filaIdentidad.IdentidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication).ListaIdentidades[filaIdentidad.IdentidadID];
 
-            GuardarDatosExtraDeSolicitudEnIdentidad(dataWrapperIdentidad, filaIdentidad.PerfilID, pIdSolicitud, pDataWrapperSolicitud);
-
+            //GuardarDatosExtraDeSolicitudEnIdentidad(dataWrapperIdentidad, filaIdentidad.PerfilID, pIdSolicitud, pDataWrapperSolicitud, pDatosExtra);
+            Dictionary<int, string> dicDatosExtraProyectoVirtuoso = new Dictionary<int, string>();
+            Dictionary<int, string> dicDatosExtraEcosistemaVirtuoso = new Dictionary<int, string>();
+            GuardarDatosExtra(pDatosExtra, identidadnuevo, dicDatosExtraProyectoVirtuoso, dicDatosExtraEcosistemaVirtuoso, pProyecto.Equals(ProyectoAD.MyGnoss));
             mEntityContext.SaveChanges();
 
             AgregarTraza("Datos guardados");
@@ -2272,9 +2278,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 mLoggingService.GuardarLogError(ex, " Error al enviar el usuario: " + filaPersona.UsuarioID + " a Smart Focus");
             }
 
-            IdentidadCN idenCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            IdentidadCL idenCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-            Identidad identidadnuevo = new GestionIdentidades(idenCN.ObtenerIdentidadPorID(filaIdentidad.IdentidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication).ListaIdentidades[filaIdentidad.IdentidadID];
+            
             PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
             identidadnuevo.GestorIdentidades.GestorPersonas = new GestionPersonas(persCN.ObtenerPersonaPorID(identidadnuevo.PersonaID.Value), mLoggingService, mEntityContext);
             identidadnuevo.GestorIdentidades.GestorPersonas.CargarGestor();
@@ -2696,6 +2700,43 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         [NonAction]
         private static void ObtenerListaDatosExtraUsuario(Identidad pIdentidad, DataWrapperProyecto pDataWrapperProyecto, ref List<ExtraUserData> pListaJsonDatosExtra)
         {
+            foreach (var filaDatoExtraEcosOpc in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil)
+            {
+                if (pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion != null && pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Count > 0)
+                {
+                    List<AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistema> filasDatoExtraProy = pDataWrapperProyecto.ListaDatoExtraEcosistema.Where(dato => dato.DatoExtraID.Equals(filaDatoExtraEcosOpc.DatoExtraID)).ToList();
+                    List<AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaOpcion> filasDatoExtraProyOpcion = pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Where(dato => dato.OpcionID.Equals(filaDatoExtraEcosOpc.OpcionID)).ToList();
+
+                    if (filasDatoExtraProy.Count > 0 && filasDatoExtraProyOpcion.Count > 0)
+                    {
+                        ExtraUserData datosExtraUsuario = new ExtraUserData();
+                        datosExtraUsuario.name = filasDatoExtraProy[0].Titulo;
+                        datosExtraUsuario.name_id = filasDatoExtraProy[0].DatoExtraID;
+                        datosExtraUsuario.value = filasDatoExtraProyOpcion[0].Opcion;
+                        datosExtraUsuario.value_id = filasDatoExtraProyOpcion[0].OpcionID;
+                        pListaJsonDatosExtra.Add(datosExtraUsuario);
+                    }
+                }
+            }
+
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil filaDatoExtraProyVirtuosoIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil)
+            {
+                if (pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso != null && pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.Count > 0)
+                {
+                    AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaVirtuoso filaDatoExtraVirtuosoProy = pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.DatoExtraID.Equals(filaDatoExtraProyVirtuosoIdent.DatoExtraID));
+
+                    if (filaDatoExtraVirtuosoProy != null)
+                    {
+                        ExtraUserData datosExtraUsuario = new ExtraUserData();
+                        datosExtraUsuario.name = filaDatoExtraVirtuosoProy.Titulo;
+                        datosExtraUsuario.name_id = filaDatoExtraVirtuosoProy.DatoExtraID;
+                        datosExtraUsuario.value_id = filaDatoExtraVirtuosoProy.DatoExtraID;
+                        datosExtraUsuario.value = filaDatoExtraProyVirtuosoIdent.Opcion;
+                        pListaJsonDatosExtra.Add(datosExtraUsuario);
+                    }
+                }
+            }
+
             foreach (AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad filaDatoExtraProyIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad)
             {
                 if (pDataWrapperProyecto.ListaDatoExtraProyecto != null && pDataWrapperProyecto.ListaDatoExtraProyecto.Count > 0)
@@ -2726,6 +2767,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         ExtraUserData datosExtraUsuario = new ExtraUserData();
                         datosExtraUsuario.name = filaDatoExtraVirtuosoProy.Titulo;
                         datosExtraUsuario.name_id = filaDatoExtraVirtuosoProy.DatoExtraID;
+                        datosExtraUsuario.value_id = filaDatoExtraVirtuosoProy.DatoExtraID;
                         datosExtraUsuario.value = filaDatoExtraProyVirtuosoIdent.Opcion;
                         pListaJsonDatosExtra.Add(datosExtraUsuario);
                     }
@@ -2883,7 +2925,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <param name="pIdSolicitud">GUID de la solicitud de usuario</param>
         /// <param name="pSolicitudDW">DS con los datos de la solicitud</param>
         [NonAction]
-        private void GuardarDatosExtraDeSolicitudEnIdentidad(DataWrapperIdentidad pDataWrapperIdentidad, Guid pPerfilID, Guid pIdSolicitud, DataWrapperSolicitud pSolicitudDW)
+        private void GuardarDatosExtraDeSolicitudEnIdentidad(DataWrapperIdentidad pDataWrapperIdentidad, Guid pPerfilID, Guid pIdSolicitud, DataWrapperSolicitud pSolicitudDW, List<ExtraUserData> pDatosExtra)
         {
             //Recorrer las tablas datoextrasolicitudproyectovirtuoso, datoextrasolicitudecosistemavirtuoso, datoextrasolicitudproyecto, datoextrasolicitudecosistema y para la solicitudID agregar los campos para el perfilID.
             foreach (DatoExtraProyectoOpcionSolicitud deevs in pSolicitudDW.ListaDatoExtraProyectoOpcionSolicitud.Where(item => item.SolicitudID.Equals(pIdSolicitud)))
@@ -2908,32 +2950,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 pDataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
                 mEntityContext.DatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
             }
-
-            foreach (DatoExtraProyectoVirtuosoSolicitud deevs in pSolicitudDW.ListaDatoExtraProyectoVirtuosoSolicitud.Where(item => item.SolicitudID.Equals(pIdSolicitud)))
-            {
-                AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = pDataWrapperIdentidad.ListaIdentidad.FirstOrDefault(identidad => identidad.PerfilID.Equals(pPerfilID) && identidad.ProyectoID.Equals(deevs.ProyectoID));
-                AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad datoExtraProyectoVirtuosoIdentidad = new AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad();
-                datoExtraProyectoVirtuosoIdentidad.OrganizacionID = deevs.OrganizacionID;
-                datoExtraProyectoVirtuosoIdentidad.ProyectoID = deevs.ProyectoID;
-                datoExtraProyectoVirtuosoIdentidad.DatoExtraID = deevs.DatoExtraID;
-                datoExtraProyectoVirtuosoIdentidad.Opcion = deevs.Opcion;
-                datoExtraProyectoVirtuosoIdentidad.IdentidadID = filaIdentidad.IdentidadID;
-                pDataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
-                mEntityContext.DatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
-            }
-
-            foreach (DatoExtraEcosistemaVirtuosoSolicitud deevs in pSolicitudDW.ListaDatoExtraEcosistemaVirtuosoSolicitud.Where(item => item.SolicitudID.Equals(pIdSolicitud)))
-            {
-                AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil datoExtraEcosistemaVirtuosoPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil();
-                datoExtraEcosistemaVirtuosoPerfil.DatoExtraID = deevs.DatoExtraID;
-                datoExtraEcosistemaVirtuosoPerfil.PerfilID = pPerfilID;
-                datoExtraEcosistemaVirtuosoPerfil.Opcion = deevs.Opcion;
-                pDataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
-                mEntityContext.DatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
-            }
-
-
         }
+
         [NonAction]
         private void GuardarDatosExtraSolicitud(DataWrapperSolicitud pSolicitudDW, Solicitud pSolicitud, List<ExtraUserData> pDatosExtraUsuario, Guid pOrganizacionID, Guid pProyectoID, bool pEsEcosistema)
         {
@@ -2983,43 +3001,37 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             DataWrapperProyecto datosExtraProyectoDWP = proyectoCN.ObtenerDatosExtraProyectoPorID(pIdentidad.FilaIdentidad.ProyectoID);
             proyectoCN.Dispose();
 
-            if (pEsEcosistema)
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil filaDatoExtraEcosistema in dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil)
             {
-                foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil filaDatoExtraEcosistema in dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil)
+                if (filaDatoExtraEcosistema.PerfilID == pIdentidad.PerfilID)
                 {
-                    if (filaDatoExtraEcosistema.PerfilID == pIdentidad.PerfilID)
-                    {
-                        mEntityContext.Entry(filaDatoExtraEcosistema).State = EntityState.Deleted;
-                    }
-                }
-
-                foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil filaDatoExtraEcosistemaVirtuoso in dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil)
-                {
-                    if (filaDatoExtraEcosistemaVirtuoso.PerfilID == pIdentidad.PerfilID)
-                    {
-                        mEntityContext.Entry(filaDatoExtraEcosistemaVirtuoso).State = EntityState.Deleted;
-                    }
-                }
-            }
-            else
-            {
-                foreach (AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad filaDatoExtra in dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad)
-                {
-                    if (filaDatoExtra.IdentidadID == pIdentidad.Clave)
-                    {
-                        mEntityContext.Entry(filaDatoExtra).State = EntityState.Deleted;
-                    }
-                }
-
-                foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad filaDatoExtraVirtuoso in dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad)
-                {
-                    if (filaDatoExtraVirtuoso.IdentidadID == pIdentidad.Clave)
-                    {
-                        mEntityContext.Entry(filaDatoExtraVirtuoso).State = EntityState.Deleted;
-                    }
+                    mEntityContext.Entry(filaDatoExtraEcosistema).State = EntityState.Deleted;
                 }
             }
 
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil filaDatoExtraEcosistemaVirtuoso in dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil)
+            {
+                if (filaDatoExtraEcosistemaVirtuoso.PerfilID == pIdentidad.PerfilID)
+                {
+                    mEntityContext.Entry(filaDatoExtraEcosistemaVirtuoso).State = EntityState.Deleted;
+                }
+            }
+            foreach (AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad filaDatoExtra in dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad)
+            {
+                if (filaDatoExtra.IdentidadID == pIdentidad.Clave)
+                {
+                    mEntityContext.Entry(filaDatoExtra).State = EntityState.Deleted;
+                }
+            }
+
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad filaDatoExtraVirtuoso in dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad)
+            {
+                if (filaDatoExtraVirtuoso.IdentidadID == pIdentidad.Clave)
+                {
+                    mEntityContext.Entry(filaDatoExtraVirtuoso).State = EntityState.Deleted;
+                }
+            }
+            mEntityContext.SaveChanges();
             Dictionary<Guid, Guid> dicDatosExtraProyecto = new Dictionary<Guid, Guid>();
             Dictionary<Guid, Guid> dicDatosExtraEcosistema = new Dictionary<Guid, Guid>();
 
@@ -3028,14 +3040,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 foreach (ExtraUserData campoExtra in pDatosExtraUsuario)
                 {
                     string nombreCampo = campoExtra.name;
-                    Guid nombreID = campoExtra.name_id;
+                    Guid nombreID = campoExtra.value_id;
                     string valorCampo = campoExtra.value;
                     Guid valorID = campoExtra.value_id;
 
                     if (nombreID != null && !nombreID.Equals(Guid.Empty))
                     {
                         AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistema filaDatoExtraEcosistema = datosExtraProyectoDWP.ListaDatoExtraEcosistema.FirstOrDefault(dato => dato.DatoExtraID.Equals(nombreID));
-                        if (pEsEcosistema && filaDatoExtraEcosistema != null)
+                        if (filaDatoExtraEcosistema != null)
                         {
                             if (valorID != null && !valorID.Equals(Guid.Empty))
                             {
@@ -3052,7 +3064,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         }
 
                         AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaVirtuoso filasDatoExtraEcosistemaVirtuoso = datosExtraProyectoDWP.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.DatoExtraID.Equals(nombreID));
-                        if (pEsEcosistema && filasDatoExtraEcosistemaVirtuoso != null)
+                        if (filasDatoExtraEcosistemaVirtuoso != null)
                         {
                             pDicDatosExtraEcosistemaVirtuoso.Add(filasDatoExtraEcosistemaVirtuoso.Orden, valorCampo);
                         }
@@ -3067,78 +3079,72 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                 }
             }
-
-            if (pEsEcosistema)
+            foreach (Guid datoExtra in dicDatosExtraEcosistema.Keys)
             {
-                foreach (Guid datoExtra in dicDatosExtraEcosistema.Keys)
-                {
-                    AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil datoExtraEcosistemaOpcionPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil();
-                    datoExtraEcosistemaOpcionPerfil.DatoExtraID = datoExtra;
-                    datoExtraEcosistemaOpcionPerfil.DatoExtraID = dicDatosExtraEcosistema[datoExtra];
-                    datoExtraEcosistemaOpcionPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
-                    dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
-                    mEntityContext.DatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
-                }
+                AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil datoExtraEcosistemaOpcionPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil();
+                datoExtraEcosistemaOpcionPerfil.DatoExtraID = datoExtra;
+                datoExtraEcosistemaOpcionPerfil.DatoExtraID = dicDatosExtraEcosistema[datoExtra];
+                datoExtraEcosistemaOpcionPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
+                dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
+                mEntityContext.DatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
+            }
 
-                foreach (int orden in pDicDatosExtraEcosistemaVirtuoso.Keys)
+            foreach (int orden in pDicDatosExtraEcosistemaVirtuoso.Keys)
+            {
+                if (!string.IsNullOrEmpty(pDicDatosExtraEcosistemaVirtuoso[orden].Trim()) && pDicDatosExtraEcosistemaVirtuoso[orden].Trim() != "|")
                 {
-                    if (!string.IsNullOrEmpty(pDicDatosExtraEcosistemaVirtuoso[orden].Trim()) && pDicDatosExtraEcosistemaVirtuoso[orden].Trim() != "|")
+                    string valor = pDicDatosExtraEcosistemaVirtuoso[orden].Trim();
+                    if (valor.EndsWith("|"))
                     {
-                        string valor = pDicDatosExtraEcosistemaVirtuoso[orden].Trim();
-                        if (valor.EndsWith("|"))
-                        {
-                            valor = valor.Substring(0, valor.Length - 1);
-                        }
-
-                        valor = IntentoObtenerElPais(valor);
-
-                        AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil datoExtraEcosistemaVirtuosoPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil();
-                        datoExtraEcosistemaVirtuosoPerfil.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.Orden.Equals(orden)).DatoExtraID;
-                        datoExtraEcosistemaVirtuosoPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
-                        datoExtraEcosistemaVirtuosoPerfil.Opcion = valor;
-                        dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
-                        mEntityContext.DatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
+                        valor = valor.Substring(0, valor.Length - 1);
                     }
+
+                    valor = IntentoObtenerElPais(valor);
+
+                    AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil datoExtraEcosistemaVirtuosoPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil();
+                    datoExtraEcosistemaVirtuosoPerfil.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.Orden.Equals(orden)).DatoExtraID;
+                    datoExtraEcosistemaVirtuosoPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
+                    datoExtraEcosistemaVirtuosoPerfil.Opcion = valor;
+                    dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
+                    mEntityContext.DatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
                 }
             }
-            else
+            foreach (Guid datoExtra in dicDatosExtraProyecto.Keys)
             {
-                foreach (Guid datoExtra in dicDatosExtraProyecto.Keys)
-                {
-                    AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad datoExtraProyectoOpcionIdentidad = new AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad();
-                    datoExtraProyectoOpcionIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
-                    datoExtraProyectoOpcionIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
-                    datoExtraProyectoOpcionIdentidad.DatoExtraID = datoExtra;
-                    datoExtraProyectoOpcionIdentidad.OpcionID = dicDatosExtraProyecto[datoExtra];
-                    datoExtraProyectoOpcionIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
-                    mEntityContext.DatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
-                    dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
-                }
+                AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad datoExtraProyectoOpcionIdentidad = new AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad();
+                datoExtraProyectoOpcionIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
+                datoExtraProyectoOpcionIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
+                datoExtraProyectoOpcionIdentidad.DatoExtraID = datoExtra;
+                datoExtraProyectoOpcionIdentidad.OpcionID = dicDatosExtraProyecto[datoExtra];
+                datoExtraProyectoOpcionIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
+                mEntityContext.DatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
+                dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
+            }
 
-                foreach (int orden in pDicDatosExtraProyectoVirtuoso.Keys)
+            foreach (int orden in pDicDatosExtraProyectoVirtuoso.Keys)
+            {
+                if (!string.IsNullOrEmpty(pDicDatosExtraProyectoVirtuoso[orden].Trim()) && pDicDatosExtraProyectoVirtuoso[orden].Trim() != "|")
                 {
-                    if (!string.IsNullOrEmpty(pDicDatosExtraProyectoVirtuoso[orden].Trim()) && pDicDatosExtraProyectoVirtuoso[orden].Trim() != "|")
+                    string valor = pDicDatosExtraProyectoVirtuoso[orden].Trim();
+                    if (valor.EndsWith("|"))
                     {
-                        string valor = pDicDatosExtraProyectoVirtuoso[orden].Trim();
-                        if (valor.EndsWith("|"))
-                        {
-                            valor = valor.Substring(0, valor.Length - 1);
-                        }
-
-                        valor = IntentoObtenerElPais(valor);
-
-                        AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad datoExtraProyectoVirtuosoIdentidad = new AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad();
-                        datoExtraProyectoVirtuosoIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
-                        datoExtraProyectoVirtuosoIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
-                        datoExtraProyectoVirtuosoIdentidad.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.Orden == orden).DatoExtraID;
-                        datoExtraProyectoVirtuosoIdentidad.Opcion = valor;
-                        datoExtraProyectoVirtuosoIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
-                        mEntityContext.DatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
-                        dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
+                        valor = valor.Substring(0, valor.Length - 1);
                     }
+
+                    valor = IntentoObtenerElPais(valor);
+
+                    AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad datoExtraProyectoVirtuosoIdentidad = new AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad();
+                    datoExtraProyectoVirtuosoIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
+                    datoExtraProyectoVirtuosoIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
+                    datoExtraProyectoVirtuosoIdentidad.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.Orden == orden).DatoExtraID;
+                    datoExtraProyectoVirtuosoIdentidad.Opcion = valor;
+                    datoExtraProyectoVirtuosoIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
+                    mEntityContext.DatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
+                    dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
                 }
             }
         }
+
         [NonAction]
         private void EditarSuscripciones(List<Guid> pListacategorias, Identidad pIdentidad)
         {
