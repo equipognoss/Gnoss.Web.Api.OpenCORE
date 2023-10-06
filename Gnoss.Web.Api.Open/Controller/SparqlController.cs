@@ -36,7 +36,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     {
 
         public SparqlController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
-                : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication )
+                : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
         {
 
         }
@@ -55,24 +55,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (TienePermisoAplicacionEnOntologia(sparql_query.ontology))
             {
-                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(sparql_query.community_short_name);
-
-                string communityQuery = "";
                 string query = JuntarPartesConsultaSparql(new List<string> { sparql_query.ontology }, sparql_query.query_select, sparql_query.query_where);
 
                 try
                 {
                     jsonResponse = EjecutarConsultaEnVirtuoso(query, sparql_query.ontology, sparql_query.ontology);
-
-                    if (!string.IsNullOrEmpty(communityQuery) && !proyectoID.Equals(Guid.Empty))
-                    {
-                        jsonResponse = EjecutarConsultaEnVirtuoso(communityQuery, proyectoID.ToString().ToLower(), sparql_query.ontology);
-                    }
                 }
                 catch
                 {
-                    throw new GnossException("Error in sparql endpoint.\n\rQuery: '" + query + "'", HttpStatusCode.BadRequest);
+                    throw new GnossException($"Error in sparql endpoint.\n\rQuery: '{query}'", HttpStatusCode.BadRequest);
                 }
             }
 
@@ -187,13 +178,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     throw new GnossException(mensajeErrorNoAutorizado, System.Net.HttpStatusCode.BadRequest);
                 }
             }
-            
+
             return true;
         }
 
         private bool TienePermisoAplicacionEnOntologias(List<string> pOntologias)
         {
-            foreach(string ontologia in pOntologias)
+            foreach (string ontologia in pOntologias)
             {
                 if (!TienePermisoAplicacionEnOntologia(ontologia))
                 {
@@ -226,12 +217,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 if (Guid.TryParse(grafo, out test))
                 {
                     //Es el grafo de una comunidad
-                    conjuntoPrefijosGrafos = ObtenerPrefijosDeOntologia(grafo, true);                    
+                    conjuntoPrefijosGrafos = ObtenerPrefijosDeOntologia(grafo, true);
                 }
                 else
                 {
                     //Es el grafo de una ontología
-                    conjuntoPrefijosGrafos = ObtenerPrefijosDeOntologia(grafo, false);                    
+                    conjuntoPrefijosGrafos = ObtenerPrefijosDeOntologia(grafo, false);
                     grafoAux += ".owl";
                 }
 
@@ -271,26 +262,21 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             try
             {
                 facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pNombreTabla, pOntologia, false, true);
-                
+                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pNombreTabla, pOntologia, true);
+
             }
             catch (Exception)
             {
                 //Cerramos las conexiones
                 ControladorConexiones.CerrarConexiones();
 
-                DateTime horaActual = DateTime.Now;
-
-                //Realizamos una consulta ask a virtuoso para comprobar si está funcionando
-                while (!UtilidadesVirtuoso.ServidorOperativo("acid", UrlIntragnoss) && DateTime.Now < horaActual.AddMinutes(2))
+                if (mServicesUtilVirtuosoAndReplication.ControlarErrorVirtuosoConection(null, null))
                 {
-                    //Dormimos 30 segundos
-                    Thread.Sleep(30 * 1000);
+                    facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+
+                    jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pOntologia, pOntologia, true);
                 }
 
-                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-
-                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pOntologia, pOntologia, false, true);
             }
             finally
             {
@@ -320,7 +306,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             try
             {
                 facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pNombreTabla, pOntologia, false, true);
+                csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pNombreTabla, pOntologia, true);
 
             }
             catch (Exception)
@@ -328,18 +314,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 //Cerramos las conexiones
                 ControladorConexiones.CerrarConexiones();
 
-                DateTime horaActual = DateTime.Now;
 
-                //Realizamos una consulta ask a virtuoso para comprobar si está funcionando
-                while (!UtilidadesVirtuoso.ServidorOperativo("acid", UrlIntragnoss) && DateTime.Now < horaActual.AddMinutes(2))
+                if (mServicesUtilVirtuosoAndReplication.ControlarErrorVirtuosoConection(null, null))
                 {
-                    //Dormimos 30 segundos
-                    Thread.Sleep(30 * 1000);
+                    facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+
+                    csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pOntologia, pOntologia, true);
                 }
-
-                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-
-                csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pOntologia, pOntologia, false, true);
             }
             finally
             {

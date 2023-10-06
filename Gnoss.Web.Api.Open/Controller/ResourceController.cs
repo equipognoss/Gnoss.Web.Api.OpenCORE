@@ -4204,6 +4204,31 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
+        /// Eliminar la cache de los recursos
+        /// </summary>
+        /// <param name="parameters"></param>
+        [HttpPost, Route("delete-cache-resources")]
+        public bool DeleteCacheResources(Guid project_id)
+        {
+            try
+            {
+                DocumentacionCL docCLRec = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+                docCLRec.FlushDB();
+                docCLRec.Dispose();
+
+                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                facetadoCL.InvalidarResultadosYFacetasDeBusquedaEnProyecto(project_id, null);
+                facetadoCL.Dispose();
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+            return true;
+            
+        }
+
+        /// <summary>
         /// Modfies a list of triples of any resource
         /// </summary>
         /// <param name="parameters"></param>
@@ -4428,6 +4453,31 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 ModificarListaDeTripletasPorRecursoInt(resource);
             }
         }
+
+        [HttpPost, Route("get-automatic-labeling")]
+        public string GetAutomaticLabelingTags(TagsFromServiceModel parameters)
+        {
+            string urlEtiquetado = mConfigService.ObtenerUrlServicioEtiquetas();
+
+            if (!urlEtiquetado.EndsWith('/'))
+            {
+                urlEtiquetado += "/";
+            }
+
+            urlEtiquetado += "EtiquetadoAutomatico/SeleccionarEtiquetasDesdeServicio";
+
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid projectID = proyectoCN.ObtenerProyectoIDPorNombreCorto(parameters.community_short_name);
+
+            Dictionary<string, string> parametrosPeticion = new Dictionary<string, string>();
+            parametrosPeticion.Add("titulo", parameters.title);
+            parametrosPeticion.Add("descripcion", parameters.description);
+            parametrosPeticion.Add("ProyectoID", projectID.ToString());
+
+
+            return UtilWeb.HacerPeticionPost(urlEtiquetado, parametrosPeticion);
+        }
+
 
         #endregion
 
@@ -5405,18 +5455,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 long ticks;
                 if (fechaDocumentoEnEdicion.HasValue && long.TryParse(token, out ticks) && ticks.Equals(fechaDocumentoEnEdicion.Value.Ticks))
                 {
-                    DateTime? fecha = docCN.ActualizarFechaRecursoEnEdicion(pDocumentoID, fechaDocumentoEnEdicion.Value);
-
-                    if (fecha.HasValue)
-                    {
-                        // Añadir en el response la cabecera X-Correlation-ID
-                        mHttpContextAccessor.HttpContext.Response.Headers.Add("X-Correlation-ID", fecha.Value.Ticks.ToString());
-                        return false;
-                    }
-                    else
-                    {
-                        throw new GnossException($"The resource {pDocumentoID} has been blocked by other updates for more than 60 seconds. Try again later ", HttpStatusCode.Conflict);
-                    }
+                    return false;
                 }
                 else if (!fechaDocumentoEnEdicion.HasValue || DateTime.UtcNow > fechaDocumentoEnEdicion.Value)
                 {
@@ -5435,10 +5474,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 DocumentoEnEdicion filaEdicion = docCN.ComprobarDocumentoEnEdicion(pDocumentoID, pIdentidadID);
 
-                if (mHttpContextAccessor.HttpContext.Request.Headers != null && !string.IsNullOrEmpty(mHttpContextAccessor.HttpContext.Request.Headers["X-Correlation-ID"]))
-                {
-                    mHttpContextAccessor.HttpContext.Response.Headers.Add("X-Correlation-ID", filaEdicion.FechaEdicion.Ticks.ToString());
-                }
+                //if (mHttpContextAccessor.HttpContext.Request.Headers != null && !string.IsNullOrEmpty(mHttpContextAccessor.HttpContext.Request.Headers["X-Correlation-ID"]))
+                //{
+                //    mHttpContextAccessor.HttpContext.Response.Headers.Add("X-Correlation-ID", filaEdicion.FechaEdicion.Ticks.ToString());
+                //}
 
                 if (filaEdicion != null)
                 {
@@ -5721,10 +5760,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         else
                         {
                             Guid perfilID = new Guid(id);
-                            if (!pDocumento.ListaPerfilesEditores.ContainsKey(perfilID))
-                            {
-                                pDocumento.GestorDocumental.AgregarEditorARecurso(pDocumento.Clave, perfilID);
-                            }
+                            pDocumento.GestorDocumental.AgregarEditorARecurso(pDocumento.Clave, perfilID);
                         }
                     }
                     catch (Exception ex)
@@ -7771,7 +7807,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 //lista que almacena las categorias y si en la comunidad no es obligatorio categorizar sobre el tesauro de GNOSS
                 List<object> listaParametrosCategorias = new List<object>();
                 listaParametrosCategorias.Add(pCategoriaIDs);
-                listaParametrosCategorias.Add(!pOntologia.ConfiguracionPlantilla.CategorizacionTesauroGnossNoObligatoria);
+                if (pOntologia.ConfiguracionPlantilla == null)
+                {
+                    listaParametrosCategorias.Add(false);
+                }
+                else
+                {
+                    listaParametrosCategorias.Add(!pOntologia.ConfiguracionPlantilla.CategorizacionTesauroGnossNoObligatoria);
+                }
                 listaParametrosCategorias.Add(new List<Guid>(pGestorDocumental.GestorTesauro.ListaCategoriasTesauro.Keys));
                 Dictionary<string, object> dicParametros = new Dictionary<string, object>();
                 dicParametros.Add("categoriassem", listaParametrosCategorias);
@@ -8942,6 +8985,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         if (pProp.ListaValoresIdioma.ContainsKey(idioma))
                         {
                             if (pProp.ListaValoresIdioma[idioma].ContainsKey(pObjetoViejo))
+                            {
+                                pProp.ListaValoresIdioma[idioma].Remove(pObjetoViejo);
+                                AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, idioma, true);
+                                pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo, idioma));
+                            }
+                            //Parte de código para las migraciones de la versión 4 a la 5.
+                            else if(mConfigService.ObtenerProcesarStringGrafo() && pProp.ListaValoresIdioma[idioma].ContainsKey(pObjetoViejo.Replace("''", "\"")))
                             {
                                 pProp.ListaValoresIdioma[idioma].Remove(pObjetoViejo);
                                 AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, idioma, true);
@@ -10258,6 +10308,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 //anular cache del documento
                 ControladorDocumentacion.BorrarCacheControlFichaRecursos(parameters.resource_id);
+                if (mConfigService.ObtenerProcesarStringGrafo())
+                {
+                    ControladorDocumentacion.BorrarRDFDeBDRDF(parameters.resource_id);
+                }
 
                 //borrar cache recursos
                 FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);

@@ -1813,4 +1813,24 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         public DateTime saved_date { get; set; }
     }
 
+    /// <summary>
+    /// Model that generate labels from title and description
+    /// </summary>
+    public class TagsFromServiceModel
+    {
+        /// <summary>
+        /// Title for generate the labels
+        /// </summary>
+        public string title { get; set; }
+
+        /// <summary>
+        /// Description for generate the labels
+        /// </summary>
+        public string description { get; set; }
+
+        /// <summary>
+        /// Short name of the project
+        /// </summary>
+        public string community_short_name { get; set; }
+    }
 }
