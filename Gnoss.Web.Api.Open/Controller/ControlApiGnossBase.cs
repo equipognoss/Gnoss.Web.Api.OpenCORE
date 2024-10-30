@@ -166,36 +166,39 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
         private async Task<string> ObtenerDatosPeticionParaLog()
         {
-            string urlPeticion = mHttpContextAccessor.HttpContext.Request.Path.ToString();
-            string metodoPeticion = mHttpContextAccessor.HttpContext.Request.Method;
-
-            //mHttpContextAccessor.HttpContext.Request.Body.Position = 0;
-            var streamReader = new StreamReader(mHttpContextAccessor.HttpContext.Request.Body);
-            string parametrosPeticion = await streamReader.ReadToEndAsync();
-            if (parametrosPeticion.Contains("password"))
+            string datosPeticion = null;
+            if (GuardarDatosPeticion)
             {
-                parametrosPeticion = "";
+                string urlPeticion = mHttpContextAccessor.HttpContext.Request.Path.ToString();
+                string metodoPeticion = mHttpContextAccessor.HttpContext.Request.Method;
+
+                //mHttpContextAccessor.HttpContext.Request.Body.Position = 0;
+                var streamReader = new StreamReader(mHttpContextAccessor.HttpContext.Request.Body);
+                string parametrosPeticion = await streamReader.ReadToEndAsync();
+                if (parametrosPeticion.Contains("password"))
+                {
+                    parametrosPeticion = "";
+                }
+                if (mHttpContextAccessor.HttpContext.Request.Headers.ContainsKey("Authorization"))
+                {
+                    //mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Headers["Authorization"]}");
+                }
+                else if (mHttpContextAccessor.HttpContext.Request.Query.ContainsKey("oauth_signature"))
+                {
+                    //mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Query["oauth_signature"]}");
+                }
+
+                string urlPeticionOauth = UtilOAuth.ObtenerUrlGetDePeticionOAuth(mHttpContextAccessor.HttpContext.Request);
+
+
+
+                datosPeticion = Environment.NewLine;
+                datosPeticion += $"URL: {urlPeticion}{Environment.NewLine}";
+                datosPeticion += $"Metodo: {metodoPeticion}{Environment.NewLine}";
+                datosPeticion += $"Params: {parametrosPeticion}{Environment.NewLine}";
+                datosPeticion += $"OAuth: {urlPeticionOauth}{Environment.NewLine}";
+                datosPeticion += $"UsuarioOAuth: {UsuarioOAuth}{Environment.NewLine}";
             }
-            if (mHttpContextAccessor.HttpContext.Request.Headers.ContainsKey("Authorization"))
-            {
-                //mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Headers["Authorization"]}");
-            }
-            else if (mHttpContextAccessor.HttpContext.Request.Query.ContainsKey("oauth_signature"))
-            {
-                //mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Query["oauth_signature"]}");
-            }
-
-            string urlPeticionOauth = UtilOAuth.ObtenerUrlGetDePeticionOAuth(mHttpContextAccessor.HttpContext.Request);
-
-
-
-            string datosPeticion = Environment.NewLine;
-            datosPeticion += $"URL: {urlPeticion}{Environment.NewLine}";
-            datosPeticion += $"Metodo: {metodoPeticion}{Environment.NewLine}";
-            datosPeticion += $"Params: {parametrosPeticion}{Environment.NewLine}";
-            datosPeticion += $"OAuth: {urlPeticionOauth}{Environment.NewLine}";
-            datosPeticion += $"UsuarioOAuth: {UsuarioOAuth}{Environment.NewLine}";
-
             return datosPeticion;
         }
 
@@ -631,12 +634,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     if (usuarioID == Guid.Empty)
                     {
-                        if (!pPeticion.IsHttps && string.IsNullOrEmpty(urlApi))
+                        string schemaReplace = "https";
+                        string replace = "http";
+                        if (mConfigService.PeticionHttps())
                         {
-                            urlApi = $"https://{new Uri(UriHelper.GetEncodedUrl(pPeticion.HttpContext.Request)).Authority}";
-                            mLoggingService.GuardarLog($"Uri de llamada con https {urlApi}");
-                            usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
+                            replace = "https";
+                            schemaReplace = "http";
                         }
+                        urlApi = urlApi.Replace(replace, schemaReplace);
+                        mLoggingService.GuardarLog($"Uri de llamada {urlApi}");
+                        usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);          
                     }
 
                     if (usuarioID != Guid.Empty)
@@ -1098,7 +1105,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             //Prioridad de procesado por el servicio base.
             tempString += $"{pPrioridadBase}|";
 
-            //pOtrosArgumentos;
             return tempString;
         }
 
@@ -1517,7 +1523,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (mUtilIdiomas == null)
                 {
-                    mUtilIdiomas = new UtilIdiomas($"{AppDomain.CurrentDomain.SetupInformation.ApplicationBase}{Path.DirectorySeparatorChar}languages", mHttpContextAccessor.HttpContext.Request.Headers["Accept-Language"], "es", Guid.Empty, Guid.Empty, Guid.Empty, mLoggingService, mEntityContext, mConfigService);
+                    mUtilIdiomas = new UtilIdiomas($"{AppDomain.CurrentDomain.SetupInformation.ApplicationBase}{Path.DirectorySeparatorChar}languages", mHttpContextAccessor.HttpContext.Request.Headers["Accept-Language"], "es", Guid.Empty, Guid.Empty, Guid.Empty, mLoggingService, mEntityContext, mConfigService,mRedisCacheWrapper);
                 }
                 return mUtilIdiomas;
             }

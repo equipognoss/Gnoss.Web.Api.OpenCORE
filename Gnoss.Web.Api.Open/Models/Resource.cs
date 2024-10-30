@@ -616,7 +616,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// Categories of the destination community
         /// </summary>
-        [Required]
+        //[Required]
         public List<Guid> categories { get; set; }
 
         /// <summary>
@@ -1021,6 +1021,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Short name of the community
         /// </summary>
         public string community_name { get; set; }
+        /// <summary>
+        /// Ontology name 
+        /// </summary>
+        public string ontology { get; set; }
     }
     /// <summary>
     /// Parameters of a package of data for a massive data load
@@ -1075,10 +1079,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Date when the package is processed.
         /// </summary>
         public DateTime? date_processing { get; set; }
-        /// <summary>
-        /// Ontology name 
-        /// </summary>
-        public string ontology { get; set; }
         /// <summary>
         /// The data is compress
         /// </summary>

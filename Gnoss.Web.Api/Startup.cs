@@ -16,7 +16,10 @@ using Es.Riam.Open;
 using Es.Riam.OpenReplication;
 using Es.Riam.Util;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +33,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 
 namespace Gnoss.Web.Api
@@ -50,12 +54,31 @@ namespace Gnoss.Web.Api
         public void ConfigureServices(IServiceCollection services)
         {
             EscribirLogTiempos("Application_Start Inicio");
-            Conexion.ServicioWeb = true;
+			ILoggerFactory loggerFactory =
+			LoggerFactory.Create(builder =>
+			{
+				builder.AddConfiguration(Configuration.GetSection("Logging"));
+				builder.AddSimpleConsole(options =>
+				{
+					options.IncludeScopes = true;
+					options.SingleLine = true;
+					options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+					options.UseUtcTimestamp = true;
+				});
+			});
+
+			services.AddSingleton(loggerFactory);
+			Conexion.ServicioWeb = true;
             services.AddControllers().AddNewtonsoftJson(options =>
             {
                 options.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
             });
-            services.AddHttpContextAccessor();
+			services.Configure<FormOptions>(x =>
+			{
+				x.ValueLengthLimit = 524288000;
+				x.MultipartBodyLengthLimit = 524288000; // In case of multipart
+			});
+			services.AddHttpContextAccessor();
             services.AddScoped(typeof(UtilTelemetry));
             services.AddScoped(typeof(Usuario));
             services.AddScoped(typeof(UtilPeticion));
@@ -80,13 +103,12 @@ namespace Gnoss.Web.Api
             {
                 bdType = Configuration.GetConnectionString("connectionType");
             }
-            if (bdType.Equals("2"))
+            if (bdType.Equals("2") || bdType.Equals("1"))
             {
                 services.AddScoped(typeof(DbContextOptions<EntityContext>));
                 services.AddScoped(typeof(DbContextOptions<EntityContextBASE>));
             }
             services.AddSingleton(typeof(ConfigService));
-            services.AddSingleton<ILoggerFactory, LoggerFactory>();
             services.AddMvc();
             string acid = "";
             if (environmentVariables.Contains("acid"))
@@ -117,7 +139,16 @@ namespace Gnoss.Web.Api
 
                         );
             }
-            else if (bdType.Equals("2"))
+			else if (bdType.Equals("1"))
+			{
+				services.AddDbContext<EntityContext, EntityContextOracle>(options =>
+						options.UseOracle(acid)
+						);
+				services.AddDbContext<EntityContextBASE, EntityContextBASEOracle>(options =>
+						options.UseOracle(baseConnection)
+						);
+			}
+			else if (bdType.Equals("2"))
             {
                 services.AddDbContext<EntityContext, EntityContextPostgres>(opt =>
                 {
@@ -137,7 +168,10 @@ namespace Gnoss.Web.Api
             var sp = services.BuildServiceProvider();
             // Resolve the services from the service provider
             var configService = sp.GetService<ConfigService>();
-            configService.ObtenerProcesarStringGrafo();
+			var servicesUtilVirtuosoAndReplication = sp.GetService<IServicesUtilVirtuosoAndReplication>();
+			var loggingService = sp.GetService<LoggingService>();
+			var redisCacheWrapper = sp.GetService<RedisCacheWrapper>();
+			configService.ObtenerProcesarStringGrafo();
 
             int hilos = configService.ObtenerHilosAplicacion();
             if(hilos != 0)
@@ -156,28 +190,13 @@ namespace Gnoss.Web.Api
             var entity = sp.GetService<EntityContext>();
             LoggingService.RUTA_DIRECTORIO_ERROR = Path.Combine(mEnvironment.ContentRootPath, "logs");
 
-            //TODO Javier AD.BaseAD.LeerConfiguracionConexion(mGestorParametrosAplicacion.ListaConfiguracionBBDD.Where(confiBBDD=> confiBBDD.TipoConexion.Equals((short)TipoConexion.SQLServer)).ToList());
-
-            //TODO Javier BaseCL.LeerConfiguracionCache(mGestorParametrosAplicacion.ListaConfiguracionBBDD.Where(confiBBDD => confiBBDD.TipoConexion.Equals((short)TipoConexion.Redis)).ToList());
-
-            //TODO Javier AD.BaseAD.LeerConfiguracionConexion(mGestorParametrosAplicacion.ListaConfiguracionBBDD.Where(confiBBDD => confiBBDD.TipoConexion.Equals((short)TipoConexion.Virtuoso)).ToList());
-
-            //TODO Javier AD.BaseAD.LeerConfiguracionConexion(mGestorParametrosAplicacion.ListaConfiguracionBBDD.Where(confiBBDD => confiBBDD.TipoConexion.Equals((short)TipoConexion.Virtuoso_HA_PROXY)).ToList());
-
-            //List<ConfiguracionBBDD> confsBBDD = mGestorParametrosAplicacion.ListaConfiguracionBBDD.Where(confiBBDD => confiBBDD.TipoConexion.Equals((short)TipoConexion.RabbitMQ)).ToList();
-            //foreach (ConfiguracionBBDD confBBDD in confsBBDD)
-            //{
-            //    //TODO Javier RabbitMQClient.LeerConfiguracionConexion(confBBDD.Conexion, confBBDD.NombreConexion, confBBDD.LecturaPermitida, confBBDD.DatosExtra);
-            //}
-
-
             RabbitMQClient.ClientName = $"API_V3_{mEnvironment.EnvironmentName}";
 
             EstablecerDominioCache(entity);
 
-            CargarIdiomasPlataforma(configService);
+			UtilServicios.CargarIdiomasPlataforma(entity, loggingService, configService, servicesUtilVirtuosoAndReplication, redisCacheWrapper);
 
-            ConfigurarApplicationInsights(configService);
+			ConfigurarApplicationInsights(configService);
 
             //Configuro la caché de lectura
             ConfigurarParametros(configService);
@@ -196,7 +215,29 @@ namespace Gnoss.Web.Api
             {
                 app.UseDeveloperExceptionPage();
             }
-            app.UseSwagger(c =>
+			else
+			{
+				app.UseExceptionHandler(errorApp =>
+				{
+					errorApp.Run(async context =>
+					{
+						var exceptionHandlerPathFeature =
+					context.Features.Get<IExceptionHandlerPathFeature>();
+
+						HttpStatusCode status = HttpStatusCode.BadRequest;
+						if (exceptionHandlerPathFeature?.Error.Data["status"] != null)
+						{
+							status = (HttpStatusCode)exceptionHandlerPathFeature?.Error.Data["status"];
+						}
+
+						context.Response.StatusCode = (int)status;
+						context.Response.ContentType = "text/html";
+						await context.Response.WriteAsync(exceptionHandlerPathFeature?.Error?.Message);
+					});
+				}
+				);
+			}
+			app.UseSwagger(c =>
             {
                 c.PreSerializeFilters.Add((swaggerDoc, httpReq) => swaggerDoc.Servers = new List<OpenApiServer>
                       {
@@ -255,11 +296,6 @@ namespace Gnoss.Web.Api
             }
 
             BaseCL.DominioEstatico = dominio;
-        }
-        private void CargarIdiomasPlataforma(ConfigService configService)
-        {
-
-            configService.ObtenerListaIdiomas().FirstOrDefault();
         }
 
         public void EscribirLogTiempos(string pMensaje)

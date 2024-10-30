@@ -93,10 +93,34 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         public List<string> groups_short_names { get; set; }
     }
 
-    /// <summary>
-    /// Represents a user
-    /// </summary>
-    public class UserCommunity
+	/// <summary>
+	/// Parameters for delete a user from a organization group
+	/// </summary>
+	public class ParamsDeleteUserOrgGroup
+	{
+		/// <summary>
+		/// User identificator
+		/// </summary>
+		[Required]
+		public Guid user_id { get; set; }
+
+		/// <summary>
+		/// Organization short name
+		/// </summary>
+		[Required]
+		public string organization_short_name { get; set; }
+
+		/// <summary>
+		/// Group where the user is going to be added
+		/// </summary>
+		[Required]
+		public string group_short_name { get; set; }
+	}
+
+	/// <summary>
+	/// Represents a user
+	/// </summary>
+	public class UserCommunity
     {
         /// <summary>
         /// Name
@@ -336,6 +360,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Extra data value
         /// </summary>
         public string value { get; set; }
+
+        /// <summary>
+        /// Extra data short name identifier
+        /// </summary>
+        public string short_name { get; set; }
     }
 
     /// <summary>

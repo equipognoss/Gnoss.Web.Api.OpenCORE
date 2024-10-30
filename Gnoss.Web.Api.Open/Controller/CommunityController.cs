@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
@@ -65,6 +66,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     comunidad.description = filaProyecto.Descripcion;
                     comunidad.type = ((TipoProyecto)filaProyecto.TipoProyecto).ToFriendlyString();
                     comunidad.access_type = filaProyecto.TipoAcceso;
+                    comunidad.state = filaProyecto.Estado;
 
                     TesauroCL tesCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
                     DataWrapperTesauro tesDW = tesCL.ObtenerTesauroDeProyecto(proyID);
@@ -114,6 +116,35 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             else
             {
                 throw new GnossException("The community short name can not be empty", HttpStatusCode.BadRequest);
+            }
+        }
+
+        /// <summary>
+        /// Get a text in other language
+        /// </summary>
+        /// <param name="parameters">Parameters</param>
+        /// <returns>Returns the text in a specific language</returns>
+        /// <example>GET get-text-by-language</example>
+        [HttpGet, Route("get-text-by-language")]
+        public string GetTextByLanguage(GetTextByLanguageModel parameters)
+        {
+            try
+            {
+                ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                string textoTraducido = proyectoCN.ObtenerValorTraduccionDeTexto(parameters.community_short_name, parameters.language, parameters.texto_id);
+                
+                if(!string.IsNullOrEmpty(textoTraducido))
+                {
+                    return textoTraducido;
+                }
+                else
+                {
+                    return parameters.texto_id.ToString();
+                }
+            }
+            catch(Exception exception)
+            {
+                throw new GnossException(exception.Message, HttpStatusCode.BadRequest);
             }
         }
 

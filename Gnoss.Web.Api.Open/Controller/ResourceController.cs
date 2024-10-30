@@ -68,6 +68,9 @@ using System.Web;
 using System.Xml;
 using System.Text.RegularExpressions;
 using Es.Riam.AbstractsOpen;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using BeetleX.Redis.Commands;
+using Microsoft.AspNetCore.Http.Metadata;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
@@ -1058,7 +1061,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (gestorDocumental.ListaDocumentos.ContainsKey(documentoID))
                 {
-                    UtilIdiomas = new UtilIdiomas(parameters.language, mLoggingService, mEntityContext, mConfigService);
+                    UtilIdiomas = new UtilIdiomas(parameters.language, mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper);
                     Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[documentoID];
                     urlDocumento = mControladorBase.UrlsSemanticas.GetURLBaseRecursosFicha(UrlIntragnoss, UtilIdiomas, parameters.community_short_name, null, documento, false);
                     ResponseGetUrl claveValor = new ResponseGetUrl();
@@ -2133,7 +2136,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, FilaProy.ProyectoID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
             try
             {
-                
+
                 bool usarReplicacion = false;
                 //documento
                 GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
@@ -2227,14 +2230,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             else if (documento.TipoDocumentacion == TiposDocumentacion.Video)
                             {
                                 mLoggingService.AgregarEntrada("comprueba si vídeo está en espacio personal");
-                                //TODO Javier pasar a peticion rest
-                                //Controles.ServicioVideosWS.ServicioVideos sV = new Controles.ServicioVideosWS.ServicioVideos();
-                                //sV.Url = UrlPrincipalConHttpConPuertoSinIdioma + "/ServicioVideos.asmx";
+
+                                ServicioVideos sV = new ServicioVideos(mConfigService, mLoggingService);
 
                                 if (identidad.IdentidadOrganizacion == null)
                                 {
-                                    //TODO Javier descomentar
-                                    //espacioArchivo = sV.ObtenerEspacioVideoPersonal(documento.Clave, identidad.PersonaID.Value);
+                                    espacioArchivo = sV.ObtenerEspacioVideoPersonal(documento.Clave, identidad.PersonaID.Value);
                                 }
                                 else
                                 {
@@ -2245,11 +2246,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                     {
                                         organizacionID = perfilPersonaOrg.OrganizacionID;
                                     }
-                                    //TODO Javier descomentar
-                                    //espacioArchivo = sV.ObtenerEspacioVideoPersonal(documento.Clave, organizacionID);
+                                    
+                                    espacioArchivo = sV.ObtenerEspacioVideoPersonal(documento.Clave, organizacionID);
                                 }
-                                //TODO Javier descomentar
-                                //sV.Dispose();
+
                                 mLoggingService.AgregarEntrada("comprobado");
                             }
                         }
@@ -2302,6 +2302,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     documento.GestorDocumental.DesVincularDocumentoDeBaseRecursos(documento.Clave, documento.GestorDocumental.BaseRecursosIDActual, FilaProy.ProyectoID, identidad.Clave);
                 }
                 documento.FilaDocumento.FechaModificacion = DateTime.Now;
+
+                documento.GestorDocumental.DesvincularDocumentoDeCategorias(documento, documento.CategoriasTesauro.Values.ToList(), documento.CreadorID, FilaProy.ProyectoID);
 
                 mEntityContext.SaveChanges();
 
@@ -2678,7 +2680,26 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 throw new GnossException("The resource " + parameters.resource_id + " does not exist.", HttpStatusCode.BadRequest);
             }
+            AD.EntityModel.Models.Documentacion.Documento documento = gestorDoc.ListaDocumentos[parameters.resource_id].FilaDocumento;
+            bool categoriesOk = true;
 
+            if (documento.ElementoVinculadoID.HasValue && documento.Tipo.Equals((short)TiposDocumentacion.Semantico) && (parameters.categories == null || parameters.categories.Count == 0))
+            {
+                LectorXmlConfig lectorXmlConfig = new LectorXmlConfig(documento.ElementoVinculadoID.Value, FilaProy.ProyectoID, mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mVirtuosoAD);
+                Dictionary<string, List<EstiloPlantilla>> xml = lectorXmlConfig.ObtenerConfiguracionXml();
+                EstiloPlantillaConfigGen configGen = (EstiloPlantillaConfigGen)xml["[ConfiguracionGeneral]"].First();
+                categoriesOk = configGen.CategorizacionTesauroGnossNoObligatoria;
+                parameters.categories = new List<Guid>();
+            }
+            else if (parameters.categories == null || (parameters.categories != null && parameters.categories.Count == 0))
+            {
+                categoriesOk = false;
+            }
+
+            if (!categoriesOk)
+            {
+                throw new GnossException("The resource " + parameters.resource_id + " does not have categories selected.", HttpStatusCode.BadRequest);
+            }
             DocumentoWeb documentoEdicion = new DocumentoWeb(gestorDoc.ListaDocumentos[parameters.resource_id].FilaDocumento, gestorDoc, mLoggingService);
 
             if (documentoEdicion.ListaProyectos.Contains(FilaProy.ProyectoID))
@@ -3545,7 +3566,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 parameters.identity_id = identidades.ListaIdentidad.FirstOrDefault().IdentidadID;
                 if (proyCN.EsIdentidadAdministradorProyecto(parameters.identity_id, parameters.project_id, TipoRolUsuario.Administrador))
                 {
-                    load = proyCN.CrearNuevaCargaMasiva(parameters.load_id, parameters.state, parameters.date_create, parameters.project_id, parameters.identity_id, parameters.name, ProyectoAD.MetaOrganizacion);
+                    load = proyCN.CrearNuevaCargaMasiva(parameters.load_id, parameters.state, parameters.date_create, parameters.project_id, parameters.identity_id, parameters.ontology, parameters.name, ProyectoAD.MetaOrganizacion);
                 }
                 else
                 {
@@ -3574,53 +3595,43 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+
             parameters.state = (short)EstadoPaquete.Pendiente;
             parameters.error = "";
             parameters.date_creation = DateTime.Now;
             parameters.date_processing = null;
             parameters.comprimido = false;
 
-            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
             List<Guid> listaUsuario = new List<Guid>();
 
             Carga carga = mEntityContext.Carga.Where(item => item.CargaID.Equals(parameters.load_id)).FirstOrDefault();
+
             if (carga != null && carga.Estado == 0)
             {
                 if (proyCN.EsIdentidadAdministradorProyecto(carga.IdentidadID.Value, carga.ProyectoID.Value, TipoRolUsuario.Administrador))
                 {
-                    bool package = proyCN.CrearNuevoPaqueteCargaMasiva(parameters.package_id, parameters.load_id, parameters.ontology_rute, parameters.search_rute, parameters.sql_rute, parameters.state, parameters.error, parameters.date_creation, parameters.ontology, parameters.comprimido, parameters.date_processing);
+                    DatosRabbitCarga datos = new DatosRabbitCarga();
+                    datos.CargaID = parameters.load_id;
+                    datos.PaqueteID = parameters.package_id;
+                    datos.UrlTriplesOntologia = parameters.ontology_rute;
+                    datos.UrlTriplesBusqueda = parameters.search_rute;
+                    datos.UrlDatosAcido = parameters.sql_rute;
+                    datos.BytesDatosAcido = parameters.sql_bytes;
+                    datos.BytesTriplesBusqueda = parameters.search_bytes;
+                    datos.BytesTriplesOntologia = parameters.ontology_bytes;
 
-                    if (package)
+                    if (parameters.isLast)
                     {
-                        DatosRabbitCarga datos = new DatosRabbitCarga();
-                        datos.CargaID = parameters.load_id;
-                        datos.PaqueteID = parameters.package_id;
-                        datos.UrlTriplesOntologia = parameters.ontology_rute;
-                        datos.UrlTriplesBusqueda = parameters.search_rute;
-                        datos.UrlDatosAcido = parameters.sql_rute;
-                        datos.BytesDatosAcido = parameters.sql_bytes;
-                        datos.BytesTriplesBusqueda = parameters.search_bytes;
-                        datos.BytesTriplesOntologia = parameters.ontology_bytes;
-
-                        if (parameters.isLast)
-                        {
-                            carga.Estado = 1;
-                            mEntityContext.SaveChanges();
-                        }
-
-                        if (mConfigService.ExistRabbitConnection(RabbitMQClient.BD_SERVICIOS_WIN))
-                        {
-                            using (RabbitMQClient rabbitMq = new RabbitMQClient(RabbitMQClient.BD_SERVICIOS_WIN, "ColaDescargaMasiva", mLoggingService, mConfigService))
-                            {
-                                rabbitMq.AgregarElementoACola(JsonConvert.SerializeObject(datos));
-                            }
-                        }
-
+                        carga.Estado = 1;
+                        mEntityContext.SaveChanges();
                     }
 
-                    return package;
+                    using (RabbitMQClient rabbitMq = new RabbitMQClient(RabbitMQClient.BD_SERVICIOS_WIN, "ColaDescargaMasiva", mLoggingService, mConfigService))
+                    {
+                        rabbitMq.AgregarElementoACola(JsonConvert.SerializeObject(datos));
+                    }
+
+                    return true;
                 }
                 else
                 {
@@ -4141,6 +4152,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         [HttpPost, Route("modify-triple-list")]
         public void ModifyTripleList(ModifyResourceTripleListParams parameters)
         {
+
             mNombreCortoComunidad = parameters.community_short_name;
             ModificarListaDeTripletasPorRecursoInt(parameters);
         }
@@ -4225,7 +4237,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 return false;
             }
             return true;
-            
+
         }
 
         /// <summary>
@@ -4457,25 +4469,42 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         [HttpPost, Route("get-automatic-labeling")]
         public string GetAutomaticLabelingTags(TagsFromServiceModel parameters)
         {
-            string urlEtiquetado = mConfigService.ObtenerUrlServicioEtiquetas();
-
-            if (!urlEtiquetado.EndsWith('/'))
+            try
             {
-                urlEtiquetado += "/";
+                string urlEtiquetado = mConfigService.ObtenerUrlServicioEtiquetas();
+                Dictionary<string, string> parametrosPeticion = new Dictionary<string, string>();
+
+                if (!string.IsNullOrEmpty(urlEtiquetado))
+                {
+                    if (!urlEtiquetado.EndsWith('/'))
+                    {
+                        urlEtiquetado += "/";
+                    }
+
+                    urlEtiquetado += "EtiquetadoAutomatico/SeleccionarEtiquetasDesdeServicio";
+
+                    ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                    Guid projectID = proyectoCN.ObtenerProyectoIDPorNombreCorto(parameters.community_short_name);
+
+
+                    parametrosPeticion.Add("titulo", parameters.title);
+                    parametrosPeticion.Add("descripcion", parameters.description);
+                    parametrosPeticion.Add("ProyectoID", projectID.ToString());
+
+                }
+                else
+                {
+                    mLoggingService.GuardarLogError($"El servicios de etiquetas no está configurado correctamente.");
+                    throw new GnossException("Labeler service is not configured.", HttpStatusCode.BadRequest);
+                }
+
+                return UtilWeb.HacerPeticionPost(urlEtiquetado, parametrosPeticion);
             }
-
-            urlEtiquetado += "EtiquetadoAutomatico/SeleccionarEtiquetasDesdeServicio";
-
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            Guid projectID = proyectoCN.ObtenerProyectoIDPorNombreCorto(parameters.community_short_name);
-
-            Dictionary<string, string> parametrosPeticion = new Dictionary<string, string>();
-            parametrosPeticion.Add("titulo", parameters.title);
-            parametrosPeticion.Add("descripcion", parameters.description);
-            parametrosPeticion.Add("ProyectoID", projectID.ToString());
-
-
-            return UtilWeb.HacerPeticionPost(urlEtiquetado, parametrosPeticion);
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError($"Error al obtener las etiquetas. ERROR: {ex.Message}");
+                throw new GnossException($"Error in labeler service: {ex.Message}", HttpStatusCode.BadRequest);
+            }
         }
 
 
@@ -5406,7 +5435,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         public byte[] GetAttachedFileFromSemanticResource(Guid resource_id, string file_name, string community_short_name, string language)
         {
             mNombreCortoComunidad = community_short_name;
-            
+
             ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
             Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(community_short_name);
 
@@ -5416,8 +5445,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            
-            if(!documentacionCN.ExisteDocumentoEnProyecto(proyectoID, resource_id))
+
+            if (!documentacionCN.ExisteDocumentoEnProyecto(proyectoID, resource_id))
             {
                 throw new Exception($"The document {resource_id} doesn't exist in the proyect {community_short_name}");
             }
@@ -5427,7 +5456,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             GestionDocumental gestorDocumental = new GestionDocumental(mLoggingService, mConfigService);
             gestorDocumental.Url = UrlServicioWebDocumentacion;
-                        
+
             string directorio = Path.Combine(UtilArchivos.ContentDocumentosSem, resource_id.ToString().Substring(0, 2), resource_id.ToString().Substring(0, 4), resource_id.ToString());
             if (!string.IsNullOrEmpty(language))
             {
@@ -5438,7 +5467,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             return byteArray;
         }
-        
+
         #endregion
 
         #region Métodos privados
@@ -7018,10 +7047,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             }
 
                         }
-                        catch (Exception ex)
-                        {
-
-                        }
+                        catch { }
 
                         if (string.IsNullOrEmpty(rdfTexto))
                         {
@@ -7031,8 +7057,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             reader2.Close();
                             reader2.Dispose();
                         }
-
-
 
                         entidadesPrincAntiguas = gestorOWL.LeerFicheroRDF(ontologia, rdfTexto, true);
 
@@ -7665,11 +7689,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     accion = 0;
 
                     //Subimos el fichero al servidor
-                    //TODO Javier migrar a peticion rest
-                    /*ServicioVideos servicioVideos = new ServicioVideos();
-                    servicioVideos.Url = UrlPrincipalConHttpConPuertoSinIdioma + "/ServicioVideos.asmx";
+                    ServicioVideos servicioVideos = new ServicioVideos(mConfigService, mLoggingService);
                     resultado = servicioVideos.AgregarVideo(buffer1, extensionArchivo, pDocumentoID);
-                    servicioVideos.Dispose();*/
                 }
                 else if (tipoDocumentoGnoss == TiposDocumentacion.Imagen)
                 {
@@ -8302,25 +8323,34 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     if (propiedad.Tipo == TipoPropiedad.ObjectProperty)
                     {
-                        foreach (string antiguoID in pAntiguosNuevosIDs.Keys)
+                        if (propiedad.UnicoValor.Key != null)
                         {
-                            if (propiedad.UnicoValor.Key != null)
+                            if (pAntiguosNuevosIDs.Keys.Any())
                             {
-                                propiedad.UnicoValor = new KeyValuePair<string, ElementoOntologia>(propiedad.UnicoValor.Key.Replace(antiguoID, pAntiguosNuevosIDs[antiguoID]), propiedad.UnicoValor.Value);
+                                propiedad.UnicoValor = new KeyValuePair<string, ElementoOntologia>(propiedad.UnicoValor.Key.Replace(pAntiguosNuevosIDs.Keys.FirstOrDefault(), pAntiguosNuevosIDs[pAntiguosNuevosIDs.Keys.FirstOrDefault()]), propiedad.UnicoValor.Value);
                             }
-                            else
+                        }
+                        else
+                        {
+                            var propiedadesExistentes = pAntiguosNuevosIDs.Keys.Where(idAntiguo => propiedad.ListaValores.ContainsKey(idAntiguo));
+
+                            if (propiedadesExistentes.Any())
                             {
                                 Dictionary<string, ElementoOntologia> listaValores = new Dictionary<string, ElementoOntologia>(propiedad.ListaValores);
 
                                 propiedad.ListaValores.Clear();
 
-                                foreach (string valor in listaValores.Keys)
+                                foreach (string antiguoID in propiedadesExistentes)
                                 {
-                                    string key = valor.Replace(antiguoID, pAntiguosNuevosIDs[antiguoID]);
-                                    if (!propiedad.ListaValores.ContainsKey(key))
-                                    {
-                                        propiedad.ListaValores.Add(key, listaValores[valor]);
-                                    }
+                                    string keyElementoNuevo = listaValores.First(item => item.Key.Contains(pAntiguosNuevosIDs[antiguoID])).Key;
+                                    string key = keyElementoNuevo.Replace(antiguoID, pAntiguosNuevosIDs[antiguoID]);
+                                    propiedad.ListaValores.Add(key, listaValores[keyElementoNuevo]);
+                                    listaValores.Remove(keyElementoNuevo);
+                                }
+
+                                foreach (string key in listaValores.Keys)
+                                {
+                                    propiedad.ListaValores.Add(key, listaValores[key]);
                                 }
                             }
                         }
@@ -8391,21 +8421,22 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         }
                         else if (!pPropiedadPadre.FunctionalProperty)
                         {
-                            int count = 0;
-
-                            foreach (string entPropID in pPropiedadPadre.ListaValores.Keys)
+                            if (propAux.ListaValores.ContainsKey(pEntidad.ID))
                             {
-                                if (entPropID == pEntidad.ID)
-                                {
-                                    break;
-                                }
-
-                                count++;
+                                entidadID = pEntidad.ID;
                             }
-
-                            if (propAux.ListaValores.Count > count)
+                            else
                             {
-                                entidadID = new List<string>(propAux.ListaValores.Keys)[count];
+                                var listaValoresDisponibles = propAux.ListaValores.Where(item => !pPropiedadPadre.ListaValores.ContainsKey(item.Key) && !pEntidadesYaAgregadas.Contains(entidadID));
+
+                                if (listaValoresDisponibles.Count() > 0 && Uri.IsWellFormedUriString(listaValoresDisponibles.First().Key, UriKind.RelativeOrAbsolute))
+                                {
+                                    entidadID = listaValoresDisponibles.First().Key;
+                                }
+                                else
+                                {
+                                    entidadID = pEntidad.ID;
+                                }
                             }
                         }
 
@@ -8450,7 +8481,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
                 servicioImagenes.Url = UrlServicioImagenes;
 
-                CallInterntService servDocLink = new CallInterntService(mConfigService, mLoggingService);
+                ServicioVideos servDocLink = new ServicioVideos(mConfigService, mLoggingService);
 
                 foreach (AttachedResource adjunto in pListaArchivosAdjuntos)
                 {
@@ -8632,7 +8663,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                             nombreDefArc = UtilCadenas.EliminarCaracteresUrlSem(nombreDefArc);
 
-                            string nombreParaRdf = UtilArchivos.ContentDocLinks + "/" + UtilArchivos.DirectorioDocumento(pDocumentoID) + "/" + idioma + nombreDefArc;
+                            string nombreParaRdf = string.Empty;
+
+                            if (!string.IsNullOrEmpty(idioma))
+                            {
+                                nombreParaRdf = Path.Combine(UtilArchivos.ContentDocLinks, UtilArchivos.DirectorioDocumento(pDocumentoID), idioma, nombreDefArc);
+                            }
+                            else
+                            {
+                                nombreParaRdf = Path.Combine(UtilArchivos.ContentDocLinks, UtilArchivos.DirectorioDocumento(pDocumentoID), nombreDefArc);
+                            }
 
                             if (!ReemplazarValorPropiedadEntidad(nombreArchivo + extension, nombreParaRdf + extension, pInstanciasPrincipales, idiomaSimple))
                             {
@@ -8991,9 +9031,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo, idioma));
                             }
                             //Parte de código para las migraciones de la versión 4 a la 5.
-                            else if(mConfigService.ObtenerProcesarStringGrafo() && pProp.ListaValoresIdioma[idioma].ContainsKey(pObjetoViejo.Replace("''", "\"")))
+                            else if (mConfigService.ObtenerProcesarStringGrafo() && pProp.ListaValoresIdioma[idioma].ContainsKey(pObjetoViejo.Replace("''", "\"")))
                             {
-                                pProp.ListaValoresIdioma[idioma].Remove(pObjetoViejo);
+                                pProp.ListaValoresIdioma[idioma].Remove(pObjetoViejo.Replace("''", "\""));
                                 AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, idioma, true);
                                 pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo, idioma));
                             }
@@ -9035,6 +9075,24 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, $"{UrlIntragnoss}{pDocID.ToString().ToLower()}", "http://gnoss/hasEntidad", $"{UrlIntragnoss}items/{pObjetoViejo}", pTripleDeEliminacion: true, pObjetoEsUri: true);
 
                             pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, $"{UrlIntragnoss}items/{pObjetoViejo}"));
+                        }
+                        else if (mConfigService.ObtenerProcesarStringGrafo() && pProp.ListaValores.ContainsKey(pObjetoViejo.Replace("''", "\"")))
+                        {
+                            EliminarEntidadesAuxiliaresRelacionadas(pProp.ListaValores[pObjetoViejo.Replace("''", "\"")]);
+                            pProp.ListaValores.Remove(pObjetoViejo.Replace("''", "\""));
+                            if (pProp.Tipo.Equals(TipoPropiedad.ObjectProperty))
+                            {
+                                AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, objetoViejoOriginal, pTripleDeEliminacion: true, pObjetoEsUri: true);
+                                AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, $"{UrlIntragnoss}{pDocID.ToString().ToLower()}", "http://gnoss/hasEntidad", objetoViejoOriginal, pTripleDeEliminacion: true, pObjetoEsUri: true);
+
+                                pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, objetoViejoOriginal));
+                            }
+                            else
+                            {
+                                AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, pTripleDeEliminacion: true);
+
+                                pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo));
+                            }
                         }
                         else
                         {
@@ -9121,6 +9179,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                         pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo, idioma));
                     }
+                    else if (mConfigService.ObtenerProcesarStringGrafo() && pProp.ListaValoresIdioma.ContainsKey(idioma) && pProp.ListaValoresIdioma[idioma].ContainsKey(pObjetoViejo.Replace("''", "\"")))
+                    {
+                        pProp.ListaValoresIdioma[idioma].Remove(pObjetoViejo.Replace("''", "\""));
+
+                        if (pProp.ListaValoresIdioma[idioma].Count == 0)
+                        {
+                            pProp.ListaValoresIdioma.Remove(idioma);
+                        }
+                        AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, idioma, pTripleDeEliminacion: true);
+
+                        pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo, idioma));
+                    }
                     else
                     {
                         throw new Exception("MultiIdioma: No se ha encontrado '" + pObjetoViejo + "' en la lista de valores de la propiedad '" + pProp.Nombre + "'");
@@ -9181,6 +9251,33 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 {
                                     //Borro Entidad Vieja
                                     pProp.ElementoOntologia.EntidadesRelacionadas.Remove(pProp.ListaValores[pObjetoViejo]);
+                                }
+                                AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, pTripleDeEliminacion: true, pObjetoEsUri: true);
+                                AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, $"{UrlIntragnoss}{pDocID.ToString().ToLower()}", "http://gnoss/hasEntidad", pObjetoViejo, pTripleDeEliminacion: true, pObjetoEsUri: true);
+                            }
+                            else
+                            {
+                                AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, pTripleDeEliminacion: true);
+                            }
+
+                            pSbTriplesEliminarBusqueda.AppendLine(GenerarTripleBusqueda(pDocID, pEsEntidadPrincipal, pProp, pObjetoViejo));
+
+                            pProp.ListaValores.Remove(pObjetoViejo);
+                        }
+                        else if (mConfigService.ObtenerProcesarStringGrafo() && pProp.ListaValores.ContainsKey(pObjetoViejo.Replace("''", "\"")))
+                        {
+                            if (pProp.Tipo == TipoPropiedad.ObjectProperty)
+                            {
+                                if (!string.IsNullOrEmpty(pProp.Rango))
+                                {
+                                    mEntidadesABorrar.Add(pObjetoViejo);
+                                    mURIEntidadesABorrar.Add(pObjetoViejo, pObjetoViejo);
+                                }
+
+                                if (pProp.ListaValores[pObjetoViejo.Replace("''", "\"")] != null)
+                                {
+                                    //Borro Entidad Vieja
+                                    pProp.ElementoOntologia.EntidadesRelacionadas.Remove(pProp.ListaValores[pObjetoViejo.Replace("''", "\"")]);
                                 }
                                 AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, pProp.ElementoOntologia.Uri, pProp.NombreFormatoUri, pObjetoViejo, pTripleDeEliminacion: true, pObjetoEsUri: true);
                                 AniadirTripleGrafoOntologiaAStringBuilder(pSbTriplesEliminar, $"{UrlIntragnoss}{pDocID.ToString().ToLower()}", "http://gnoss/hasEntidad", pObjetoViejo, pTripleDeEliminacion: true, pObjetoEsUri: true);
@@ -9287,8 +9384,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 pIdioma = $"@{pIdioma}";
             }
-            pObjeto = pObjeto.Replace("\n", "").Replace("\r", "").Replace("\\", "\\\\");
-            return $"\"{pObjeto.Replace("\"", "\\\"")}\"{pIdioma}";
+
+            return $"\"\"\"{pObjeto.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"\"\"{pIdioma}";
         }
 
         private string GenerarTripleBusqueda(Guid pDocID, bool pEsEntidadPrincipal, Propiedad pPropiedad, string pValor, string pIdioma = null)
@@ -9852,14 +9949,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             //Cargar Documento y obtener campos
             Configuracion.ObtenerDesdeFicheroConexion = true;
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            GestorDocumental gestorDocumental = new GestorDocumental(docCN.ObtenerDocumentoPorID(parameters.resource_id), mLoggingService, mEntityContext);
 
-            if (!gestorDocumental.ListaDocumentos.ContainsKey(parameters.resource_id))
+            AD.EntityModel.Models.Documentacion.Documento documento = docCN.ObtenerDocumentoPorIdentificador(parameters.resource_id);
+            AD.EntityModel.Models.Documentacion.Documento documentoOntologia = docCN.ObtenerDocumentoPorIdentificador(documento.ElementoVinculadoID.Value);
+
+            if (!documento.ProyectoID.Equals(FilaProy.ProyectoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
+                throw new GnossException($"The resource {parameters.resource_id} does not exist in the community {parameters.community_short_name}", HttpStatusCode.BadRequest);
             }
-
-            Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
 
             GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
             Identidad identidad = null;
@@ -9878,9 +9975,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             gestorDoc.CargarDocumentos(false);
 
             Elementos.Documentacion.Documento documentoAntiguo = gestorDoc.ListaDocumentos[parameters.resource_id];
-            string antiguoTitulo = documentoAntiguo.Titulo;
-            string antiguaDescripcion = documentoAntiguo.Descripcion;
-            string antiguaNombreCategoriaDoc = documentoAntiguo.FilaDocumento.NombreCategoriaDoc;
+
             DateTime antiguaFechaModificacion = documentoAntiguo.FilaDocumento.FechaModificacion.Value;
 
             #region Carga identidades documento
@@ -9888,8 +9983,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             AgregarIdentidadesEditorasRecurso(documentoAntiguo, gestorDoc, identidad);
 
             #endregion
-
-            DocumentoWeb documentoEdicion = null;
 
             bool esAdminProyectoMyGnoss = EsAdministradorProyectoMyGnoss(UsuarioOAuth);
             GnossStringBuilder sbTriplesInsertar = new GnossStringBuilder();
@@ -9909,32 +10002,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             bool documentoBloqueado = ComprobarDocumentoEnEdicion(parameters.resource_id, identidad.Clave);
             try
             {
-                #region Modelo ACID
-
-                //Obtenemos el documento que vamos a editar:
-                documentoEdicion = new DocumentoWeb(documentoAntiguo.FilaDocumento, gestorDoc, mLoggingService);
-
-                List<Guid> listaProyectosActualNumRec = new List<Guid>();
-                foreach (Guid baseRecurso in documentoEdicion.BaseRecursos)
-                {
-                    Guid proyectoID = gestorDoc.ObtenerProyectoID(baseRecurso);
-                    listaProyectosActualNumRec.Add(proyectoID);
-                }
-
-                #endregion
-
                 //Primero obtener RDf del recurso
-                Guid ontologiaID = documento.ElementoVinculadoID;
-
-                if (!documento.GestorDocumental.ListaDocumentos.ContainsKey(ontologiaID))
-                {
-                    documento.GestorDocumental.DataWrapperDocumentacion.Merge(docCN.ObtenerDocumentoPorID(ontologiaID));
-                    docCN.Dispose();
-                    documento.GestorDocumental.CargarDocumentos(false);
-                }
+                Guid ontologiaID = documento.ElementoVinculadoID.Value;
 
                 //Agrego namespaces y urls:
-                string nombreOntologia = documento.GestorDocumental.ListaDocumentos[ontologiaID].FilaDocumento.Enlace;
+                string nombreOntologia = documentoOntologia.Enlace;
                 string urlOntologia = BaseURLFormulariosSem + "/Ontologia/" + nombreOntologia + "#";
                 nombreOntologia = nombreOntologia.ToLower();
 
@@ -9949,7 +10021,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 string rdfTexto = null;
 
                 //Obtenemos el RDF de la BD.
-                RdfDS rdfDS = ControladorDocumentacion.ObtenerRDFDeBDRDF(parameters.resource_id, documento.FilaDocumento.ProyectoID.Value);
+                RdfDS rdfDS = ControladorDocumentacion.ObtenerRDFDeBDRDF(parameters.resource_id, documento.ProyectoID.Value);
                 if (rdfDS.RdfDocumento.Count > 0)
                 {
                     rdfTexto = rdfDS.RdfDocumento[0].RdfSem;
@@ -9958,7 +10030,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 // RDF desde virtuoso
                 if (string.IsNullOrEmpty(rdfTexto))
                 {
-                    MemoryStream buffer = new MemoryStream(ObtenerRDFDeVirtuosoControlCheckpoint(parameters.resource_id, documento.GestorDocumental.ListaDocumentos[ontologiaID].Enlace, urlOntologia, gestorOWL.NamespaceOntologia, ontologia));
+                    MemoryStream buffer = new MemoryStream(ObtenerRDFDeVirtuosoControlCheckpoint(parameters.resource_id, documentoOntologia.Enlace, urlOntologia, gestorOWL.NamespaceOntologia, ontologia));
                     StreamReader reader = new StreamReader(buffer);
                     rdfTexto = reader.ReadToEnd();
                     reader.Close();
@@ -9970,23 +10042,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
 
                 List<ElementoOntologia> entidadesPrincAntiguas = gestorOWL.LeerFicheroRDF(ontologia, rdfTexto, true);
-                string urlDoc = "";
+
                 if (!rdfTexto.Contains("xmlns:gnossonto="))
                 {
                     gestorOWL.NamespaceOntologia = gestorOWL.NamespacesRDFLeyendo.FirstOrDefault(item => item.Value.Equals(gestorOWL.UrlOntologia)).Key;
                 }
                 instanciasPrincipales = gestorOWL.LeerFicheroRDF(ontologia, rdfTexto, true);
-                if (documentoEdicion.TipoDocumentacion == TiposDocumentacion.Semantico)
-                {
-                    mEntityContext.NoConfirmarTransacciones = true;
-
-                    docCN = new DocumentacionCN("acid", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-                    gestorDoc.DataWrapperDocumentacion.Merge(docCN.ObtenerDocumentoPorID(documentoEdicion.ElementoVinculadoID));
-
-                    gestorDoc.CargarDocumentos(false);
-
-                    urlDoc = UrlIntragnoss + gestorDoc.ListaDocumentos[documentoEdicion.ElementoVinculadoID].Enlace;
-                }
 
                 #region Modificación de los campos
 
@@ -10036,18 +10097,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                         {
                                             tituloNuevoCadena += tituloNuevo.Key + "@" + tituloNuevo.Value + "|||";
                                         }
-
                                     }
                                 }
                                 else
                                 {
                                     tituloNuevoCadena = triple.new_object;
                                 }
-                                documentoEdicion.Titulo = tituloNuevoCadena;
+
+                                documento.Titulo = tituloNuevoCadena;
 
                                 if (ParametrosAplicacionDS.ParametroAplicacion.Any(item => item.Parametro.Equals(TiposParametrosAplicacion.LecturaAumentada) && item.Valor.Equals("1")))
                                 {
-                                    DocumentoLecturaAumentada lecturaAumentadaDocumento = mEntityContext.DocumentoLecturaAumentada.FirstOrDefault(item => item.DocumentoID.Equals(documento.Clave));
+                                    DocumentoLecturaAumentada lecturaAumentadaDocumento = mEntityContext.DocumentoLecturaAumentada.FirstOrDefault(item => item.DocumentoID.Equals(documento.DocumentoID));
                                     if (lecturaAumentadaDocumento != null && lecturaAumentadaDocumento.Validada)
                                     {
                                         lecturaAumentadaDocumento.Validada = false;
@@ -10062,11 +10123,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         case GnossResourceProperty.description:
                             //Modificamos la descripción en el modelo ACID
                             descripcion = UtilCadenas.TrimEndCadena(UtilCadenas.TrimEndCadena(UtilCadenas.TrimEndCadena(UtilCadenas.TrimEndCadena(triple.new_object.Trim().Replace("\r\n", ""), "<br>"), "</br>"), "</ br>"), "<p>&nbsp;</p>");
-                            documentoEdicion.Descripcion = descripcion;
+
+                            documento.Descripcion = descripcion;
 
                             if (ParametrosAplicacionDS.ParametroAplicacion.Any(item => item.Parametro.Equals(TiposParametrosAplicacion.LecturaAumentada) && item.Valor.Equals("1")))
                             {
-                                DocumentoLecturaAumentada lecturaAumentadaDocumento = mEntityContext.DocumentoLecturaAumentada.FirstOrDefault(item => item.DocumentoID.Equals(documento.Clave));
+                                DocumentoLecturaAumentada lecturaAumentadaDocumento = mEntityContext.DocumentoLecturaAumentada.FirstOrDefault(item => item.DocumentoID.Equals(documento.DocumentoID));
                                 if (lecturaAumentadaDocumento != null && lecturaAumentadaDocumento.Validada)
                                 {
                                     lecturaAumentadaDocumento.Validada = false;
@@ -10076,27 +10138,27 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             break;
                     }
 
+                    ElementoOntologia elementoOntologia = instanciasPrincipales.FirstOrDefault();
                     if (triple.predicate.Contains("|"))
                     {
                         //El valor a modificar se encuentra en una propiedad hija
                         //Método recursivo
-                        foreach (ElementoOntologia eo in instanciasPrincipales)
-                        {
-                            ModificarInstanciaPorNivel(ontologia, eo.Propiedades, parameters.resource_id, triple.predicate, triple.old_object, triple.new_object, true, sbTriplesInsertar, sbTriplesEliminar, sbTriplesInsertarBusqueda, sbTriplesEliminarBusqueda);
-                        }
+                        ModificarInstanciaPorNivel(ontologia, elementoOntologia.Propiedades, parameters.resource_id, triple.predicate, triple.old_object, triple.new_object, true, sbTriplesInsertar, sbTriplesEliminar, sbTriplesInsertarBusqueda, sbTriplesEliminarBusqueda);
+
                     }
                     else
                     {
                         //El valor a modificar se encuentra en una propiedad del primer nivel
-                        foreach (ElementoOntologia eo in instanciasPrincipales)
+                        if (elementoOntologia != null)
                         {
-                            foreach (Propiedad p in eo.Propiedades)
+                            Propiedad propiedad = elementoOntologia.Propiedades.Where(item => item.Nombre.Equals(triple.predicate)).FirstOrDefault();
+                            if (propiedad != null)
                             {
-                                if (p.Nombre == triple.predicate)
-                                {
-                                    ModificarPropiedad(parameters.resource_id, p, triple.predicate, triple.old_object, triple.new_object, true, sbTriplesInsertar, sbTriplesEliminar, sbTriplesInsertarBusqueda, sbTriplesEliminarBusqueda);
-                                    break;
-                                }
+                                ModificarPropiedad(parameters.resource_id, propiedad, triple.predicate, triple.old_object, triple.new_object, true, sbTriplesInsertar, sbTriplesEliminar, sbTriplesInsertarBusqueda, sbTriplesEliminarBusqueda);
+                            }
+                            else
+                            {
+                                throw new GnossException($"La propiedad {triple.predicate} no existe en la ontología {elementoOntologia.ID}", HttpStatusCode.BadRequest);
                             }
                         }
                     }
@@ -10154,12 +10216,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     if (!string.IsNullOrEmpty(rutaImagen))
                     {
                         //asignar la rutaImagen
-                        documentoEdicion.FilaDocumento.NombreCategoriaDoc = rutaImagen;
+                        documento.NombreCategoriaDoc = rutaImagen;
                     }
                 }
 
                 //Terminamos las modificaciones y guardamos el documento.
-                documentoEdicion.FilaDocumento.FechaModificacion = DateTime.Now;
+                documento.FechaModificacion = DateTime.Now;
                 List<TripleWrapper> listaTriplesSemanticos = null;
 
                 try
@@ -10170,15 +10232,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     string infoExtra_Replicacion = "";
 
-                    if (documento.FilaDocumento.ProyectoID.HasValue)
+                    if (documento.ProyectoID.HasValue)
                     {
-                        infoExtra_Replicacion += $"{ObtenerInfoExtraBaseDocumentoAgregar(parameters.resource_id, documento.FilaDocumento.Tipo, documento.FilaDocumento.ProyectoID.Value, (short)prioridadBase)}";
+                        infoExtra_Replicacion += $"{ObtenerInfoExtraBaseDocumentoAgregar(parameters.resource_id, documento.Tipo, documento.ProyectoID.Value, (short)prioridadBase)}";
                     }
 
                     // SemWeb
                     try
                     {
-                        listaTriplesSemanticos = ControladorDocumentacion.GuardarRDFEnVirtuoso(instanciasPrincipales, nombreOntologia, UrlIntragnoss, "acid", documento.FilaDocumento.ProyectoID.Value, parameters.resource_id.ToString(), false, infoExtra_Replicacion, documento.EsBorrador, usarColaReplicacion, (short)prioridadBase, sbTriplesInsertar, sbTriplesEliminar);
+                        listaTriplesSemanticos = ControladorDocumentacion.GuardarRDFEnVirtuoso(instanciasPrincipales, nombreOntologia, UrlIntragnoss, "acid", documento.ProyectoID.Value, parameters.resource_id.ToString(), false, infoExtra_Replicacion, documento.Borrador, usarColaReplicacion, (short)prioridadBase, sbTriplesInsertar, sbTriplesEliminar);
 
                         if (listaSujetosBorrar != null && listaSujetosBorrar.Count > 0)
                         {
@@ -10189,13 +10251,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                         try
                         {
-                            ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, parameters.resource_id, documento.FilaDocumento.ProyectoID.Value, rdfDS);
-                            Guardar(listaProyectosActualNumRec, gestorDoc, documentoEdicion);
-
-                            if (documentoEdicion.TipoDocumentacion == TiposDocumentacion.Semantico)
-                            {
-                                mEntityContext.TerminarTransaccionesPendientes(true);
-                            }
+                            ControladorDocumentacion.GuardarRDFEnBDRDF(ficheroRDF, parameters.resource_id, documento.ProyectoID.Value, rdfDS);
+                            mEntityContext.SaveChanges();
+                            mEntityContext.TerminarTransaccionesPendientes(true);
                         }
                         catch (Exception ex)
                         {
@@ -10219,10 +10277,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     mLoggingService.GuardarLogError(ex, $"Error al modificar recurso. Se van a revertir los cambios en el ácido del recurso {parameters.resource_id}");
 
-                    if (documentoEdicion.TipoDocumentacion == TiposDocumentacion.Semantico)
-                    {
-                        mEntityContext.TerminarTransaccionesPendientes(false);
-                    }
+                    mEntityContext.TerminarTransaccionesPendientes(false);
+
                     throw;
                 }
             }
@@ -10242,12 +10298,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             // Actualizar cola GnossLIVE
             ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-            foreach (Guid baseRecurso in documentoEdicion.BaseRecursos)
+
+            List<DocumentoWebVinBaseRecursos> basesRecursoDocumento = docCN.ObtenerListaDocumentoWebVinBaseRecursoPorDocumentoID(documento.DocumentoID);
+
+            foreach (DocumentoWebVinBaseRecursos documentoWebVinBaseRecursos in basesRecursoDocumento)
             {
-                Guid proyectoBR = gestorDoc.ObtenerProyectoID(baseRecurso);
+                Guid baseRecursosId = documentoWebVinBaseRecursos.BaseRecursosID;
+                Guid proyectoBR = gestorDoc.ObtenerProyectoID(baseRecursosId);
 
                 //si la comunidad es en la que se publicó y coincide con el proyecto pasado como parámetro se inserta directamente, si no, lo hace el BASE
-                if ((proyectoBR.Equals(documentoEdicion.ProyectoID) && Proyecto.Clave.Equals(proyectoBR)) || documentoEdicion.BaseRecursos.Count == 1)
+                if ((proyectoBR.Equals(documento.ProyectoID) && Proyecto.Clave.Equals(proyectoBR)) || basesRecursoDocumento.Count == 1)
                 {
                     FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
                     if (sbTriplesEliminarBusqueda != null && sbTriplesEliminarBusqueda.GetStringBuilder().Count > 0)
@@ -10276,7 +10336,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         facetadoAD.ActualizarVirtuoso(queryDelete, $"{UrlIntragnoss}{proyectoBR}");
                     }
 
-                    ControladorDocumentacion.AgregarRecursoModeloBaseSimple(parameters.resource_id, proyectoBR, (short)documentoEdicion.TipoDocumentacion, null, "", PrioridadBase.Alta, false, -1, (short)TiposElementosEnCola.InsertadoEnGrafoBusquedaDesdeWeb);
+                    ControladorDocumentacion.AgregarRecursoModeloBaseSimple(parameters.resource_id, proyectoBR, documento.Tipo, null, "", PrioridadBase.Alta, false, -1, (short)TiposElementosEnCola.InsertadoEnGrafoBusquedaDesdeWeb);
                 }
                 else
                 {
@@ -10285,7 +10345,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
 
                 int tipo;
-                switch (documentoEdicion.TipoDocumentacion)
+                switch ((TiposDocumentacion)documento.Tipo)
                 {
                     case TiposDocumentacion.Debate:
                         tipo = (int)TipoLive.Debate;
@@ -10300,7 +10360,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (AgregarColaLive || parameters.publish_home)
                 {
-                    ControladorDocumentacion.ActualizarGnossLive(proyectoBR, documentoEdicion.Clave, AccionLive.Editado, tipo, "base", PrioridadLive.Baja);
+                    ControladorDocumentacion.ActualizarGnossLive(proyectoBR, documento.DocumentoID, AccionLive.Editado, tipo, "base", PrioridadLive.Baja);
                 }
             }
 
