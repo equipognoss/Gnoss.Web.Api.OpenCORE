@@ -56,5 +56,33 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Community's users
         /// </summary>
         public List<Guid> users { get; set; }
+        /// <summary>
+        /// Community's state
+        /// </summary>
+        public short state { get; set; }
+    }
+
+    /// <summary>
+    /// Parameters to obtein a text in other language
+    /// </summary>
+    public class GetTextByLanguageModel
+    {
+        /// <summary>
+        /// Community short name
+        /// </summary>
+        [Required]
+        public string community_short_name { get; set; }
+
+        /// <summary>
+        /// Language of the text
+        /// </summary>
+        [Required]
+        public string language { get; set; }
+
+        /// <summary>
+        /// ID of the text
+        /// </summary>
+        [Required]
+        public string texto_id { get; set; }
     }
 }

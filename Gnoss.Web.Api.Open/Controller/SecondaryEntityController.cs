@@ -21,6 +21,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Es.Riam.AbstractsOpen;
+using BeetleX.Redis.Commands;
+using Es.Riam.Gnoss.Logica.MVC;
+using Microsoft.Azure.Amqp.Framing;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
@@ -89,6 +92,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 ontologia.LeerOntologia();
 
                 string triplesInsertar = "";
+                string triplesBorrar = "";
                 List<TripleWrapper> triplesComBorrar = new List<TripleWrapper>();
                 List<TripleWrapper> triplesComInsertar = new List<TripleWrapper>();
 
@@ -98,7 +102,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     string predicado = linea[1];
                     string objetoNuevo = linea[2];
 
-                    ModificarTripleEntidadSecundaria(ontologia, parameters.secondary_ontology_url, parameters.secondary_entity, predicado, objetoViejo, objetoNuevo, ref triplesInsertar, triplesComBorrar, triplesComInsertar);
+                    ModificarTripleEntidadSecundaria(ontologia, parameters.secondary_ontology_url, parameters.secondary_entity, predicado, objetoViejo, objetoNuevo, ref triplesInsertar, ref triplesBorrar, triplesComBorrar, triplesComInsertar);
                 }
 
                 //Genero las triples de la comunidad:
@@ -297,12 +301,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <param name="pTriplesInsertar">Cadena con los triples a insertar</param>
         /// <param name="pTriplesComBorrar">Lista con los triples a borrar</param>
         /// <param name="pTriplesComInsertar">Lista con los triples a insertar</param>
-        private void ModificarTripleEntidadSecundaria(Ontologia pOntologia, string pUrlOntologiaSecundaria, string pEntidadSecundariaID, string pPredicado, string pObjetoViejo, string pObjetoNuevo, ref string pTriplesInsertar, List<TripleWrapper> pTriplesComBorrar, List<TripleWrapper> pTriplesComInsertar)
+        private void ModificarTripleEntidadSecundaria(Ontologia pOntologia, string pUrlOntologiaSecundaria, string pEntidadSecundariaID, string pPredicado, string pObjetoViejo, string pObjetoNuevo, ref string pTriplesInsertar, ref string pTriplesBorrar, List<TripleWrapper> pTriplesComBorrar, List<TripleWrapper> pTriplesComInsertar)
         {
-            if (pPredicado.Contains("|"))
-            {
-                throw new Exception("La versión actual del API no soporta la modificación de triples multiNivel.");
-            }
+            //if (pPredicado.Contains("|"))
+            //{
+            //    throw new Exception("La versión actual del API no soporta la modificación de triples multiNivel.");
+            //}
+
+            
+
 
             List<string> ent = new List<string>();
             ent.Add(pEntidadSecundariaID);
@@ -348,28 +355,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new Exception("La entidad indicada tiene un tipo que no pertenece a la ontología '" + rdfType + "'.");
             }
 
-            Propiedad propiedad = entidad.ObtenerPropiedadPorNombreOUri(pPredicado);
+            ModificarInstanciaPorNivelEntidadSecundaria(entidad, dataSetEnt, grafoOnto, pEntidadSecundariaID, pPredicado, pObjetoViejo, pObjetoNuevo, ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, pEntidadSecundariaID);
+            //EscribirTripletasEntidadSecundaria(pEntidadSecundariaID, pPredicado, pObjetoViejo, pObjetoNuevo, pTriplesInsertar, pTriplesComBorrar, pTriplesComInsertar, valoresProp);
+            
 
-            if (propiedad == null)
-            {
-                throw new Exception("La entidad '" + pEntidadSecundariaID + "' no posee la propiedad '" + pPredicado + "'.");
-            }
-
-            //20160122 - comentado para modificar tesauros en bbva
-            //if (propiedad.Tipo != TipoPropiedad.DatatypeProperty)
-            //{
-            //    throw new Exception("La propiedad '" + pPredicado + "' no es de tipo datos y solo se pueden modificar las de este tipo en la versión actual del API.");
-            //}
-
-            Dictionary<string, List<string>> valoresProp = FacetadoCN.ObtenerObjetosDataSetSegunPropiedadConIdioma(dataSetEnt, pEntidadSecundariaID, pPredicado);
-
-            if (!string.IsNullOrEmpty(pObjetoViejo) && string.IsNullOrEmpty(pObjetoNuevo) && propiedad.FunctionalProperty && valoresProp.Count == 1)
-            {
-                throw new Exception("La propiedad '" + pPredicado + "' es funcional y no puede quedarse sin valor.");
-            }
-
-            string triplesBorrar = "";
-
+            dataSetEnt.Dispose();
+        }
+        private void EscribirTripletasEntidadSecundaria(string pEntidadSecundariaID, string pPredicado, string pObjetoViejo, string pObjetoNuevo, ref string pTriplesInsertar, ref string pTriplesBorrar, List<TripleWrapper> pTriplesComBorrar, List<TripleWrapper> pTriplesComInsertar, Dictionary<string, List<string>> pValoresProp)
+        {
             if (!string.IsNullOrEmpty(pObjetoViejo))
             {
                 string idioma = "";
@@ -380,12 +373,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     pObjetoViejo = pObjetoViejo.Substring(0, pObjetoViejo.LastIndexOf("@"));
                 }
 
-                if (!valoresProp.ContainsKey(idioma) || !valoresProp[idioma].Contains(pObjetoViejo))
+                if (!pValoresProp.ContainsKey(idioma) || !pValoresProp[idioma].Contains(pObjetoViejo))
                 {
                     throw new Exception("La propiedad '" + pPredicado + "' no contiene el valor '" + pObjetoViejo + "' con idioma '" + idioma + "'.");
                 }
 
-                ControladorDocumentacion.EscribirTripletaEntidad(pEntidadSecundariaID, pPredicado, pObjetoViejo, ref triplesBorrar, pTriplesComBorrar, false, idioma);
+                ControladorDocumentacion.EscribirTripletaEntidad(pEntidadSecundariaID, pPredicado, pObjetoViejo, ref pTriplesBorrar, pTriplesComBorrar, false, idioma);
             }
 
             if (!string.IsNullOrEmpty(pObjetoNuevo))
@@ -398,17 +391,148 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     pObjetoNuevo = pObjetoNuevo.Substring(0, pObjetoNuevo.LastIndexOf("@"));
                 }
 
-                if (valoresProp.ContainsKey(idioma) && valoresProp[idioma].Contains(pObjetoNuevo))
+                if (pValoresProp.ContainsKey(idioma) && pValoresProp[idioma].Contains(pObjetoNuevo))
                 {
                     throw new Exception("La propiedad '" + pPredicado + "' ya contiene el valor '" + pObjetoViejo + "' con idioma '" + idioma + "'.");
                 }
 
                 ControladorDocumentacion.EscribirTripletaEntidad(pEntidadSecundariaID, pPredicado, pObjetoNuevo, ref pTriplesInsertar, pTriplesComInsertar, false, idioma);
             }
-
-            dataSetEnt.Dispose();
         }
 
+        private void ModificarInstanciaPorNivelEntidadSecundaria(ElementoOntologia pEntidad, FacetadoDS pDataSetEnt, string pGrafoOnto, string pEntidadSecundariaID, string pPredicado, string pObjetoViejo, string pObjetoNuevo, ref string pTriplesInsertar, ref string pTriplesBorrar, List<TripleWrapper> pTriplesComBorrar, List<TripleWrapper> pTriplesComInsertar, string pEntidadPadreID)
+        {
+            Propiedad propiedad = pEntidad.ObtenerPropiedadPorNombreOUri(pPredicado);
+
+            Dictionary<string, List<string>> valoresProp = FacetadoCN.ObtenerObjetosDataSetSegunPropiedadConIdioma(pDataSetEnt, pEntidadSecundariaID, pPredicado);
+            if (pPredicado.Contains("|"))
+            {
+                propiedad = pEntidad.ObtenerPropiedadPorNombreOUri(pPredicado.Substring(0, pPredicado.IndexOf('|')));
+
+                if (propiedad == null)
+                {
+                    throw new Exception("La entidad '" + pEntidadSecundariaID + "' no posee la propiedad '" + pPredicado + "'.");
+                }
+
+                valoresProp = FacetadoCN.ObtenerObjetosDataSetSegunPropiedadConIdioma(pDataSetEnt, pEntidadSecundariaID, pPredicado.Substring(0, pPredicado.IndexOf('|')));
+
+                if (!string.IsNullOrEmpty(pObjetoViejo) && string.IsNullOrEmpty(pObjetoNuevo) && propiedad.FunctionalProperty && valoresProp.Count == 1)
+                {
+                    throw new Exception("La propiedad '" + pPredicado.Substring(0, pPredicado.IndexOf('|') + 1) + "' es funcional y no puede quedarse sin valor.");
+                }
+
+                char[] delimiter = { '|' };
+                string[] pred = pPredicado.Split(delimiter, StringSplitOptions.RemoveEmptyEntries);
+                string[] objetoViejo = null;
+                if (string.IsNullOrEmpty(pObjetoViejo) || !pObjetoViejo.Contains('|'))
+                {
+                    if (!string.IsNullOrEmpty(pObjetoNuevo) && pObjetoNuevo.Contains('|')) 
+                    {
+                        objetoViejo = pObjetoNuevo.Split(delimiter, StringSplitOptions.RemoveEmptyEntries);
+                    }
+                    else
+                    {
+                        throw new Exception($"Se ha configurado el predicado {pPredicado} multi valor ('\') pero no se ha dado tal valor al ObjetoViejo ni al objetoNuevo");
+                    }
+                }
+                else
+                {
+                    objetoViejo = pObjetoViejo.Split(delimiter, StringSplitOptions.RemoveEmptyEntries);
+                }
+                
+
+                List<string> listaPredicados = new List<string>() { pred[0] };
+                List<string> listaEntidades = new List<string>() { pEntidadSecundariaID };
+                FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoDS dataSetEnt = facCN.ObtenerValoresPropiedadesEntidades(pGrafoOnto, listaEntidades, listaPredicados, true);
+
+                List<string> objetos = FacetadoCN.ObtenerObjetosDataSetSegunPropiedad(dataSetEnt, pEntidadSecundariaID, listaPredicados.First());
+
+                if (!objetos.Contains(objetoViejo.First()))
+                {
+                    Propiedad prop = pEntidad.Propiedades.FirstOrDefault(p => p.Nombre.Equals(pred.First()));
+                    string idEntidadAux = objetoViejo.First();
+
+                    if (prop.ValoresUnificados.ContainsKey(idEntidadAux))
+                    {
+                        objetos.Add(idEntidadAux);
+                    }
+                    else
+                    {
+                        string sujeto = pEntidadSecundariaID.Replace("/items/", "/entidadsecun_").ToLower();
+                        EscribirTripletasEntidadSecundaria(sujeto, "http://gnoss/hasEntidad", null, idEntidadAux, ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, valoresProp);
+                        EscribirTripletasEntidadSecundaria(pEntidadSecundariaID, prop.Nombre, null, idEntidadAux, ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, valoresProp);
+
+                        EscribirTripletasEntidadSecundaria(idEntidadAux, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", null, prop.Rango, ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, valoresProp);
+                        EscribirTripletasEntidadSecundaria(idEntidadAux, "http://www.w3.org/2000/01/rdf-schema#label", null, prop.Rango, ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, valoresProp);
+
+                        objetos.Add(idEntidadAux);
+
+                        if (prop.FunctionalProperty)
+                        {
+                            prop.UnicoValor = new KeyValuePair<string, ElementoOntologia>(idEntidadAux, null);
+                        }
+                        else
+                        {
+                            prop.ListaValores.Add(idEntidadAux, null);
+                        }
+                    }
+                }
+
+                if (objetos.Contains(objetoViejo.First()))
+                {
+                    if (pObjetoViejo == null)
+                    {
+                        pObjetoViejo = "";
+                    }
+                    if (pred.Length > 2)
+                    {
+                        ModificarInstanciaPorNivelEntidadSecundaria(pEntidad, pDataSetEnt, pGrafoOnto, objetoViejo.First(), pPredicado.Substring(pPredicado.IndexOf('|') + 1), pObjetoViejo.Substring(pObjetoViejo.IndexOf('|') + 1), pObjetoNuevo.Substring(pObjetoNuevo.IndexOf('|') + 1), ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, pEntidadPadreID);
+                    }
+                    else
+                    {
+                        
+                        if (!pObjetoViejo.Contains('|'))
+                        {
+                            pObjetoViejo = "";
+                        }
+                        else
+                        {
+                            pObjetoViejo = pObjetoViejo.Substring(pObjetoViejo.IndexOf('|') + 1);
+                        }
+                        if (!pObjetoNuevo.Contains('|'))
+                        {
+                            pObjetoNuevo = "";
+                        }
+                        else
+                        {
+                            pObjetoNuevo = pObjetoNuevo.Substring(pObjetoNuevo.IndexOf('|') + 1);
+                        }
+                        EscribirTripletasEntidadSecundaria(objetoViejo.First(), pPredicado.Substring(pPredicado.IndexOf('|') + 1), pObjetoViejo, pObjetoNuevo, ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, valoresProp);//(pGrafoOnto, objetoViejo.First(), pPredicado.Substring(pPredicado.IndexOf('|') + 1), pObjetoViejo, pObjetoNuevo);
+                    }
+                }
+            }
+            else
+            {
+                propiedad = pEntidad.ObtenerPropiedadPorNombreOUri(pPredicado);
+
+                if (propiedad == null)
+                {
+                    throw new Exception("La entidad '" + pEntidadSecundariaID + "' no posee la propiedad '" + pPredicado + "'.");
+                }
+
+                valoresProp = FacetadoCN.ObtenerObjetosDataSetSegunPropiedadConIdioma(pDataSetEnt, pEntidadSecundariaID, pPredicado);
+
+                if (!string.IsNullOrEmpty(pObjetoViejo) && string.IsNullOrEmpty(pObjetoNuevo) && propiedad.FunctionalProperty && valoresProp.Count == 1)
+                {
+                    throw new Exception("La propiedad '" + pPredicado + "' es funcional y no puede quedarse sin valor.");
+                }
+
+                EscribirTripletasEntidadSecundaria(pEntidadSecundariaID, pPredicado, pObjetoViejo, pObjetoNuevo, ref pTriplesInsertar, ref pTriplesBorrar, pTriplesComBorrar, pTriplesComInsertar, valoresProp);
+
+            }
+        }
         #endregion
     }
+       
 }
