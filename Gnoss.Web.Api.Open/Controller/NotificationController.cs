@@ -7,6 +7,7 @@ using Es.Riam.Gnoss.AD.ServiciosGenerales;
 using Es.Riam.Gnoss.AD.Virtuoso;
 using Es.Riam.Gnoss.CL;
 using Es.Riam.Gnoss.CL.ServiciosGenerales;
+using Es.Riam.Gnoss.Elementos.Suscripcion;
 using Es.Riam.Gnoss.Logica.BASE_BD;
 using Es.Riam.Gnoss.Logica.Notificacion;
 using Es.Riam.Gnoss.Logica.Parametro;
@@ -15,9 +16,12 @@ using Es.Riam.Gnoss.Logica.Usuarios;
 using Es.Riam.Gnoss.Util.Configuracion;
 using Es.Riam.Gnoss.Util.General;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
+using Es.Riam.Interfaces.InterfacesOpen;
 using Es.Riam.Util;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Serilog.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,10 +37,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     [Route("[controller]")]
     public class NotificationController : ControlApiGnossBase
     {
-        public NotificationController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
-            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
+        private ILogger mlogger;
+        private ILoggerFactory mLoggerFactory;
+        public NotificationController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<NotificationController> logger, ILoggerFactory loggerFactory)
+            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices,logger,loggerFactory)
         {
-
+            mlogger = logger;
+            mLoggerFactory = loggerFactory;
         }
 
         /// <summary>
@@ -55,7 +62,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
 					if (!string.IsNullOrEmpty(parameters.community_short_name))
 					{
-						ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+						ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
 						proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(parameters.community_short_name);
 
 						if (proyectoID.Equals(Guid.Empty))
@@ -74,10 +81,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             Guid destinatarioID = Guid.Empty;
                             if (Guid.TryParse(destinatario, out destinatarioID))
                             {
-                                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
                                 if (usuarioCN.ExisteUsuarioEnBD(destinatarioID))
                                 {
-                                    PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                                    PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
                                     string email = personaCN.ObtenerEmailPersonalPorUsuario(destinatarioID);
                                     if (!string.IsNullOrEmpty(email))
                                     {
@@ -133,7 +140,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex);
+                mLoggingService.GuardarLogError(ex,mlogger);
                 throw;
             }
         }
@@ -148,7 +155,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             try
             {
-                NotificacionCN notificacionCN = new NotificacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                NotificacionCN notificacionCN = new NotificacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<NotificacionCN>(), mLoggerFactory);
 
                 MailStateModel mailStateModel = new MailStateModel();
                 List<string> listaEmailsPendientes = new List<string>();
@@ -175,7 +182,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex);
+                mLoggingService.GuardarLogError(ex,mlogger);
                 throw;
             }
         }
@@ -185,7 +192,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         private void EnviarNotificacion(List<string> pDestinatarios, string pAsunto, string pCuerpo, bool pEsHtml, string pMascaraRemitente, Guid proyectoID)
         {
             //obtener configuracion correo
-            ParametroCN paramCN = new ParametroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ParametroCN paramCN = new ParametroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ParametroCN>(), mLoggerFactory);
             var parametrosCorreo = paramCN.ObtenerConfiguracionEnvioCorreo(proyectoID);
 
             if (parametrosCorreo == null)
@@ -195,8 +202,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (parametrosCorreo != null)
             {
-                BaseComunidadCN baseComCN = new BaseComunidadCN("base", mEntityContext, mLoggingService, mEntityContextBASE, mConfigService, mServicesUtilVirtuosoAndReplication);
-                baseComCN.InsertarCorreo(parametrosCorreo, pDestinatarios, pAsunto, pCuerpo, pEsHtml, pMascaraRemitente);
+                BaseComunidadCN baseComCN = new BaseComunidadCN("base", mEntityContext, mLoggingService, mEntityContextBASE, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<BaseComunidadCN>(), mLoggerFactory);
+                int correoID = baseComCN.InsertarCorreo(parametrosCorreo, pDestinatarios, pAsunto, pCuerpo, pEsHtml, pMascaraRemitente, mAvailableServices);
+                baseComCN.InsertarCorreoIDColaCorreoRabbitMQ(correoID);
                 baseComCN.Dispose();
             }
             else
@@ -209,7 +217,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             if (pConfiguracionEmisor != null)
             {
-                BaseComunidadCN baseComCN = new BaseComunidadCN("base", mEntityContext, mLoggingService, mEntityContextBASE, mConfigService, mServicesUtilVirtuosoAndReplication);
+                BaseComunidadCN baseComCN = new BaseComunidadCN("base", mEntityContext, mLoggingService, mEntityContextBASE, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<BaseComunidadCN>(), mLoggerFactory);
 
                 ConfiguracionEnvioCorreo configuracionEnvioCorreo = new ConfiguracionEnvioCorreo();
                 configuracionEnvioCorreo.clave = pConfiguracionEmisor.clave;
@@ -222,7 +230,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 configuracionEnvioCorreo.tipo = pConfiguracionEmisor.tipo;
                 configuracionEnvioCorreo.usuario = pConfiguracionEmisor.email;
 
-                baseComCN.InsertarCorreo(configuracionEnvioCorreo, pDestinatarios, pAsunto, pCuerpo, pEsHtml, pMascaraRemitente);
+                int correoID = baseComCN.InsertarCorreo(configuracionEnvioCorreo, pDestinatarios, pAsunto, pCuerpo, pEsHtml, pMascaraRemitente, mAvailableServices);
+                baseComCN.InsertarCorreoIDColaCorreoRabbitMQ(correoID);
 
                 baseComCN.Dispose();
             }

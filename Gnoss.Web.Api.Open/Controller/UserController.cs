@@ -7,6 +7,7 @@ using Es.Riam.Gnoss.AD.EntityModel.Models;
 using Es.Riam.Gnoss.AD.EntityModel.Models.Documentacion;
 using Es.Riam.Gnoss.AD.EntityModel.Models.Pais;
 using Es.Riam.Gnoss.AD.EntityModel.Models.ParametroGeneralDS;
+using Es.Riam.Gnoss.AD.EntityModel.Models.ProyectoDS;
 using Es.Riam.Gnoss.AD.EntityModel.Models.Solicitud;
 using Es.Riam.Gnoss.AD.EntityModel.Models.UsuarioDS;
 using Es.Riam.Gnoss.AD.EntityModelBASE;
@@ -57,16 +58,20 @@ using Es.Riam.Gnoss.UtilServiciosWeb;
 using Es.Riam.Gnoss.Web.Controles;
 using Es.Riam.Gnoss.Web.Controles.Amigos;
 using Es.Riam.Gnoss.Web.Controles.Documentacion;
+using Es.Riam.Gnoss.Web.Controles.Proyectos;
 using Es.Riam.Gnoss.Web.Controles.ServiciosGenerales;
 using Es.Riam.Gnoss.Web.Controles.Solicitudes;
 using Es.Riam.Gnoss.Web.MVC.Models.ViewModels;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
+using Es.Riam.Interfaces.InterfacesOpen;
 using Es.Riam.Util;
 using Es.Riam.Web.Util;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Exchange.WebServices.Data;
+using Microsoft.Extensions.Logging;
+using Serilog.Core;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -79,1214 +84,1253 @@ using System.Threading;
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
 
-	/// <summary>
-	/// Use it to query / create / modify / delete users
-	/// </summary>
-	[ApiController]
-	[Route("[controller]")]
-	public partial class UserController : ControlApiGnossBase
-	{
-
-		public UserController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
-			: base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
+    /// <summary>
+    /// Use it to query / create / modify / delete users
+    /// </summary>
+    [ApiController]
+    [Route("[controller]")]
+    public partial class UserController : ControlApiGnossBase
+    {
+        private ILogger mlogger;
+        private ILoggerFactory mLoggerFactory;
+        public UserController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<UserController> logger, ILoggerFactory loggerFactory)
+			: base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices,logger,loggerFactory)
 		{
-		}
+            mlogger = logger;
+            mLoggerFactory = loggerFactory;
+        }
 
-		#region Métodos Públicos
+        #region Métodos Públicos
 
-		/// <summary>
-		/// Checks if the emails already exists in the database
-		/// </summary>
-		/// <param name="emails">Email list that you want to check</param>
-		/// <returns>Email list that already exists in the database</returns>
-		/// <example>POST user/exists-email-in-database</example>
-		[HttpPost, Route("exists-email-in-database")]
-		public List<string> ExistenEmailsEnBaseDatos(List<string> emails)
-		{
-			if (emails == null || emails.Count == 0)
-			{
-				throw new GnossException("The parameter 'emails' can not be empty", HttpStatusCode.BadRequest);
-			}
+        /// <summary>
+        /// Checks if the emails already exists in the database
+        /// </summary>
+        /// <param name="emails">Email list that you want to check</param>
+        /// <returns>Email list that already exists in the database</returns>
+        /// <example>POST user/exists-email-in-database</example>
+        [HttpPost, Route("exists-email-in-database")]
+        public List<string> ExistenEmailsEnBaseDatos(List<string> emails)
+        {
+            if (emails == null || emails.Count == 0)
+            {
+                throw new GnossException("The parameter 'emails' can not be empty", HttpStatusCode.BadRequest);
+            }
 
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
 
-				PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				List<string> correosPersonas = personaCN.EmailYaPerteneceAPersona(emails.ToArray());
-				personaCN.Dispose();
+                PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                List<string> correosPersonas = personaCN.EmailYaPerteneceAPersona(emails.ToArray());
+                personaCN.Dispose();
 
-				return correosPersonas;
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
+                return correosPersonas;
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+        }
 
-		/// <summary>
-		/// Change email a user
-		/// </summary>
-		/// <param name="user_id">User's identificator</param>
-		/// <param name="email">Email to change</param>
-		/// <example>POST community/block-member</example>
-		[HttpPost, Route("change-user-email")]
-		public void CambiarEmailUsuario(Guid user_id, string email)
-		{
-			CambiarEmailUser(user_id, email);
-		}
+        /// <summary>
+        /// Change email a user
+        /// </summary>
+        /// <param name="user_id">User's identificator</param>
+        /// <param name="email">Email to change</param>
+        /// <example>POST community/block-member</example>
+        [HttpPost, Route("change-user-email")]
+        public void CambiarEmailUsuario(Guid user_id, string email)
+        {
+            CambiarEmailUser(user_id, email);
+        }
 
 
-		/// <summary>
-		/// Gets the short names of the communities in which the user participates.
-		/// </summary>
-		/// <returns>Short names of the communities in which the user participates</returns>
-		/// <example>GET user/get-communities</example>
-		[HttpGet, Route("get-communities")]
-		public List<string> ObtenerNombreCortoProyectosParticipaUsuario()
-		{
-			ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			Dictionary<Guid, string> proysPart = proyCN.ObtenerNombresCortosProyectosParticipaUsuarioSinBloquearNiAbandonarYConfigurables(UsuarioOAuth);
-			proyCN.Dispose();
+        /// <summary>
+        /// Gets the short names of the communities in which the user participates.
+        /// </summary>
+        /// <returns>Short names of the communities in which the user participates</returns>
+        /// <example>GET user/get-communities</example>
+        [HttpGet, Route("get-communities")]
+        public List<string> ObtenerNombreCortoProyectosParticipaUsuario()
+        {
+            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            Dictionary<Guid, string> proysPart = proyCN.ObtenerNombresCortosProyectosParticipaUsuarioSinBloquearNiAbandonarYConfigurables(UsuarioOAuth);
+            proyCN.Dispose();
 
-			proysPart.Remove(ProyectoAD.MetaProyecto);
+            proysPart.Remove(ProyectoAD.MetaProyecto);
 
-			List<string> nombresProy = new List<string>(proysPart.Values);
-			List<string> nombresProyAlter = new List<string>(proysPart.Values);
+            List<string> nombresProy = new List<string>(proysPart.Values);
 
-			UtilUsuario utilUsuario = new UtilUsuario(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper);
-			foreach (Guid proyID in proysPart.Keys)
-			{
-				ParametroGeneral pgr = utilUsuario.ObtenerFilaParametrosGeneralesDeProyecto(proyID);
-				if (!pgr.CargasMasivasDisponibles)
-				{
-					nombresProy.Remove(proysPart[proyID]);
-				}
-			}
+            UtilUsuario utilUsuario = new UtilUsuario(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mLoggerFactory.CreateLogger<UtilUsuario>(), mLoggerFactory);
+            foreach (Guid proyID in proysPart.Keys)
+            {
+                ParametroGeneral pgr = utilUsuario.ObtenerFilaParametrosGeneralesDeProyecto(proyID);
+                if (!pgr.CargasMasivasDisponibles)
+                {
+                    nombresProy.Remove(proysPart[proyID]);
+                }
+            }
 
-			return nombresProy;
-		}
+            return nombresProy;
+        }
 
-		/// <summary>
-		/// Gets the short name of the communities that manages the user.
-		/// </summary>
-		/// <returns>Short name of the communities that manages the user</returns>
-		/// <example>GET user/get-admin-communities</example>
-		[HttpGet, Route("get-admin-communities")]
-		public List<string> ObtenerNombreCortoProyectosAdministraUsuario(string login)
-		{
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
+        /// <summary>
+        /// Gets the short name of the communities that manages the user.
+        /// </summary>
+        /// <returns>Short name of the communities that manages the user</returns>
+        /// <example>GET user/get-admin-communities</example>
+        [HttpGet, Route("get-admin-communities")]
+        public List<string> ObtenerNombreCortoProyectosAdministraUsuario(string login, Guid user_id)
+        {
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
+                UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                Guid? userID;
 
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				Guid? userID = usuCN.ObtenerUsuarioIDPorLoginOEmail(login);
+				if (!string.IsNullOrEmpty(login))
+                {
+                    userID = usuCN.ObtenerUsuarioIDPorLoginOEmail(login);
+                }
+                else
+                {
+                    userID = user_id;
+                }
 
-				List<string> nombresProy;
+                List<string> nombresProy;
 
-				if (userID.HasValue)
-				{
-					ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					Dictionary<Guid, string> proysPart = proyCN.ObtenerNombresCortosProyectosAdministraUsuarioSinBloquearNiAbandonar(UsuarioOAuth);
-					proyCN.Dispose();
+                if (userID.HasValue)
+                {
+                    ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                    Dictionary<Guid, string> proysPart = proyCN.ObtenerNombresCortosProyectosAdministraUsuarioSinBloquearNiAbandonar(UsuarioOAuth);
+                    proyCN.Dispose();
 
-					proysPart.Remove(ProyectoAD.MetaProyecto);
+                    proysPart.Remove(ProyectoAD.MetaProyecto);
 
-					nombresProy = new List<string>(proysPart.Values);
-				}
-				else
-				{
-					nombresProy = new List<string>();
-				}
+                    nombresProy = new List<string>(proysPart.Values);
+                }
+                else
+                {
+                    nombresProy = new List<string>();
+                }
 
-				return nombresProy;
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
+                return nombresProy;
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+        }
 
-		/// <summary>
-		/// Gets the name of the user making the request OAuth
-		/// </summary>
-		/// <returns>Name of the user making the request OAuth</returns>
-		/// <example>GET user/get-complete-name</example>
-		[HttpGet, Route("get-complete-name")]
-		public string GetCompleteName()
-		{
-			PersonaCN perCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperPersona dataWrapperPersona = perCN.ObtenerPersonaPorUsuario(UsuarioOAuth);
-			perCN.Dispose();
+        /// <summary>
+        /// Gets the name of the user making the request OAuth
+        /// </summary>
+        /// <returns>Name of the user making the request OAuth</returns>
+        /// <example>GET user/get-complete-name</example>
+        [HttpGet, Route("get-complete-name")]
+        public string GetCompleteName()
+        {
+            PersonaCN perCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+            DataWrapperPersona dataWrapperPersona = perCN.ObtenerPersonaPorUsuario(UsuarioOAuth);
+            perCN.Dispose();
 
-			if (dataWrapperPersona.ListaPersona.Count == 0)
-			{
-				throw new GnossException("There is no user with the OAuth signature", HttpStatusCode.NotFound);
-			}
-			string nombre = dataWrapperPersona.ListaPersona.First().Nombre + " " + dataWrapperPersona.ListaPersona.First().Apellidos;
+            if (dataWrapperPersona.ListaPersona.Count == 0)
+            {
+                throw new GnossException("There is no user with the OAuth signature", HttpStatusCode.NotFound);
+            }
+            string nombre = $"{dataWrapperPersona.ListaPersona[0].Nombre} {dataWrapperPersona.ListaPersona[0].Apellidos}";
 
-			return nombre;
-		}
+            return nombre;
+        }
 
-		/// <summary>
-		/// Gets the data user by user ID and the community short name
-		/// </summary>
-		/// <param name="user_id">User ID you want to get data</param>
-		/// <param name="community_short_name">Community short name you want to get data</param>
-		/// <returns>User data that has been requested</returns>
-		/// <example>GET user/get-by-id</example>
-		[HttpGet, Route("get-by-id")]
-		public User GetUsuarioPorID(Guid user_id, string community_short_name)
-		{
-			User jsonUsuario = ObtenerJsonUsuarioProyecto("", "", UsuarioOAuth, user_id, community_short_name, false);
+        /// <summary>
+        /// Gets the data user by user ID and the community short name
+        /// </summary>
+        /// <param name="user_id">User ID you want to get data</param>
+        /// <param name="community_short_name">Community short name you want to get data</param>
+        /// <returns>User data that has been requested</returns>
+        /// <example>GET user/get-by-id</example>
+        [HttpGet, Route("get-by-id")]
+        public User GetUsuarioPorID(Guid user_id, string community_short_name)
+        {
+            User jsonUsuario = ObtenerJsonUsuarioProyecto("", "", UsuarioOAuth, user_id, community_short_name, false);
 
-			return jsonUsuario;
-		}
+            return jsonUsuario;
+        }
 
-		/// <summary>
-		/// Get the data a user by user short name and the community short name
-		/// </summary>
-		/// <param name="user_short_name">User short name you want to get data</param>
-		/// <param name="community_short_name">Community short name you want to get data</param>
-		/// <returns>User data that has been requested</returns>
-		/// <example>GET user/get-by-short-name</example>
-		[HttpGet, Route("get-by-short-name")]
-		public User GetUsuarioPorNombreCorto(string user_short_name, string community_short_name)
-		{
-			User jsonUsuario = ObtenerJsonUsuarioProyecto(user_short_name, "", UsuarioOAuth, Guid.Empty, community_short_name, false);
+        /// <summary>
+        /// Get the data a user by user short name and the community short name
+        /// </summary>
+        /// <param name="user_short_name">User short name you want to get data</param>
+        /// <param name="community_short_name">Community short name you want to get data</param>
+        /// <returns>User data that has been requested</returns>
+        /// <example>GET user/get-by-short-name</example>
+        [HttpGet, Route("get-by-short-name")]
+        public User GetUsuarioPorNombreCorto(string user_short_name, string community_short_name)
+        {
+            User jsonUsuario = ObtenerJsonUsuarioProyecto(user_short_name, "", UsuarioOAuth, Guid.Empty, community_short_name, false);
 
-			return jsonUsuario;
-		}
+            return jsonUsuario;
+        }
 
-		/// <summary>
-		/// Get the data a user by user short name and the community short name
-		/// </summary>
-		/// <param name="user_id">User ID you want to get data</param>
-		/// <param name="community_short_name">Community short name you want to get data</param>
-		/// <returns>User data that has been requested</returns>
-		/// <example>GET user/get-by-short-name</example>
-		[HttpGet, Route("get-groups-per-community")]
-		public List<string> GetGroupsPerCommunity(Guid user_id, string community_short_name)
-		{
-			if (string.IsNullOrEmpty(community_short_name) || user_id.Equals(Guid.Empty))
-			{
-				throw new GnossException("The parameters can't be null or empty", HttpStatusCode.BadRequest);
-			}
+        /// <summary>
+        /// Get the data a user by user short name and the community short name
+        /// </summary>
+        /// <param name="user_id">User ID you want to get data</param>
+        /// <param name="community_short_name">Community short name you want to get data</param>
+        /// <returns>User data that has been requested</returns>
+        /// <example>GET user/get-by-short-name</example>
+        [HttpGet, Route("get-groups-per-community")]
+        public List<string> GetGroupsPerCommunity(Guid user_id, string community_short_name,string login)
+        {
+            if (string.IsNullOrEmpty(community_short_name))
+            {
+                throw new GnossException("The parameters can't be null or empty", HttpStatusCode.BadRequest);
+            }
 
-			ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(community_short_name);
+            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+            Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(community_short_name);
 
-			if (proyectoID.Equals(Guid.Empty))
-			{
-				throw new GnossException($"The community {community_short_name} does not belong to this platform", HttpStatusCode.BadRequest);
-			}
+            if (!proyectoID.Equals(Guid.Empty))
+            {
+                try
+                {
+                    IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                    return identCN.ObtenerGruposDeUsuarioEnProyecto(user_id, proyectoID);
+                }
+                catch (Exception ex)
+                {
+                    mLoggingService.GuardarLogError(ex, $"GetGroupsPerCommunity: Parametros: user_id={user_id} community_short_name={community_short_name}", mlogger);
+                    throw new GnossException($"There were an error trying to perform your request. Please, try again later", HttpStatusCode.InternalServerError);
+                }
+            }
+            else
+            {
+                try
+                {
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                    return identCN.ObtenerGruposDeUsuarioEnProyecto(usuCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID, proyectoID);
+                }
+                catch (Exception ex)
+                {
+                    mLoggingService.GuardarLogError(ex, $"GetGroupsPerCommunity: Parametros: user_id={user_id} community_short_name={community_short_name}", mlogger);
+                    throw new GnossException($"There were an error trying to perform your request. Please, try again later", HttpStatusCode.InternalServerError);
+                }
+            }
 
-			try
-			{
-				IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				return identCN.ObtenerGruposDeUsuarioEnProyecto(user_id, proyectoID);
-			}
-			catch (Exception ex)
-			{
-				mLoggingService.GuardarLogError(ex, $"GetGroupsPerCommunity: Parametros: user_id={user_id} community_short_name={community_short_name}");
-				throw new GnossException($"There were an error trying to perform your request. Please, try again later", HttpStatusCode.InternalServerError);
-			}
-		}
+            
+        }
 
-		/// <summary>
-		/// Get the data a user by user email and the community short name
-		/// </summary>
-		/// <param name="email">User email you want to get data</param>
-		/// <param name="community_short_name">Community short name you want to get data</param>
-		/// <returns>User data that has been requested</returns>
-		/// <example>GET user/get-by-email</example>
-		[Route("get-by-email")]
-		[HttpGet]
-		public User GetUsuarioPorEmail(string email, string community_short_name)
-		{
-			User jsonUsuario = ObtenerJsonUsuarioProyecto("", email, UsuarioOAuth, Guid.Empty, community_short_name, true);
+        /// <summary>
+        /// Get the data a user by user email and the community short name
+        /// </summary>
+        /// <param name="email">User email you want to get data</param>
+        /// <param name="community_short_name">Community short name you want to get data</param>
+        /// <returns>User data that has been requested</returns>
+        /// <example>GET user/get-by-email</example>
+        [Route("get-by-email")]
+        [HttpGet]
+        public User GetUsuarioPorEmail(string email, string community_short_name)
+        {
+            User jsonUsuario = ObtenerJsonUsuarioProyecto("", email, UsuarioOAuth, Guid.Empty, community_short_name, true);
 
-			return jsonUsuario;
-		}
+            return jsonUsuario;
+        }
 
-		/// <summary>
-		/// Validate the login and password of an user
-		/// </summary>
-		/// <param name="parameters"></param>
-		/// <returns>Returns true if the data is correct</returns>
-		/// <example>POST user/validate-password</example>
-		[HttpPost, Route("validate-password")]
-		public bool GetValidarUsuarioYContraseña(ParamsLoginPassword parameters)
-		{
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				if (!string.IsNullOrEmpty(parameters.login) && !string.IsNullOrEmpty(parameters.password))
-				{
-					return mControladorBase.ValidarUsuario(parameters.login, parameters.password) != null;
-				}
-				else
-				{
-					throw new GnossException("The params can not be empty", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The oauth user does not have permission to validate password", HttpStatusCode.Unauthorized);
-			}
-		}
+        /// <summary>
+        /// Validate the login and password of an user
+        /// </summary>
+        /// <param name="parameters"></param>
+        /// <returns>Returns true if the data is correct</returns>
+        /// <example>POST user/validate-password</example>
+        [HttpPost, Route("validate-password")]
+        public bool GetValidarUsuarioYContraseña(ParamsLoginPassword parameters)
+        {
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
+                if (!string.IsNullOrEmpty(parameters.login) && !string.IsNullOrEmpty(parameters.password))
+                {
+                    return mControladorBase.ValidarUsuario(parameters.login, parameters.password) != null;
+                }
+                else
+                {
+                    throw new GnossException("The params can not be empty", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The oauth user does not have permission to validate password", HttpStatusCode.Unauthorized);
+            }
+        }
 
-		/// <summary>
-		/// Gets the position of an organization profile in a community
-		/// </summary>
-		/// <param name="profile_id">Organization profile ID</param>
-		/// <param name="community_short_name">Community short name you want to get data</param>
-		/// <returns>Position of the organization profile in a community</returns>
-		/// <example>GET user/get-profile-roll-in-organization</example>
-		[Route("get-profile-role-in-organization")]
-		[HttpGet]
-		public string GetCargoPerfilEnOrganizacion(Guid profile_id, string community_short_name)
-		{
-			string cargo = string.Empty;
+        /// <summary>
+        /// Gets the position of an organization profile in a community
+        /// </summary>
+        /// <param name="profile_id">Organization profile ID</param>
+        /// <param name="community_short_name">Community short name you want to get data</param>
+        /// <returns>Position of the organization profile in a community</returns>
+        /// <example>GET user/get-profile-roll-in-organization</example>
+        [Route("get-profile-role-in-organization")]
+        [HttpGet]
+        public string GetCargoPerfilEnOrganizacion(Guid profile_id, string community_short_name)
+        {
+            string cargo = string.Empty;
 
-			ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(community_short_name);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(community_short_name);
 
-			if (proyectoID != Guid.Empty)
-			{
-				IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				Guid? identidadID = identidadCN.ObtenerIdentidadIDDePerfilEnProyecto(proyectoID, profile_id);
+            if (proyectoID != Guid.Empty)
+            {
+                IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                Guid? identidadID = identidadCN.ObtenerIdentidadIDDePerfilEnProyecto(proyectoID, profile_id);
 
-				if (identidadID.HasValue)
-				{
-					GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID.Value, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-					Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID.Value];
+                if (identidadID.HasValue)
+                {
+                    GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID.Value, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                    Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID.Value];
 
-					if (identidad.TrabajaConOrganizacion)
-					{
-						OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						cargo = orgCN.ObtenerCargoPersonaVinculoOrganizacion(identidad.OrganizacionID.Value, identidad.PersonaID.Value);
-						orgCN.Dispose();
-					}
-					else
-					{
-						throw new GnossException("The profile does not participate in the community", HttpStatusCode.BadRequest);
-					}
-				}
-				else
-				{
-					throw new GnossException("The profile does not participate in the community", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
-			}
+                    if (identidad.TrabajaConOrganizacion)
+                    {
+                        OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<OrganizacionCN>(), mLoggerFactory);
+                        cargo = orgCN.ObtenerCargoPersonaVinculoOrganizacion(identidad.OrganizacionID.Value, identidad.PersonaID.Value);
+                        orgCN.Dispose();
+                    }
+                    else
+                    {
+                        throw new GnossException("The profile does not participate in the community", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The profile does not participate in the community", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
+            }
 
-			return cargo;
-		}
+            return cargo;
+        }
 
-		/// <summary>
-		/// Create a user awaiting activation
-		/// </summary>
-		/// <param name="user">User data you want to create</param>
-		/// <returns>User data</returns>
-		/// <example>POST user/create-user-waiting-for-activate</example>
-		[HttpPost, Route("create-user-waiting-for-activate")]
-		public User CrearUsuarioSinActivar(User user)
-		{
-			if (user != null && !string.IsNullOrEmpty(user.name) && !string.IsNullOrEmpty(user.last_name) && !string.IsNullOrEmpty(user.community_short_name))
-			{
-				if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-				{
-					ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(user.community_short_name);
-					proyectoCN.Dispose();
+        /// <summary>
+        /// Create a user awaiting activation
+        /// </summary>
+        /// <param name="user">User data you want to create</param>
+        /// <returns>User data</returns>
+        /// <example>POST user/create-user-waiting-for-activate</example>
+        [HttpPost, Route("create-user-waiting-for-activate")]
+        public User CrearUsuarioSinActivar(User user)
+        {
+            if (user != null && !string.IsNullOrEmpty(user.name) && !string.IsNullOrEmpty(user.last_name) && !string.IsNullOrEmpty(user.community_short_name))
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                    Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(user.community_short_name);
+                    proyectoCN.Dispose();
 
-					if (proyectoID != Guid.Empty)
-					{
-						user.community_id = proyectoID;
-						int hashNumUsu = 1;
-						string loginUsuario = GenerarLoginUsuario(user.name, user.last_name, ref hashNumUsu);
-						//Antes de la migracion del V2 Incidencia LRE-145
-						//string nombreCortoUsuario = GenerarNombreCortoUsuario(loginUsuario, ref hashNumUsu);
-						DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
-						string nombreCortoUsuario = GenerarNombreCortoUsuario(ref loginUsuario, user.name, user.last_name, dataWrapperUsuario);
+                    if (proyectoID != Guid.Empty)
+                    {
+                        user.community_id = proyectoID;
+                        int hashNumUsu = 1;
+                        string loginUsuario = GenerarLoginUsuario(user.name, user.last_name, ref hashNumUsu);
+                        DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
+                        string nombreCortoUsuario = GenerarNombreCortoUsuario(ref loginUsuario, user.name, user.last_name, dataWrapperUsuario);
 
-						string password = DateTime.Now.ToString("MMddHHmmss") + "a";
-						if (!string.IsNullOrEmpty(user.password))
-						{
-							if (user.password.Length < 6 || user.password.Length > 12)
-							{
-								throw new GnossException("The user password must contain between 6 and 12 characters", HttpStatusCode.BadRequest);
-							}
-							password = user.password;
-						}
+                        string password = DateTime.Now.ToString("MMddHHmmss") + "a";
+                        if (!string.IsNullOrEmpty(user.password))
+                        {
+                            if (user.password.Length < 6 || user.password.Length > 12)
+                            {
+                                throw new GnossException("The user password must contain between 6 and 12 characters", HttpStatusCode.BadRequest);
+                            }
+                            password = user.password;
+                        }
 
-						//Usuario
-						//UsuarioDS usuarioDS = new UsuarioDS();
+                        //Usuario
+                        ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                        AD.EntityModel.Models.ProyectoDS.Proyecto filaProyecto = proyCN.ObtenerProyectoPorIDCargaLigera(user.community_id);
+                        proyCN.Dispose();
+                        GestionUsuarios gestorUsuarios = new GestionUsuarios(dataWrapperUsuario, mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
+                        UsuarioGnoss usuario = gestorUsuarios.AgregarUsuario(loginUsuario, nombreCortoUsuario, password, true);
+                        user.user_id = usuario.Clave;
+                        user.user_short_name = nombreCortoUsuario;
+                        AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = usuario.FilaUsuario;
+                        filaUsuario.EstaBloqueado = false;
 
-						ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						AD.EntityModel.Models.ProyectoDS.Proyecto filaProyecto = proyCN.ObtenerProyectoPorIDCargaLigera(user.community_id);
-						proyCN.Dispose();
-						GestionUsuarios gestorUsuarios = new GestionUsuarios(dataWrapperUsuario, mLoggingService, mEntityContext, mConfigService);
-						UsuarioGnoss usuario = gestorUsuarios.AgregarUsuario(loginUsuario, nombreCortoUsuario, password /*HashHelper.CalcularHash(password, true)*/, true);
-						user.user_id = usuario.Clave;
-						user.user_short_name = nombreCortoUsuario;
-						AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = usuario.FilaUsuario;
-						filaUsuario.EstaBloqueado = false;
+                        DataWrapperSolicitud solicitudDW = new DataWrapperSolicitud();
+                        ParametroGeneralCL paramCL = new ParametroGeneralCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ParametroGeneralCL>(), mLoggerFactory);
+                        GestorParametroGeneral gestorParametroGeneral = paramCL.ObtenerParametrosGeneralesDeProyecto(user.community_id);
+                        paramCL.Dispose();
 
-						DataWrapperSolicitud solicitudDW = new DataWrapperSolicitud();
-						ParametroGeneralCL paramCL = new ParametroGeneralCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-						GestorParametroGeneral gestorParametroGeneral = paramCL.ObtenerParametrosGeneralesDeProyecto(user.community_id);
-						paramCL.Dispose();
-						//ParametroGeneral parametrosGeneralesRow = gestorParametroGeneral.ListaParametroGeneral.FindByOrganizacionIDProyectoID(filaProyecto.OrganizacionID, filaProyecto.ProyectoID);
-						ParametroGeneral parametrosGeneralesRow = gestorParametroGeneral.ListaParametroGeneral.Find(parametroGen => parametroGen.OrganizacionID.Equals(filaProyecto.OrganizacionID) && parametroGen.ProyectoID.Equals(filaProyecto.ProyectoID));
+                        ParametroGeneral parametrosGeneralesRow = gestorParametroGeneral.ListaParametroGeneral.Find(parametroGen => parametroGen.OrganizacionID.Equals(filaProyecto.OrganizacionID) && parametroGen.ProyectoID.Equals(filaProyecto.ProyectoID));
 
-						Solicitud filaSolicitud = new Solicitud();
-						filaSolicitud.Estado = (short)EstadoSolicitud.Espera;
-						filaSolicitud.FechaSolicitud = DateTime.Now;
-						filaSolicitud.FechaProcesado = filaSolicitud.FechaSolicitud;
-						filaSolicitud.OrganizacionID = filaProyecto.OrganizacionID;
-						filaSolicitud.ProyectoID = user.community_id;
-						filaSolicitud.SolicitudID = Guid.NewGuid();
-						solicitudDW.ListaSolicitud.Add(filaSolicitud);
-						mEntityContext.Solicitud.Add(filaSolicitud);
+                        Solicitud filaSolicitud = new Solicitud();
+                        filaSolicitud.Estado = (short)EstadoSolicitud.Espera;
+                        filaSolicitud.FechaSolicitud = DateTime.Now;
+                        filaSolicitud.FechaProcesado = filaSolicitud.FechaSolicitud;
+                        filaSolicitud.OrganizacionID = filaProyecto.OrganizacionID;
+                        filaSolicitud.ProyectoID = user.community_id;
+                        filaSolicitud.SolicitudID = Guid.NewGuid();
+                        solicitudDW.ListaSolicitud.Add(filaSolicitud);
+                        mEntityContext.Solicitud.Add(filaSolicitud);
 
-						SolicitudNuevoUsuario filaNuevoUsuario = new SolicitudNuevoUsuario();
-						filaNuevoUsuario.SolicitudID = filaSolicitud.SolicitudID;
-						filaNuevoUsuario.UsuarioID = filaUsuario.UsuarioID;
-						filaNuevoUsuario.NombreCorto = nombreCortoUsuario;
-						filaNuevoUsuario.Nombre = user.name;
-						filaNuevoUsuario.Apellidos = user.last_name;
-						filaNuevoUsuario.Email = user.email;
-						filaNuevoUsuario.EsBuscable = true;
-						filaNuevoUsuario.EsBuscableExterno = false;
+                        SolicitudNuevoUsuario filaNuevoUsuario = new SolicitudNuevoUsuario();
+                        filaNuevoUsuario.SolicitudID = filaSolicitud.SolicitudID;
+                        filaNuevoUsuario.UsuarioID = filaUsuario.UsuarioID;
+                        filaNuevoUsuario.NombreCorto = nombreCortoUsuario;
+                        filaNuevoUsuario.Nombre = user.name;
+                        filaNuevoUsuario.Apellidos = user.last_name;
+                        filaNuevoUsuario.Email = user.email;
+                        filaNuevoUsuario.EsBuscable = true;
+                        filaNuevoUsuario.EsBuscableExterno = false;
 
-						if (parametrosGeneralesRow != null && !parametrosGeneralesRow.PrivacidadObligatoria)
-						{
-							filaNuevoUsuario.EsBuscable = false;
-							filaNuevoUsuario.EsBuscableExterno = false;
-						}
-						if (!user.country_id.Equals(Guid.Empty))
-						{
-							filaNuevoUsuario.PaisID = user.country_id;
-						}
-						if (!user.province_id.Equals(Guid.Empty))
-						{
-							filaNuevoUsuario.ProvinciaID = user.province_id;
-						}
-						if (user.provice == null)
-						{
-							user.provice = "";
-						}
-						filaNuevoUsuario.Provincia = user.provice;
-						filaNuevoUsuario.Poblacion = user.city;
-						filaNuevoUsuario.Sexo = user.sex;
-						filaNuevoUsuario.FaltanDatos = false;
-						filaNuevoUsuario.Idioma = "es";
-						filaNuevoUsuario.FechaNacimiento = user.born_date;
+                        if (parametrosGeneralesRow != null && !parametrosGeneralesRow.PrivacidadObligatoria)
+                        {
+                            filaNuevoUsuario.EsBuscable = false;
+                            filaNuevoUsuario.EsBuscableExterno = false;
+                        }
+                        if (!user.country_id.Equals(Guid.Empty))
+                        {
+                            filaNuevoUsuario.PaisID = user.country_id;
+                        }
+                        if (!user.province_id.Equals(Guid.Empty))
+                        {
+                            filaNuevoUsuario.ProvinciaID = user.province_id;
+                        }
+                        if (user.provice == null)
+                        {
+                            user.provice = "";
+                        }
+                        filaNuevoUsuario.Provincia = user.provice;
+                        filaNuevoUsuario.Poblacion = user.city;
+                        filaNuevoUsuario.Sexo = user.sex;
+                        filaNuevoUsuario.FaltanDatos = false;
+                        filaNuevoUsuario.Idioma = "es";
+                        filaNuevoUsuario.FechaNacimiento = user.born_date;
 
-						if (user.extra_data != null && user.extra_data.Count > 0)
-						{
-							filaNuevoUsuario.ClausulasAdicionales = ObtenerClausulasAdicionales(user.community_id, user.extra_data);
+                        if (user.extra_data != null && user.extra_data.Count > 0)
+                        {
+                            filaNuevoUsuario.ClausulasAdicionales = ObtenerClausulasAdicionales(user.community_id, user.extra_data);
 
-							GuardarDatosExtraSolicitud(solicitudDW, filaSolicitud, user.extra_data, filaSolicitud.OrganizacionID, user.community_id, user.community_id.Equals(ProyectoAD.MyGnoss));
-						}
+                            GuardarDatosExtraSolicitud(solicitudDW, filaSolicitud, user.extra_data, filaSolicitud.OrganizacionID, user.community_id, user.community_id.Equals(ProyectoAD.MyGnoss));
+                        }
 
-						solicitudDW.ListaSolicitudNuevoUsuario.Add(filaNuevoUsuario);
-						mEntityContext.SolicitudNuevoUsuario.Add(filaNuevoUsuario);
+                        solicitudDW.ListaSolicitudNuevoUsuario.Add(filaNuevoUsuario);
+                        mEntityContext.SolicitudNuevoUsuario.Add(filaNuevoUsuario);
 
-						mEntityContext.SaveChanges();
+                        mEntityContext.SaveChanges();
 
-						//enviar correo de invitación
-						GestionNotificaciones gestorNotificaciones = new GestionNotificaciones(new DataWrapperNotificacion(), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-						UtilIdiomas utilIdiomas = new UtilIdiomas("es", user.community_id, mLoggingService, mEntityContext, mConfigService,mRedisCacheWrapper);
-						string urlEnlace = mControladorBase.UrlsSemanticas.ObtenerURLComunidad(utilIdiomas, UrlIntragnoss, filaProyecto.NombreCorto);
-						urlEnlace += "/" + utilIdiomas.GetText("URLSEM", "REGISTROUSUARIO") + "/" + utilIdiomas.GetText("URLSEM", "PREACTIVACION") + "/" + filaNuevoUsuario.SolicitudID;
-						gestorNotificaciones.AgregarNotificacionRegistroParcialComunidad(filaNuevoUsuario.SolicitudID, user.name, TiposNotificacion.InvitacionRegistroParcialComunidad, user.email, null, UrlIntragnoss, "es", filaProyecto.Nombre, urlEnlace, user.community_id);
+                        //enviar correo de invitación
+                        GestionNotificaciones gestorNotificaciones = new GestionNotificaciones(new DataWrapperNotificacion(), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<GestionNotificaciones>(), mLoggerFactory);
+                        UtilIdiomas utilIdiomas = new UtilIdiomas("es", user.community_id, mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mLoggerFactory.CreateLogger<UtilIdiomas>(), mLoggerFactory);
+                        string urlEnlace = $"{mControladorBase.UrlsSemanticas.ObtenerURLComunidad(utilIdiomas, UrlIntragnoss, filaProyecto.NombreCorto)}/{utilIdiomas.GetText("URLSEM", "REGISTROUSUARIO")}/{utilIdiomas.GetText("URLSEM", "PREACTIVACION")}/{filaNuevoUsuario.SolicitudID}";
+                        gestorNotificaciones.AgregarNotificacionRegistroParcialComunidad(filaNuevoUsuario.SolicitudID, user.name, TiposNotificacion.InvitacionRegistroParcialComunidad, user.email, null, UrlIntragnoss, "es", filaProyecto.Nombre, urlEnlace, user.community_id);
 
-						NotificacionCN notificacionCN = new NotificacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						notificacionCN.ActualizarNotificacion();
+						NotificacionCN notificacionCN = new NotificacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<NotificacionCN>(), mLoggerFactory);
+						notificacionCN.ActualizarNotificacion(mAvailableServices);
 						notificacionCN.Dispose();
 						gestorNotificaciones.Dispose();
 
-						return user;
+                        return user;
 
+                    }
+                    else
+                    {
+                        throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+            else
+            {
+                throw new GnossException("The user data are not valid", HttpStatusCode.BadRequest);
+            }
+        }
+
+
+        /// <summary>
+        /// Create a user
+        /// </summary>
+        /// <param name="user">User data you want to create</param>
+        /// <returns>User data</returns>
+        /// <example>POST user/create-user</example>
+        [HttpPost, Route("create-user")]
+        public User CrearUsuario(User user)
+        {
+            if (user != null && !string.IsNullOrEmpty(user.name) && !string.IsNullOrEmpty(user.last_name) && !string.IsNullOrEmpty(user.email))
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    if (!string.IsNullOrEmpty(user.password) && (user.password.Length < 6 || user.password.Length > 12))
+                    {
+                        throw new GnossException("The user password must contain between 6 and 12 characters", HttpStatusCode.BadRequest);
+                    }
+
+                    Dictionary<string, Guid> dicUsuario = AltaUsuarioEnGnossYComunidades(user);
+                    if (dicUsuario.Count > 0)
+                    {
+                        user.user_short_name = dicUsuario.Keys.First();
+                        user.user_id = dicUsuario[user.user_short_name];
+                    }
+
+                    return user;
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+            else
+            {
+                throw new GnossException("The user data are not valid", HttpStatusCode.BadRequest);
+            }
+        }
+
+        /// <summary>
+        /// Gets the UserID form Cookie
+        /// </summary>
+        /// <param name="user">User data you want to create</param>
+        /// <returns>User data</returns>
+        /// <example>POST user/get-user-cookie</example>
+        [HttpGet, Route("get-user-cookie")]
+        public Guid DevolverUsuarioDeCookie(string pCookie)
+        {
+            if (pCookie != null)
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    Dictionary<string, string> cookie = UtilCookies.FromLegacyCookieString(pCookie, mEntityContext);
+                    if (cookie != null && cookie.Count != 0)
+                    {
+                        return new Guid(cookie["usuarioID"]);
+                    }
+                    return Guid.Empty;
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+            else
+            {
+                throw new GnossException("The param pCookie is empty", HttpStatusCode.BadRequest);
+            }
+        }
+
+        /// <summary>
+        /// Gets the URL to recover the password of a user
+        /// </summary>
+        /// <param name="login">Login o email of the user</param>
+        /// <param name="community_short_name">Community short name you want to get data</param>
+        /// <returns>URL to recover the password of a user</returns>
+        /// <example>GET user/generate-forgotten-password-url</example>
+        [HttpGet, Route("generate-forgotten-password-url")]
+        public string GenerarURLOlvidePassword(string login, string community_short_name, Guid user_id)
+        {
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
+				UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+				if (string.IsNullOrEmpty(login) && !user_id.Equals(Guid.Empty))
+				{
+					AD.EntityModel.Models.UsuarioDS.Usuario usuario = usuarioCN.ObtenerUsuarioPorID(user_id);
+					if (usuario != null)
+					{
+						login = usuario.Login;
 					}
 					else
 					{
-						throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
+						throw new GnossException("The user does not exists", HttpStatusCode.BadRequest);
 					}
 				}
-				else
-				{
-					throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-				}
-			}
-			else
-			{
-				throw new GnossException("The user data are not valid", HttpStatusCode.BadRequest);
-			}
-		}
-
-
-		/// <summary>
-		/// Create a user
-		/// </summary>
-		/// <param name="user">User data you want to create</param>
-		/// <returns>User data</returns>
-		/// <example>POST user/create-user</example>
-		[HttpPost, Route("create-user")]
-		public User CrearUsuario(User user)
-		{
-			if (user != null && !string.IsNullOrEmpty(user.name) && !string.IsNullOrEmpty(user.last_name) && !string.IsNullOrEmpty(user.email))
-			{
-				if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-				{
-					if (!string.IsNullOrEmpty(user.password))
-					{
-						if (user.password.Length < 6 || user.password.Length > 12)
-						{
-							throw new GnossException("The user password must contain between 6 and 12 characters", HttpStatusCode.BadRequest);
-						}
-					}
-
-					Dictionary<string, Guid> dicUsuario = AltaUsuarioEnGnossYComunidades(user);
-					if (dicUsuario.Count > 0)
-					{
-						user.user_short_name = dicUsuario.Keys.First();
-						user.user_id = dicUsuario[user.user_short_name];
-					}
-
-					return user;
-				}
-				else
-				{
-					throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-				}
-			}
-			else
-			{
-				throw new GnossException("The user data are not valid", HttpStatusCode.BadRequest);
-			}
-		}
-
-		/// <summary>
-		/// Gets the UserID form Cookie
-		/// </summary>
-		/// <param name="user">User data you want to create</param>
-		/// <returns>User data</returns>
-		/// <example>POST user/get-user-cookie</example>
-		[HttpGet, Route("get-user-cookie")]
-		public Guid DevolverUsuarioDeCookie(string pCookie)
-		{
-			if (pCookie != null)
-			{
-				if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-				{
-					Dictionary<string, string> cookie = UtilCookies.FromLegacyCookieString(pCookie, mEntityContext);
-					if (cookie != null && cookie.Count != 0)
-					{
-						Guid usuarioID = new Guid(cookie["usuarioID"]);
-						IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						return usuarioID;
-					}
-					return Guid.Empty;
-				}
-				else
-				{
-					throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-				}
-			}
-			else
-			{
-				throw new GnossException("The param pCookie is empty", HttpStatusCode.BadRequest);
-			}
-		}
-
-		/// <summary>
-		/// Gets the URL to recover the password of a user
-		/// </summary>
-		/// <param name="login">Login o email of the user</param>
-		/// <param name="community_short_name">Community short name you want to get data</param>
-		/// <returns>URL to recover the password of a user</returns>
-		/// <example>GET user/generate-forgotten-password-url</example>
-		[HttpGet, Route("generate-forgotten-password-url")]
-		public string GenerarURLOlvidePassword(string login, string community_short_name)
-		{
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				if (!login.Equals(string.Empty) && !community_short_name.Equals(string.Empty))
-				{
-					UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					PeticionCN peticionCN = new PeticionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
+				if (!string.IsNullOrEmpty(login) && !string.IsNullOrEmpty(community_short_name))
+                {
+					PeticionCN peticionCN = new PeticionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PeticionCN>(), mLoggerFactory);
+					PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+					ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
 					DataWrapperUsuario dataWrapperUsuario = usuarioCN.ObtenerUsuarioPorLoginOEmail(login, false);
-					Guid idProyecto = proyectoCN.ObtenerProyectoIDPorNombre(community_short_name);
+                    Guid idProyecto = proyectoCN.ObtenerProyectoIDPorNombre(community_short_name);
 
-					if (dataWrapperUsuario.ListaUsuario.Count > 0 && !idProyecto.Equals(Guid.Empty))
-					{
-						AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = dataWrapperUsuario.ListaUsuario.First();
-						Guid idUsuario = filaUsuario.UsuarioID;
-						Guid idPersona = personaCN.ObtenerPersonaIDPorUsuarioID(idUsuario).Value;
-						string idiomaPersona = personaCN.ObtenerIdiomaDePersonaID(idPersona);
-						string urlPropiaProyecto = proyectoCN.ObtenerURLPropiaProyecto(idProyecto);
-						UtilIdiomas UtilIdiomasAux = new UtilIdiomas(idiomaPersona, mLoggingService, mEntityContext, mConfigService,mRedisCacheWrapper);
+                    if (dataWrapperUsuario.ListaUsuario.Count > 0 && !idProyecto.Equals(Guid.Empty))
+                    {
+                        AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = dataWrapperUsuario.ListaUsuario[0];
+                        Guid idUsuario = filaUsuario.UsuarioID;
+                        Guid idPersona = personaCN.ObtenerPersonaIDPorUsuarioID(idUsuario).Value;
+                        string idiomaPersona = personaCN.ObtenerIdiomaDePersonaID(idPersona);
+                        string urlPropiaProyecto = proyectoCN.ObtenerURLPropiaProyecto(idProyecto);
+                        UtilIdiomas UtilIdiomasAux = new UtilIdiomas(idiomaPersona, mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mLoggerFactory.CreateLogger<UtilIdiomas>(), mLoggerFactory);
 
-						DataWrapperPeticion peticionDW = new DataWrapperPeticion();
-						AD.EntityModel.Models.Peticion.Peticion filaPeticion = new AD.EntityModel.Models.Peticion.Peticion();
-						filaPeticion.Estado = (short)EstadoPeticion.Pendiente;
-						filaPeticion.FechaPeticion = DateTime.Now;
-						filaPeticion.PeticionID = Guid.NewGuid();
-						filaPeticion.UsuarioID = filaUsuario.UsuarioID;
-						filaPeticion.Tipo = (int)TipoPeticion.CambioPassword;
-						peticionDW.ListaPeticion.Add(filaPeticion);
-						mEntityContext.Peticion.Add(filaPeticion);
+                        DataWrapperPeticion peticionDW = new DataWrapperPeticion();
+                        AD.EntityModel.Models.Peticion.Peticion filaPeticion = new AD.EntityModel.Models.Peticion.Peticion();
+                        filaPeticion.Estado = (short)EstadoPeticion.Pendiente;
+                        filaPeticion.FechaPeticion = DateTime.Now;
+                        filaPeticion.PeticionID = Guid.NewGuid();
+                        filaPeticion.UsuarioID = filaUsuario.UsuarioID;
+                        filaPeticion.Tipo = (int)TipoPeticion.CambioPassword;
+                        peticionDW.ListaPeticion.Add(filaPeticion);
+                        mEntityContext.Peticion.Add(filaPeticion);
 
-						peticionCN.ActualizarBD();
+                        peticionCN.ActualizarBD();
 
-						//Cojo el idioma del usuario de bbdd
-						string urlCambioPass = urlCambioPass = mControladorBase.UrlsSemanticas.ObtenerURLComunidad(UtilIdiomasAux, urlPropiaProyecto, community_short_name) + "/" + UtilIdiomasAux.GetText("URLSEM", "CAMBIARPASSWORD") + "/" + UtilIdiomasAux.GetText("URLSEM", "PETICION") + "/" + filaPeticion.PeticionID.ToString() + "/" + UtilIdiomasAux.GetText("URLSEM", "USUARIO") + "/" + filaUsuario.UsuarioID;
+                        //Cojo el idioma del usuario de bbdd
+                        return $"{mControladorBase.UrlsSemanticas.ObtenerURLComunidad(UtilIdiomasAux, urlPropiaProyecto, community_short_name)}/{UtilIdiomasAux.GetText("URLSEM", "CAMBIARPASSWORD")}/{UtilIdiomasAux.GetText("URLSEM", "PETICION")}/{filaPeticion.PeticionID.ToString()}/{UtilIdiomasAux.GetText("URLSEM", "USUARIO")}/{filaUsuario.UsuarioID}";
+                    }
+                    else
+                    {
+                        if (dataWrapperUsuario.ListaUsuario.Count == 0)
+                        {
+                            throw new GnossException("The user does not exists", HttpStatusCode.BadRequest);
+                        }
+                        else
+                        {
+                            throw new GnossException("The community does not exists", HttpStatusCode.BadRequest);
+                        }
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The login and the community can not be empty", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+        }
 
-						return urlCambioPass;
-					}
-					else
-					{
-						if (dataWrapperUsuario.ListaUsuario.Count == 0)
-						{
-							throw new GnossException("The user does not exists", HttpStatusCode.BadRequest);
-						}
-						else
-						{
-							throw new GnossException("The community does not exists", HttpStatusCode.BadRequest);
-						}
-					}
-				}
-				else
-				{
-					throw new GnossException("The login and the community can not be empty", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
+        /// <summary>
+        /// Modify a user
+        /// </summary>
+        /// <param name="user">User data that we modify</param>
+        /// <example>POST user/modify-user</example>
+        [HttpPost, Route("modify-user")]
+        public void ModificarUsuario(User user)
+        {
+            try
+            {
 
-		/// <summary>
-		/// Modify a user
-		/// </summary>
-		/// <param name="user">User data that we modify</param>
-		/// <example>POST user/modify-user</example>
-		[HttpPost, Route("modify-user")]
-		public void ModificarUsuario(User user)
-		{
-			try
-			{
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    if (user != null && !user.user_id.Equals(Guid.Empty) && user.community_id != Guid.Empty)
+                    {
+                        UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                        if (usuarioCN.EstaUsuarioEnProyecto(user.user_id, user.community_id))
+                        {
+                            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                            Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(user.user_id, user.community_id);
 
-				if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-				{
-					if (user != null && user.user_id != null && user.user_id != Guid.Empty && user.community_id != null && user.community_id != Guid.Empty)
-					{
-						UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						if (usuarioCN.EstaUsuarioEnProyecto(user.user_id, user.community_id))
-						{
-							IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-							Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(user.user_id, user.community_id);
+                            if (identidadID != Guid.Empty)
+                            {
+                                GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
 
-							if (identidadID != Guid.Empty)
-							{
-								GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                                if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+                                {
+                                    Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                                    gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerDatosExtraProyectoOpcionIdentidadPorIdentidadID(identidadID));
+                                    gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerIdentidadesDePerfil(identidad.PerfilID));
+                                    gestorIdentidades.RecargarHijos();
+                                    identidad = gestorIdentidades.ListaIdentidades[identidadID];
 
-								if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
-								{
-									Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
-									gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerDatosExtraProyectoOpcionIdentidadPorIdentidadID(identidadID));
-									gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerIdentidadesDePerfil(identidad.PerfilID));
-									gestorIdentidades.RecargarHijos();
-									identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                                    PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                                    gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
+                                    personaCN.Dispose();
+                                    gestorIdentidades.GestorPersonas.CargarGestor();
 
-									PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-									gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
-									personaCN.Dispose();
-									gestorIdentidades.GestorPersonas.CargarGestor();
+                                    //Empieza la edición
+                                    RellenarDatosPersona(identidad, user, "es");
 
-									//Empieza la edición
-									RellenarDatosPersona(identidad, user, "es");
+                                    Dictionary<int, string> dicDatosExtraProyectoVirtuoso = new Dictionary<int, string>();
+                                    Dictionary<int, string> dicDatosExtraEcosistemaVirtuoso = new Dictionary<int, string>();
+                                    GuardarDatosExtra(user.extra_data, identidad, dicDatosExtraProyectoVirtuoso, dicDatosExtraEcosistemaVirtuoso);
 
-									Dictionary<int, string> dicDatosExtraProyectoVirtuoso = new Dictionary<int, string>();
-									Dictionary<int, string> dicDatosExtraEcosistemaVirtuoso = new Dictionary<int, string>();
-									GuardarDatosExtra(user.extra_data, identidad, dicDatosExtraProyectoVirtuoso, dicDatosExtraEcosistemaVirtuoso);
-
-									ParametroAplicacionCL paramCL = new ParametroAplicacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-									GestorParametroAplicacion paramApliDS = new GestorParametroAplicacion();
-									paramApliDS.ParametroAplicacion = paramCL.ObtenerParametrosAplicacionPorContext();
-									paramCL.Dispose();
+                                    ParametroAplicacionCL paramCL = new ParametroAplicacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ParametroAplicacionCL>(), mLoggerFactory);
+                                    GestorParametroAplicacion paramApliDS = new GestorParametroAplicacion();
+                                    paramApliDS.ParametroAplicacion = paramCL.ObtenerParametrosAplicacionPorContext();
+                                    paramCL.Dispose();
 
 
 
-									if (paramApliDS.ListaAccionesExternas != null && paramApliDS.ListaAccionesExternas.Where(accionesExt => accionesExt.TipoAccion.Equals((short)TipoAccionExterna.Edicion)).ToList().Count == 1)
-									{
-										ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-										DataWrapperProyecto dataWrapperProyecto = proyectoCN.ObtenerDatosExtraProyectoPorID(user.community_id);
-										proyectoCN.Dispose();
+                                    if (paramApliDS.ListaAccionesExternas != null && paramApliDS.ListaAccionesExternas.Where(accionesExt => accionesExt.TipoAccion.Equals((short)TipoAccionExterna.Edicion)).ToList().Count == 1)
+                                    {
+                                        ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                                        DataWrapperProyecto dataWrapperProyecto = proyectoCN.ObtenerDatosExtraProyectoPorID(user.community_id);
+                                        proyectoCN.Dispose();
 
-										if (user.community_id.Equals(ProyectoAD.MyGnoss))
-										{
-											ControladorIdentidades.AccionEnServicioExternoEcosistema(TipoAccionExterna.Edicion, user.community_id, user.user_id, user.name, user.last_name, user.email, user.password, paramApliDS, dataWrapperProyecto, dicDatosExtraEcosistemaVirtuoso, dicDatosExtraProyectoVirtuoso, user.aux_data);
-										}
-										else
-										{
-											ControladorIdentidades.AccionEnServicioExternoProyecto(TipoAccionExterna.Edicion, user.community_id, identidadID, user.user_id, user.name, user.last_name, user.email, user.password, user.aux_data, user.born_date, user.country_id, user.city, user.sex, user.join_community_date, dataWrapperProyecto, user.province_id, user.provice, user.postal_code);
-										}
-									}
+                                        if (user.community_id.Equals(ProyectoAD.MyGnoss))
+                                        {
+                                            ControladorIdentidades.AccionEnServicioExternoEcosistema(TipoAccionExterna.Edicion, user.community_id, user.user_id, user.name, user.last_name, user.email, user.password, paramApliDS, dataWrapperProyecto, dicDatosExtraEcosistemaVirtuoso, dicDatosExtraProyectoVirtuoso, user.aux_data);
+                                        }
+                                        else
+                                        {
+                                            ControladorIdentidades.AccionEnServicioExternoProyecto(TipoAccionExterna.Edicion, user.community_id, identidadID, user.user_id, user.name, user.last_name, user.email, user.password, user.aux_data, user.born_date, user.country_id, user.city, user.sex, user.join_community_date, dataWrapperProyecto, user.province_id, user.provice, user.postal_code);
+                                        }
+                                    }
 
-									if (user.preferences != null)
-									{
-										EditarSuscripciones(user.preferences.Select(preference => preference.category_id).ToList(), identidad);
-									}
+                                    if (user.preferences != null)
+                                    {
+                                        EditarSuscripciones(user.preferences.Select(preference => preference.category_id).ToList(), identidad);
+                                    }
 
-									mEntityContext.SaveChanges();
+                                    mEntityContext.SaveChanges();
 
-									List<Guid> listaProyectos = new List<Guid>();
-									listaProyectos.Add(user.community_id);
-									ControladorPersonas contrPers = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-									contrPers.ActualizarModeloBaseSimpleMultiple(identidad.Persona.Clave, listaProyectos);
-									EliminarCaches(identidad);
+                                    List<Guid> listaProyectos = new List<Guid>();
+                                    listaProyectos.Add(user.community_id);
+                                    ControladorPersonas contrPers = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorPersonas>(), mLoggerFactory);
+                                    contrPers.ActualizarModeloBaseSimpleMultiple(identidad.Persona.Clave, listaProyectos, mAvailableServices);
+                                    EliminarCaches(identidad);
+                                }
+                            }
+                            identCN.Dispose();
+                            usuarioCN.Dispose();
+                        }
+                        else
+                        {
+                            throw new GnossException("The user does not participate in the community", HttpStatusCode.BadRequest);
+                        }
+                    }
+                    else
+                    {
+                        throw new GnossException("The user and the community can not be empty", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex,mlogger);
+                throw;
+            }
+        }
 
-								}
-							}
+        /// <summary>
+        /// Delete a user from a community
+        /// </summary>
+        /// <param name="parameters">Parameters</param>
+        /// <example>POST user/delete-user-from-community</example>
+        [HttpPost, Route("delete-user-from-community")]
+        public void BorrarUsuarioDeComunidad(ParamsUserCommunity parameters)
+        {
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
+                User jsonUsuario = ObtenerJsonUsuarioProyecto(parameters.user_short_name, "", UsuarioOAuth, parameters.user_id, parameters.community_short_name, false);
 
-							identCN.Dispose();
-							usuarioCN.Dispose();
-						}
-						else
-						{
-							throw new GnossException("The user does not participate in the community", HttpStatusCode.BadRequest);
-						}
-					}
-					else
-					{
-						throw new GnossException("The user and the community can not be empty", HttpStatusCode.BadRequest);
-					}
-				}
-				else
-				{
-					throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-				}
-			}
-			catch (Exception ex)
-			{
-				mLoggingService.GuardarLogError(ex);
-				throw;
-			}
-		}
+                if (jsonUsuario != null && !jsonUsuario.user_id.Equals(Guid.Empty) && !jsonUsuario.community_id.Equals(Guid.Empty))
+                {
+                    IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                    PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                    Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(jsonUsuario.user_id, jsonUsuario.community_id);
+                    if (identidadID != Guid.Empty)
+                    {
+                        GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                        if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+                        {
+                            Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                            gestorIdentidades.CargarGestor();
+                            gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
+                            gestorIdentidades.GestorPersonas.CargarGestor();
 
-		/// <summary>
-		/// Delete a user from a community
-		/// </summary>
-		/// <param name="parameters">Parameters</param>
-		/// <example>POST user/delete-user-from-community</example>
-		[HttpPost, Route("delete-user-from-community")]
-		public void BorrarUsuarioDeComunidad(ParamsUserCommunity parameters)
-		{
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				User jsonUsuario = ObtenerJsonUsuarioProyecto(parameters.user_short_name, "", UsuarioOAuth, Guid.Empty, parameters.community_short_name, false);
+                            identidad.FilaIdentidad.FechaBaja = DateTime.Now;
+                            mEntityContext.SaveChanges();
+                            ControladorPersonas contrPers = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorPersonas>(), mLoggerFactory);
+                            contrPers.ActualizarEliminacionModeloBaseSimple(identidad.Persona.Clave, jsonUsuario.community_id, PrioridadBase.ApiRecursos, mAvailableServices);
+                            EliminarCaches(identidad);
+                        }
+                    }
+                    identidadCN.Dispose();
+                    personaCN.Dispose();
+                }
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+        }
 
-				if (jsonUsuario != null && jsonUsuario.user_id != null && jsonUsuario.community_id != null)
-				{
-					IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(jsonUsuario.user_id, jsonUsuario.community_id);
-					if (identidadID != Guid.Empty)
-					{
-						GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-						if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
-						{
-							Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
-							gestorIdentidades.CargarGestor();
-							gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
-							gestorIdentidades.GestorPersonas.CargarGestor();
+        /// <summary>
+        /// Delete a user
+        /// </summary>
+        /// <param name="user_id">User ID to delete</param>
+        /// <example>POST user/delete-user</example>
+        [HttpPost, Route("delete-user")]
+        public void BorrarUsuario([FromBody] Guid user_id)
+        {
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
+                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                if (usuarioCN.EstaUsuarioEnProyecto(user_id, ProyectoAD.MetaProyecto))
+                {
+                    ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                    string nombreCortoProy = proyCN.ObtenerNombreCortoProyecto(ProyectoAD.MetaProyecto);
+                    proyCN.Dispose();
 
-							identidad.FilaIdentidad.FechaBaja = DateTime.Now;
-							mEntityContext.SaveChanges();
-							ControladorPersonas contrPers = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-							contrPers.ActualizarEliminacionModeloBaseSimple(identidad.Persona.Clave, jsonUsuario.community_id, PrioridadBase.ApiRecursos);
-							EliminarCaches(identidad);
-						}
-					}
-					identidadCN.Dispose();
-					personaCN.Dispose();
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
+                    User jsonUsuarioEliminar = ObtenerJsonUsuarioProyecto("", "", UsuarioOAuth, user_id, nombreCortoProy, false);
 
-		/// <summary>
-		/// Delete a user
-		/// </summary>
-		/// <param name="user_id">User ID to delete</param>
-		/// <example>POST user/delete-user</example>
-		[HttpPost, Route("delete-user")]
-		public void BorrarUsuario([FromBody] Guid user_id)
-		{
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				if (usuarioCN.EstaUsuarioEnProyecto(user_id, ProyectoAD.MetaProyecto))
-				{
-					ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					string nombreCortoProy = proyCN.ObtenerNombreCortoProyecto(ProyectoAD.MetaProyecto);
-					proyCN.Dispose();
+                    if (jsonUsuarioEliminar != null && !jsonUsuarioEliminar.user_id.Equals(Guid.Empty) && !jsonUsuarioEliminar.community_id.Equals(Guid.Empty))
+                    {
+                        IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                        Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(jsonUsuarioEliminar.user_id, jsonUsuarioEliminar.community_id);
+                        identidadCN.Dispose();
+                        if (identidadID != Guid.Empty)
+                        {
+                            EliminarUsuario(identidadID);
+                        }
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The user does not exist", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+        }
 
-					User jsonUsuarioEliminar = ObtenerJsonUsuarioProyecto("", "", UsuarioOAuth, user_id, nombreCortoProy, false);
+        /// <summary>
+        /// Add a user to an organization
+        /// </summary>
+        /// <param name="parameters">Parameters</param>
+        /// <example>POST add-user-to-organization</example>
+        [HttpPost, Route("add-user-to-organization")]
+        public void AltaUsuarioEnOrganizacion(ParamsAddUserOrg parameters)
+        {
+            if (!string.IsNullOrEmpty(parameters.organization_short_name) && !string.IsNullOrEmpty(parameters.position))
+            {
+                UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                if (parameters.user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(parameters.login))
+                {
+                    parameters.user_id = usuCN.ObtenerUsuarioIDPorLoginOEmail(parameters.login).Value;
+                }
+                if (usuCN.ExisteUsuarioEnBD(parameters.user_id))
+                {
+                    OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<OrganizacionCN>(), mLoggerFactory);
+                    if (orgCN.ExisteNombreCortoEnBD(parameters.organization_short_name))
+                    {
+                        if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || EsAdministradorOrganizacion(UsuarioOAuth, parameters.organization_short_name))
+                        {
+                            PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                            Guid personaID = persCN.ObtenerPersonaIDPorUsuarioID(parameters.user_id).Value;
+                            string emailPersona = persCN.ObtenerEmailPersonalPorUsuario(parameters.user_id);
 
-					if (jsonUsuarioEliminar != null && jsonUsuarioEliminar.user_id != null && jsonUsuarioEliminar.community_id != null)
-					{
-						IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(jsonUsuarioEliminar.user_id, jsonUsuarioEliminar.community_id);
-						identidadCN.Dispose();
-						if (identidadID != Guid.Empty)
-						{
-							EliminarUsuario(identidadID);
-						}
-					}
-				}
-				else
-				{
-					throw new GnossException("The user does not exist", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
+                            Guid organizacionID = orgCN.ObtenerOrganizacionesIDPorNombre(parameters.organization_short_name);
+                            List<Guid> listaProyectosID;
+                            ValidarNombresProyectosYOrganizacion(organizacionID, parameters.communities_short_names, out listaProyectosID);
 
-		/// <summary>
-		/// Add a user to an organization
-		/// </summary>
-		/// <param name="parameters">Parameters</param>
-		/// <example>POST add-user-to-organization</example>
-		[HttpPost, Route("add-user-to-organization")]
-		public void AltaUsuarioEnOrganizacion(ParamsAddUserOrg parameters)
-		{
-			if (!string.IsNullOrEmpty(parameters.organization_short_name) && !string.IsNullOrEmpty(parameters.position))
-			{
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				if (usuCN.ExisteUsuarioEnBD(parameters.user_id))
-				{
-					OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					if (orgCN.ExisteNombreCortoEnBD(parameters.organization_short_name))
-					{
-						if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || EsAdministradorOrganizacion(UsuarioOAuth, parameters.organization_short_name))
-						{
-							PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-							Guid personaID = persCN.ObtenerPersonaIDPorUsuarioID(parameters.user_id).Value;
-							string emailPersona = persCN.ObtenerEmailPersonalPorUsuario(parameters.user_id);
+                            //Comprobar si el usuario participa ya en alguna de las comunidades
+                            if (ComprobarUsuarioExisteConIdentitidadEnProyecto(parameters.user_id, listaProyectosID))
+                            {
+                                throw new GnossException("The user exist in the community", HttpStatusCode.BadRequest);
+                            }
 
-							Guid organizacionID = orgCN.ObtenerOrganizacionesIDPorNombre(parameters.organization_short_name);
-							List<Guid> listaProyectosID = new List<Guid>();
-							ValidarNombresProyectosYOrganizacion(organizacionID, parameters.communities_short_names, out listaProyectosID);
+                            //Necesitamos cargar la tabla: OrganizacionParticipaProy para registrar a la org en esas comunidades...
+                            GestionOrganizaciones gestOrg = new GestionOrganizaciones(orgCN.ObtenerOrganizacionPorID(organizacionID), mLoggingService, mEntityContext);
+                            Organizacion organizacion = gestOrg.ListaOrganizaciones[organizacionID];
 
-							//Comprobar si el usuario participa ya en alguna de las comunidades
-							if (comprobarUsuarioExisteConIdentitidadEnProyecto(parameters.user_id, listaProyectosID))
-							{
-								throw new GnossException("The user exist in the community", HttpStatusCode.BadRequest);
-							}
+                            DatosTrabajoPersonaOrganizacion perfilPersonaOrganizacion = gestOrg.VincularPersonaOrganizacion(organizacion, personaID);
+                            AD.EntityModel.Models.OrganizacionDS.PersonaVinculoOrganizacion filaOrgPersona = perfilPersonaOrganizacion.FilaVinculo;
+                            filaOrgPersona.EmailTrabajo = emailPersona;
+                            filaOrgPersona.Cargo = parameters.position;
 
-							//Necesitamos cargar la tabla: OrganizacionParticipaProy para registrar a la org en esas comunidades...
-							GestionOrganizaciones gestOrg = new GestionOrganizaciones(orgCN.ObtenerOrganizacionPorID(organizacionID), mLoggingService, mEntityContext);
-							Organizacion organizacion = gestOrg.ListaOrganizaciones[organizacionID];
-
-							DatosTrabajoPersonaOrganizacion perfilPersonaOrganizacion = gestOrg.VincularPersonaOrganizacion(organizacion, personaID);
-							AD.EntityModel.Models.OrganizacionDS.PersonaVinculoOrganizacion filaOrgPersona = perfilPersonaOrganizacion.FilaVinculo;
-							filaOrgPersona.EmailTrabajo = emailPersona;
-							filaOrgPersona.Cargo = parameters.position;
-
-							GestionIdentidades gestorIdentidades = new GestionIdentidades(new DataWrapperIdentidad(), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-							gestorIdentidades.GestorOrganizaciones = new GestionOrganizaciones(gestOrg.OrganizacionDW, mLoggingService, mEntityContext);
-							gestorIdentidades.GestorOrganizaciones.CargarOrganizaciones();
-							gestorIdentidades.GestorPersonas = new GestionPersonas(persCN.ObtenerPersonaPorID(personaID), mLoggingService, mEntityContext);
-							gestorIdentidades.GestorPersonas.CargarGestor();
+                            GestionIdentidades gestorIdentidades = new GestionIdentidades(new DataWrapperIdentidad(), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                            gestorIdentidades.GestorOrganizaciones = new GestionOrganizaciones(gestOrg.OrganizacionDW, mLoggingService, mEntityContext);
+                            gestorIdentidades.GestorOrganizaciones.CargarOrganizaciones();
+                            gestorIdentidades.GestorPersonas = new GestionPersonas(persCN.ObtenerPersonaPorID(personaID), mLoggingService, mEntityContext);
+                            gestorIdentidades.GestorPersonas.CargarGestor();
                             Elementos.ServiciosGenerales.Persona persona = gestorIdentidades.GestorPersonas.ListaPersonas[personaID];
 
-							//Creamos el perfil persona + organización o lo retomamos si ya existía
-							IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-							DataWrapperIdentidad identDW = identCN.ObtenerPerfilesDePersona(personaID, false);
+                            //Creamos el perfil persona + organización o lo retomamos si ya existía
+                            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                            DataWrapperIdentidad identDW = identCN.ObtenerPerfilesDePersona(personaID, false);
 
-							Perfil perfil = null;
-							Guid perfilID = Guid.Empty;
+                            Perfil perfil = null;
+                            Guid perfilID = Guid.Empty;
 
-							if (!persona.UsuarioCargado)
-							{
-								if (persona.GestorPersonas.GestorUsuarios == null)
-								{
-									persona.GestorPersonas.GestorUsuarios = new GestionUsuarios(new DataWrapperUsuario(), mLoggingService, mEntityContext, mConfigService);
-								}
+                            if (!persona.UsuarioCargado)
+                            {
+                                if (persona.GestorPersonas.GestorUsuarios == null)
+                                {
+                                    persona.GestorPersonas.GestorUsuarios = new GestionUsuarios(new DataWrapperUsuario(), mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
+                                }
 
-								UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-								DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
-								dataWrapperUsuario.ListaUsuario.Add(usuarioCN.ObtenerUsuarioPorID(persona.UsuarioID));
+                                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                                DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
+                                dataWrapperUsuario.ListaUsuario.Add(usuarioCN.ObtenerUsuarioPorID(persona.UsuarioID));
 
-								if (dataWrapperUsuario.ListaUsuario.Count.Equals(1))
-								{
-									persona.GestorPersonas.GestorUsuarios.DataWrapperUsuario.Merge(dataWrapperUsuario);
-									persona.GestorPersonas.GestorUsuarios.RecargarUsuarios();
-								}
-								usuarioCN.Dispose();
-							}
+                                if (dataWrapperUsuario.ListaUsuario.Count.Equals(1))
+                                {
+                                    persona.GestorPersonas.GestorUsuarios.DataWrapperUsuario.Merge(dataWrapperUsuario);
+                                    persona.GestorPersonas.GestorUsuarios.RecargarUsuarios();
+                                }
+                                usuarioCN.Dispose();
+                            }
 
-							DataWrapperUsuario usuDS = gestorIdentidades.GestorPersonas.GestorUsuarios.DataWrapperUsuario;
-							GestionUsuarios gestorUsuario = new GestionUsuarios(usuDS, mLoggingService, mEntityContext, mConfigService);
-							gestorIdentidades.GestorUsuarios = gestorUsuario;
-							gestorIdentidades.GestorPersonas.GestorUsuarios = gestorUsuario;
+                            DataWrapperUsuario usuDS = gestorIdentidades.GestorPersonas.GestorUsuarios.DataWrapperUsuario;
+                            GestionUsuarios gestorUsuario = new GestionUsuarios(usuDS, mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
+                            gestorIdentidades.GestorUsuarios = gestorUsuario;
+                            gestorIdentidades.GestorPersonas.GestorUsuarios = gestorUsuario;
 
-							AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg filaPerfilPersonaOrg = null;
-							List<string> listaContactosOrganizacion = new List<string>();
-							string identidadReal = "";
+                            AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg filaPerfilPersonaOrg = null;
+                            List<string> listaContactosOrganizacion = new List<string>();
+                            string identidadReal = string.Empty;
 
-							ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-							Dictionary<Guid, bool> recibirNewsletterDefectoProyectos = proyCN.ObtenerProyectosConConfiguracionNewsletterPorDefecto();
-							proyCN.Dispose();
+                            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                            Dictionary<Guid, bool> recibirNewsletterDefectoProyectos = proyCN.ObtenerProyectosConConfiguracionNewsletterPorDefecto();
+                            proyCN.Dispose();
 
-							AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = gestorUsuario.DataWrapperUsuario.ListaUsuario.Find(usuario => usuario.UsuarioID.Equals(parameters.user_id));
-							if (identDW.ListaPerfilPersonaOrg.Count(perfilOrg => perfilOrg.OrganizacionID.Equals(organizacionID) && perfilOrg.PersonaID.Equals(personaID)) == 0)
-							{
-								//Lo creamos nuevo
-								LiveCN liveCN = new LiveCN("base", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-								LiveDS liveDS = new LiveDS();
+                            AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = gestorUsuario.DataWrapperUsuario.ListaUsuario.Find(usuario => usuario.UsuarioID.Equals(parameters.user_id));
+                            if (!identDW.ListaPerfilPersonaOrg.Any(perfilOrg => perfilOrg.OrganizacionID.Equals(organizacionID) && perfilOrg.PersonaID.Equals(personaID)))
+                            {
+                                //Lo creamos nuevo
+                                LiveCN liveCN = new LiveCN("base", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<LiveCN>(), mLoggerFactory);
+                                LiveDS liveDS = new LiveDS();
 
-								gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerIdentidadesDeOrganizacion(organizacionID, ProyectoAD.MetaProyecto));
+                                gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerIdentidadesDeOrganizacion(organizacionID, ProyectoAD.MetaProyecto));
 
-								perfil = ControladorIdentidades.AgregarPerfilPersonaOrganizacion(gestorIdentidades, gestorIdentidades.GestorOrganizaciones, gestorIdentidades.GestorUsuarios, persona, organizacion, true, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, liveDS, recibirNewsletterDefectoProyectos);
+								perfil = ControladorIdentidades.AgregarPerfilPersonaOrganizacion(gestorIdentidades, gestorIdentidades.GestorOrganizaciones, gestorIdentidades.GestorUsuarios, persona, organizacion, true, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, liveDS, recibirNewsletterDefectoProyectos, mAvailableServices);
 
-								liveCN.ActualizarBD(liveDS);
-								liveCN.Dispose();
+                                liveCN.ActualizarBD(liveDS);
+                                liveCN.Dispose();
 
-								filaPerfilPersonaOrg = gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.FirstOrDefault(perfilPersOrg => perfilPersOrg.OrganizacionID.Equals(organizacionID) && perfilPersOrg.PersonaID.Equals(personaID));
+                                filaPerfilPersonaOrg = gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.FirstOrDefault(perfilPersOrg => perfilPersOrg.OrganizacionID.Equals(organizacionID) && perfilPersOrg.PersonaID.Equals(personaID));
 
-								gestorUsuario.AgregarUsuarioAProyecto(filaUsuario, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, perfil.IdentidadMyGNOSS.Clave, false);
+                                gestorUsuario.AgregarUsuarioAProyecto(filaUsuario, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, perfil.IdentidadMyGNOSS.Clave, false);
 
-								foreach (Guid proyectoID in listaProyectosID)
-								{
-									if (!proyectoID.Equals(ProyectoAD.MetaProyecto) && gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Count(ident => ident.ProyectoID.Equals(proyectoID) && ident.Tipo != 3) == 0)
-									{
-										//Hay que añadir al usuario al proyecto pProyectoID
-										ControladorIdentidades.AgregarIdentidadPerfilYUsuarioAProyecto(gestorIdentidades, gestorUsuario, ProyectoAD.MetaOrganizacion, proyectoID, filaUsuario, perfil, recibirNewsletterDefectoProyectos);
-										
-										ControladorDeSolicitudes controladorDeSolicitudes = new ControladorDeSolicitudes(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-										controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfil, filaUsuario, gestorUsuario, gestorIdentidades, proyectoID);
-									}
-								}
+                                foreach (Guid proyectoID in listaProyectosID)
+                                {
+                                    if (!proyectoID.Equals(ProyectoAD.MetaProyecto) && !gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Any(ident => ident.ProyectoID.Equals(proyectoID) && ident.Tipo != 3))
+                                    {
+                                        //Hay que añadir al usuario al proyecto pProyectoID
+                                        ControladorIdentidades.AgregarIdentidadPerfilYUsuarioAProyecto(gestorIdentidades, gestorUsuario, ProyectoAD.MetaOrganizacion, proyectoID, filaUsuario, perfil, recibirNewsletterDefectoProyectos);
 
-								perfilID = filaPerfilPersonaOrg.PerfilID;
-								gestorIdentidades.RecargarHijos();
+                                        ControladorDeSolicitudes controladorDeSolicitudes = new ControladorDeSolicitudes(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDeSolicitudes>(), mLoggerFactory);
+                                        controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfil, filaUsuario, gestorUsuario, gestorIdentidades, proyectoID);
+                                    }
+                                }
 
-								//Agregamos al modelo base las comunidades en las que se ha hecho miembro el usuario:
-								foreach (LiveDS.ColaRow colaLiveRow in liveDS.Cola)
-								{//"ProyectoID='" + colaLiveRow.ProyectoId + "' AND PerfilID='" + perfil.Clave + "'"
-									List<AD.EntityModel.Models.IdentidadDS.Identidad> filasIdentidad = perfil.GestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Where(ident => ident.ProyectoID.Equals(colaLiveRow.ProyectoId) && ident.PerfilID.Equals(perfil.Clave)).ToList();
+                                perfilID = filaPerfilPersonaOrg.PerfilID;
+                                gestorIdentidades.RecargarHijos();
 
+                                //Agregamos al modelo base las comunidades en las que se ha hecho miembro el usuario:
+                                foreach (Guid proyectoId in liveDS.Cola.Select(item => item.ProyectoId))
+                                {
+                                    List<AD.EntityModel.Models.IdentidadDS.Identidad> filasIdentidad = perfil.GestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Where(ident => ident.ProyectoID.Equals(proyectoId) && ident.PerfilID.Equals(perfil.Clave)).ToList();
 									if (filasIdentidad.Count > 0)
 									{
-										ControladorPersonas controladorPersonas = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-										controladorPersonas.ActualizarModeloBASE(perfil.GestorIdentidades.ListaIdentidades[filasIdentidad.First().IdentidadID], colaLiveRow.ProyectoId, true, true, PrioridadBase.Alta);
-									}
-								}
+										ControladorPersonas controladorPersonas = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorPersonas>(), mLoggerFactory);
+										controladorPersonas.ActualizarModeloBASE(perfil.GestorIdentidades.ListaIdentidades[filasIdentidad.First().IdentidadID], proyectoId, true, true, PrioridadBase.Alta, mAvailableServices);
+									}					
+                                }
 
-								//Agregamos como contactos a las personas de la organización y a la propia organización
-								ControladorAmigos controlador = new ControladorAmigos(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-								listaContactosOrganizacion = controlador.AgregarContactosOrganizacion(organizacionID, perfil.IdentidadMyGNOSS.Clave, gestorIdentidades);
-								identidadReal = perfil.IdentidadMyGNOSS.Clave.ToString();
-							}
-							else
-							{
-								//Lo tenemos que retomar
-								filaPerfilPersonaOrg = identDW.ListaPerfilPersonaOrg.FirstOrDefault(perfilPersOrg => perfilPersOrg.OrganizacionID.Equals(organizacionID) && perfilPersOrg.PersonaID.Equals(personaID));
-								AD.EntityModel.Models.IdentidadDS.Perfil filaPerfil = identDW.ListaPerfil.Find(perf => perf.PerfilID.Equals(filaPerfilPersonaOrg.PerfilID));
-								AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = identDW.ListaIdentidad.FirstOrDefault(ident => ident.PerfilID.Equals(filaPerfil.PerfilID) && ident.ProyectoID.Equals(ProyectoAD.MetaProyecto));
+                                //Agregamos como contactos a las personas de la organización y a la propia organización
+                                ControladorAmigos controlador = new ControladorAmigos(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorAmigos>(), mLoggerFactory);
+                                listaContactosOrganizacion = controlador.AgregarContactosOrganizacion(organizacionID, perfil.IdentidadMyGNOSS.Clave, gestorIdentidades);
+                                identidadReal = perfil.IdentidadMyGNOSS.Clave.ToString();
+                            }
+                            else
+                            {
+                                //Lo tenemos que retomar
+                                filaPerfilPersonaOrg = identDW.ListaPerfilPersonaOrg.FirstOrDefault(perfilPersOrg => perfilPersOrg.OrganizacionID.Equals(organizacionID) && perfilPersOrg.PersonaID.Equals(personaID));
+                                AD.EntityModel.Models.IdentidadDS.Perfil filaPerfil = identDW.ListaPerfil.Find(perf => perf.PerfilID.Equals(filaPerfilPersonaOrg.PerfilID));
+                                AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = identDW.ListaIdentidad.FirstOrDefault(ident => ident.PerfilID.Equals(filaPerfil.PerfilID) && ident.ProyectoID.Equals(ProyectoAD.MetaProyecto));
 
-								if (filaPerfil.Eliminado)
-								{
-									gestorIdentidades.DataWrapperIdentidad.ListaPerfil.Add(filaPerfil);
-									gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.Add(filaPerfilPersonaOrg);
-									gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Add(filaIdentidad);
-									gestorIdentidades.RecargarHijos();
+                                if (filaPerfil.Eliminado)
+                                {
+                                    gestorIdentidades.DataWrapperIdentidad.ListaPerfil.Add(filaPerfil);
+                                    gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.Add(filaPerfilPersonaOrg);
+                                    gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Add(filaIdentidad);
+                                    gestorIdentidades.RecargarHijos();
 
-									//Agregamos como contactos a las personas de la organización y a la propia organización
-									ControladorAmigos controlador = new ControladorAmigos(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-									listaContactosOrganizacion = controlador.AgregarContactosOrganizacion(organizacionID, filaIdentidad.IdentidadID, gestorIdentidades);
-									identidadReal = filaIdentidad.IdentidadID.ToString();
-									//Retomamos el perfil y la identidad en el metaproyecto
-									ControladorIdentidades.RetomarPerfil(filaPerfilPersonaOrg.PerfilID, gestorIdentidades, gestorUsuario, gestorIdentidades.GestorOrganizaciones, true, ProyectoAD.MetaProyecto, recibirNewsletterDefectoProyectos, parameters.user_id);
+                                    //Agregamos como contactos a las personas de la organización y a la propia organización
+                                    ControladorAmigos controlador = new ControladorAmigos(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorAmigos>(), mLoggerFactory);
+                                    listaContactosOrganizacion = controlador.AgregarContactosOrganizacion(organizacionID, filaIdentidad.IdentidadID, gestorIdentidades);
+                                    identidadReal = filaIdentidad.IdentidadID.ToString();
+                                    //Retomamos el perfil y la identidad en el metaproyecto
+                                    ControladorIdentidades.RetomarPerfil(filaPerfilPersonaOrg.PerfilID, gestorIdentidades, gestorUsuario, gestorIdentidades.GestorOrganizaciones, true, ProyectoAD.MetaProyecto, recibirNewsletterDefectoProyectos, parameters.user_id);
 
-									//Agregamos ProyectoUsuarioIdentidad en el metaproyecto
-									gestorUsuario.AgregarUsuarioAProyecto(gestorUsuario.ListaUsuarios[parameters.user_id].FilaUsuario, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, filaIdentidad.IdentidadID, false);
+                                    //Agregamos ProyectoUsuarioIdentidad en el metaproyecto
+                                    gestorUsuario.AgregarUsuarioAProyecto(gestorUsuario.ListaUsuarios[parameters.user_id].FilaUsuario, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, filaIdentidad.IdentidadID, false);
 
-									//si el perfil existía hay que retomarlo, pero si en la lista de proyectos hay proyectos nuevos en los que no participaba el usuario cuando abandonó la organización, hay que agregarlo a dichos proyectos
-									foreach (Guid proyectoID in listaProyectosID)
-									{//"ProyectoID = '" + proyectoID + "' AND Tipo <> 3"
-										if (!proyectoID.Equals(ProyectoAD.MetaProyecto) && gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Count(ident => ident.ProyectoID.Equals(proyectoID) && ident.Tipo != 3) == 0)
-										{
-											//Hay que añadir al usuario al proyecto
-											ControladorIdentidades.AgregarIdentidadPerfilYUsuarioAProyecto(gestorIdentidades, gestorUsuario, ProyectoAD.MetaOrganizacion, proyectoID, filaUsuario, perfil, recibirNewsletterDefectoProyectos);
+                                    //si el perfil existía hay que retomarlo, pero si en la lista de proyectos hay proyectos nuevos en los que no participaba el usuario cuando abandonó la organización, hay que agregarlo a dichos proyectos
+                                    foreach (Guid proyectoID in listaProyectosID)
+                                    {
+                                        if (!proyectoID.Equals(ProyectoAD.MetaProyecto) && !gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Any(ident => ident.ProyectoID.Equals(proyectoID) && ident.Tipo != 3))
+                                        {
+                                            //Hay que añadir al usuario al proyecto
+                                            ControladorIdentidades.AgregarIdentidadPerfilYUsuarioAProyecto(gestorIdentidades, gestorUsuario, ProyectoAD.MetaOrganizacion, proyectoID, filaUsuario, perfil, recibirNewsletterDefectoProyectos);
 
-											ControladorDeSolicitudes controladorDeSolicitudes = new ControladorDeSolicitudes(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-											controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfil, filaUsuario, gestorUsuario, gestorIdentidades, proyectoID);
-										}
-									}
+                                            ControladorDeSolicitudes controladorDeSolicitudes = new ControladorDeSolicitudes(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDeSolicitudes>(), mLoggerFactory);
+                                            controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfil, filaUsuario, gestorUsuario, gestorIdentidades, proyectoID);
+                                        }
+                                    }
 
-									perfilID = filaIdentidad.PerfilID;
-									gestorIdentidades.RecargarHijos();
-								}
-							}
+                                    perfilID = filaIdentidad.PerfilID;
+                                    gestorIdentidades.RecargarHijos();
+                                }
+                            }
 
-							gestorUsuario.AgregarOrganizacionRolUsuario(parameters.user_id, organizacionID);
+                            gestorUsuario.AgregarOrganizacionRolUsuario(parameters.user_id, organizacionID);
 
-							mEntityContext.SaveChanges();
+                            mEntityContext.SaveChanges();
 
-							//Agregamos a Virtuoso e Insertamos una fila en BASE
-							ControladorContactos contrContactos = new ControladorContactos(mLoggingService, mEntityContext, mConfigService, mEntityContextBASE, mRedisCacheWrapper, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-							FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, "contactos/", mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-							if (listaContactosOrganizacion.Count > 0)
-							{
-								foreach (string idAmigo in listaContactosOrganizacion)
-								{
-									facetadoCN.InsertarNuevoContacto(identidadReal, idAmigo);
-									contrContactos.ActualizarModeloBaseSimple(new Guid(identidadReal), new Guid(idAmigo));
-								}
-							}
+                            //Agregamos a Virtuoso e Insertamos una fila en BASE
+                            ControladorContactos contrContactos = new ControladorContactos(mLoggingService, mEntityContext, mConfigService, mEntityContextBASE, mRedisCacheWrapper, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorContactos>(), mLoggerFactory);
+                            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, "contactos/", mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
+                            if (listaContactosOrganizacion.Count > 0)
+                            {
+                                foreach (string idAmigo in listaContactosOrganizacion)
+                                {
+                                    facetadoCN.InsertarNuevoContacto(identidadReal, idAmigo);
+                                    contrContactos.ActualizarModeloBaseSimple(new Guid(identidadReal), new Guid(idAmigo));
+                                }
+                            }
 
-							facetadoCN.Dispose();
-							identCN.Dispose();
+                            facetadoCN.Dispose();
+                            identCN.Dispose();
 
-							//Invalido la cache de Mis comunidades
-							ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-							proyCL.InvalidarMisProyectos(perfilID);
-							proyCL.Dispose();
+                            //Invalido la cache de Mis comunidades
+                            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+                            proyCL.InvalidarMisProyectos(perfilID);
+                            proyCL.Dispose();
 
-							//Borro la caché para que aparezca la identidad en el menú superior:
-							IdentidadCL identCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-							identCL.EliminarCacheGestorTodasIdentidadesUsuario(parameters.user_id, personaID);
-							identCL.InvalidarCacheMiembrosOrganizacionParaFiltroGrupos(organizacionID);
-							identCL.Dispose();
+                            //Borro la caché para que aparezca la identidad en el menú superior:
+                            IdentidadCL identCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCL>(), mLoggerFactory);
+                            identCL.EliminarCacheGestorTodasIdentidadesUsuario(parameters.user_id, personaID);
+                            identCL.InvalidarCacheMiembrosOrganizacionParaFiltroGrupos(organizacionID);
+                            identCL.Dispose();
 
-							UsuarioCL usuarioCL = new UsuarioCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-							usuarioCL.EliminarCacheUsuariosCargaLigeraParaFiltros(organizacionID);
-							usuarioCL.Dispose();
-							persCN.Dispose();
+                            UsuarioCL usuarioCL = new UsuarioCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCL>(), mLoggerFactory);
+                            usuarioCL.EliminarCacheUsuariosCargaLigeraParaFiltros(organizacionID);
+                            usuarioCL.Dispose();
+                            persCN.Dispose();
 
-						}
-						else
-						{
-							throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-						}
-					}
-					else
-					{
-						throw new GnossException("The organization does not exist", HttpStatusCode.BadRequest);
-					}
+                        }
+                        else
+                        {
+                            throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                        }
+                    }
+                    else
+                    {
+                        throw new GnossException("The organization does not exist", HttpStatusCode.BadRequest);
+                    }
 
-					orgCN.Dispose();
-				}
-				else
-				{
-					throw new GnossException("The user does not exist", HttpStatusCode.BadRequest);
-				}
+                    orgCN.Dispose();
+                }
+                else
+                {
+                    throw new GnossException("The user does not exist", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The parameters organization_short_name and position cannot be null or empty", HttpStatusCode.BadRequest);
+            }
+        }
+
+        /// <summary>
+        /// Add a user to organization groups
+        /// </summary>
+        /// <param name="parameters">Parameters</param>
+        /// <example>POST add-user-to-organization-group</example>
+        [HttpPost, Route("add-user-to-organization-group")]
+        public void AltaUsuarioGrupoOrganizacion(ParamsAddUserOrgGroups parameters)
+        {
+            if (!string.IsNullOrEmpty(parameters.organization_short_name))
+            {
+                UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                if (parameters.user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(parameters.login))
+                {
+                    parameters.user_id = usuCN.ObtenerUsuarioIDPorLoginOEmail(parameters.login).Value;
+                }
+                if (usuCN.ExisteUsuarioEnBD(parameters.user_id))
+                {
+                    OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<OrganizacionCN>(), mLoggerFactory);
+                    if (orgCN.ExisteNombreCortoEnBD(parameters.organization_short_name))
+                    {
+                        if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || EsAdministradorOrganizacion(UsuarioOAuth, parameters.organization_short_name))
+                        {
+                            Guid organizacionID = orgCN.ObtenerOrganizacionesIDPorNombre(parameters.organization_short_name);
+                            DataWrapperOrganizacion orgDW = orgCN.ObtenerOrganizacionesParticipaUsuario(parameters.user_id);
+
+                            if (orgDW.ListaOrganizacion.Any(item => item.OrganizacionID.Equals(organizacionID)))
+                            {
+                                Dictionary<string, Guid> dicGrupos = new Dictionary<string, Guid>();
+                                ValidacionNombresGruposYOrganizacion(organizacionID, parameters.groups_short_names, dicGrupos);
+
+                                PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                                IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                                Guid personaID = persCN.ObtenerPersonaIDPorUsuarioID(parameters.user_id).Value;
+                                GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerPerfilesDeUsuario(parameters.user_id), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                                List<AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg> filasPerfilPersonaOrg = gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.Where(item => item.OrganizacionID.Equals(organizacionID) && item.PersonaID.Equals(personaID)).ToList();
+
+                                if (filasPerfilPersonaOrg != null && filasPerfilPersonaOrg.Count > 0)
+                                {
+                                    AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg filaPerfilPersonaOrg = filasPerfilPersonaOrg[0];
+                                    List<Guid> listaPerfiles = new List<Guid>();
+                                    listaPerfiles.Add(filaPerfilPersonaOrg.PerfilID);
+                                    List<Guid> listaIdentidades = identCN.ObtenerIdentidadesIDDePerfilEnProyecto(ProyectoAD.MyGnoss, listaPerfiles);
+
+                                    if (listaIdentidades.Count > 0)
+                                    {
+                                        gestorIdentidades.GestorOrganizaciones = new GestionOrganizaciones(orgDW, mLoggingService, mEntityContext);
+                                        gestorIdentidades.GestorPersonas = new GestionPersonas(persCN.ObtenerPersonaPorPerfil(filaPerfilPersonaOrg.PerfilID), mLoggingService, mEntityContext);
+                                        AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.FirstOrDefault(ident => ident.PerfilID.Equals(filaPerfilPersonaOrg.PerfilID) && ident.ProyectoID.Equals(ProyectoAD.MetaProyecto));
+                                        Identidad identidad = new Identidad(filaIdentidad, gestorIdentidades.ListaPerfiles[filaPerfilPersonaOrg.PerfilID], mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+
+                                        foreach (string nombreGrupo in dicGrupos.Keys)
+                                        {
+                                            gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerGrupoPorNombreCortoYOrganizacion(nombreGrupo, organizacionID, false));
+                                            gestorIdentidades.CargarGestor();
+                                            Guid grupoID = dicGrupos[nombreGrupo];
+
+                                            if (gestorIdentidades.ListaGrupos.ContainsKey(grupoID))
+                                            {
+                                                GrupoIdentidades grupoIdentidades = gestorIdentidades.ListaGrupos[grupoID];
+                                                AgregarParticipantesGrupoOrganizacion(organizacionID, listaIdentidades, grupoIdentidades);
+                                                AgregarParticipanteComunidadesParticipaGrupo(grupoID, parameters.user_id, gestorIdentidades, identidad, parameters.organization_short_name);
+                                            }
+                                        }
+                                        mGnossCache.VersionarCacheLocal(ProyectoAD.MetaProyecto);
+                                    }
+                                }
+                                persCN.Dispose();
+                            }
+                            else
+                            {
+                                throw new GnossException("El usuario no participa en la organizacion", HttpStatusCode.BadRequest);
+                            }
+                        }
+                        else
+                        {
+                            throw new GnossException("No tienes permisos para dar de alta al usuario en la organización", HttpStatusCode.Unauthorized);
+                        }
+                    }
+                    else
+                    {
+                        throw new GnossException("La organizacion no existe", HttpStatusCode.BadRequest);
+                    }
+
+                    orgCN.Dispose();
+                    usuCN.Dispose();
+                }
+                else
+                {
+                    throw new GnossException("El usuario no existe", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("El nombrecortoorg y el cargo no pueden ser vacios", HttpStatusCode.BadRequest);
+            }
+        }
+
+        [HttpPost, Route("delete-user-from-organization-group")]
+        public void DeleteUserFromOrganizationGroup(ParamsDeleteUserOrgGroup parameters)
+        {
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            if (parameters.user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(parameters.login))
+            {             
+                parameters.user_id = usuarioCN.ObtenerUsuarioIDPorLoginOEmail(parameters.login).Value;
 			}
-			else
-			{
-				throw new GnossException("The parameters organization_short_name and position cannot be null or empty", HttpStatusCode.BadRequest);
-			}
-		}
+            if (usuarioCN.ExisteUsuarioEnBD(parameters.user_id))
+            {
+                OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<OrganizacionCN>(), mLoggerFactory);
+                if (orgCN.ExisteNombreCortoEnBD(parameters.organization_short_name))
+                {
+                    if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || EsAdministradorOrganizacion(UsuarioOAuth, parameters.organization_short_name))
+                    {
+                        Guid organizacionID = orgCN.ObtenerOrganizacionesIDPorNombre(parameters.organization_short_name);
+                        DataWrapperOrganizacion organizacionesParticipaUsuario = orgCN.ObtenerOrganizacionesParticipaUsuario(parameters.user_id);
 
-		/// <summary>
-		/// Add a user to organization groups
-		/// </summary>
-		/// <param name="parameters">Parameters</param>
-		/// <example>POST add-user-to-organization-group</example>
-		[HttpPost, Route("add-user-to-organization-group")]
-		public void AltaUsuarioGrupoOrganizacion(ParamsAddUserOrgGroups parameters)
-		{
-			if (!string.IsNullOrEmpty(parameters.organization_short_name))
-			{
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				if (usuCN.ExisteUsuarioEnBD(parameters.user_id))
-				{
-					OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					if (orgCN.ExisteNombreCortoEnBD(parameters.organization_short_name))
-					{
-						if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || EsAdministradorOrganizacion(UsuarioOAuth, parameters.organization_short_name))
-						{
-							Guid organizacionID = orgCN.ObtenerOrganizacionesIDPorNombre(parameters.organization_short_name);
-							DataWrapperOrganizacion orgDW = orgCN.ObtenerOrganizacionesParticipaUsuario(parameters.user_id);
+                        if (organizacionesParticipaUsuario.ListaOrganizacion.Any(item => item.OrganizacionID.Equals(organizacionID)))
+                        {
+                            PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                            Guid personaID = persCN.ObtenerPersonaIDPorUsuarioID(parameters.user_id).Value;
+                            GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerPerfilesDeUsuario(parameters.user_id), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                            AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg filaPerfilPersonaOrg = gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.Find(item => item.OrganizacionID.Equals(organizacionID) && item.PersonaID.Equals(personaID));
 
-							if (orgDW.ListaOrganizacion.Any(item => item.OrganizacionID.Equals(organizacionID)))
-							{
-								Dictionary<string, Guid> dicGrupos = new Dictionary<string, Guid>();
-								ValidacionNombresGruposYOrganizacion(organizacionID, parameters.groups_short_names, dicGrupos);
+                            if (filaPerfilPersonaOrg != null)
+                            {
+                                Guid identidadID = identCN.ObtenerIdentidadIDDePerfilEnProyecto(ProyectoAD.MyGnoss, filaPerfilPersonaOrg.PerfilID).Value;
+                                Guid grupoID = identCN.ObtenerGrupoIDPorNombreCortoYOrganizacion(parameters.group_short_name, organizacionID);
 
-								PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-								IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-								Guid personaID = persCN.ObtenerPersonaIDPorUsuarioID(parameters.user_id).Value;
-								GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerPerfilesDeUsuario(parameters.user_id), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-								List<AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg> filasPerfilPersonaOrg = gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.Where(item => item.OrganizacionID.Equals(organizacionID) && item.PersonaID.Equals(personaID)).ToList();
+                                gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerGrupoPorNombreCortoYOrganizacion(parameters.group_short_name, organizacionID, false));
+                                gestorIdentidades.CargarGestor();
 
-								if (filasPerfilPersonaOrg != null && filasPerfilPersonaOrg.Count > 0)
-								{
-									AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg filaPerfilPersonaOrg = filasPerfilPersonaOrg[0];
-									List<Guid> listaPerfiles = new List<Guid>();
-									listaPerfiles.Add(filaPerfilPersonaOrg.PerfilID);
-									List<Guid> listaIdentidades = identCN.ObtenerIdentidadesIDDePerfilEnProyecto(ProyectoAD.MyGnoss, listaPerfiles);
+                                if (gestorIdentidades.ListaGrupos.ContainsKey(grupoID))
+                                {
+                                    EliminarParticipanteGrupoOrganizacion(organizacionID, identidadID, grupoID, parameters.group_short_name);
 
-									if (listaIdentidades.Count > 0)
-									{
-										gestorIdentidades.GestorOrganizaciones = new GestionOrganizaciones(orgDW, mLoggingService, mEntityContext);
-										gestorIdentidades.GestorPersonas = new GestionPersonas(persCN.ObtenerPersonaPorPerfil(filaPerfilPersonaOrg.PerfilID), mLoggingService, mEntityContext);
-										AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.FirstOrDefault(ident => ident.PerfilID.Equals(filaPerfilPersonaOrg.PerfilID) && ident.ProyectoID.Equals(ProyectoAD.MetaProyecto));
-										Identidad identidad = new Identidad(filaIdentidad, gestorIdentidades.ListaPerfiles[filaPerfilPersonaOrg.PerfilID], mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                                    GestionProyecto gestorProyectos = new GestionProyecto(new DataWrapperProyecto(), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionProyecto>(), mLoggerFactory);
+                                    GestionUsuarios gestorUsuarios = new GestionUsuarios(usuarioCN.ObtenerUsuarioCompletoPorID(parameters.user_id), mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
 
-										foreach (string nombreGrupo in dicGrupos.Keys)
-										{
-											gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerGrupoPorNombreCortoYOrganizacion(nombreGrupo, organizacionID, false));
-											gestorIdentidades.CargarGestor();
-											Guid grupoID = dicGrupos[nombreGrupo];
+                                    ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                                    List<GrupoOrgParticipaProy> listaProysParticipaGr = proyectoCN.ObtenerProyectosParticipaGrupoOrganizacion(grupoID);
 
-											if (gestorIdentidades.ListaGrupos.ContainsKey(grupoID))
-											{
-												GrupoIdentidades grupoIdentidades = gestorIdentidades.ListaGrupos[grupoID];
-												AgregarParticipantesGrupoOrganizacion(organizacionID, listaIdentidades, grupoIdentidades);
-												AgregarParticipanteComunidadesParticipaGrupo(grupoID, parameters.user_id, gestorIdentidades, identidad, parameters.organization_short_name);
-											}
-										}
-										mGnossCache.VersionarCacheLocal(ProyectoAD.MetaProyecto);
-									}
-								}
-								persCN.Dispose();
-							}
-							else
-							{
-								throw new GnossException("El usuario no participa en la organizacion", HttpStatusCode.BadRequest);
-							}
-						}
-						else
-						{
-							throw new GnossException("No tienes permisos para dar de alta al usuario en la organización", HttpStatusCode.Unauthorized);
-						}
-					}
-					else
-					{
-						throw new GnossException("La organizacion no existe", HttpStatusCode.BadRequest);
-					}
+                                    foreach (GrupoOrgParticipaProy grupoOrgParticipaProy in listaProysParticipaGr)
+                                    {
+                                        gestorProyectos.EliminarUsuarioDeProyecto(parameters.user_id, grupoOrgParticipaProy.ProyectoID, organizacionID, identidadID, gestorUsuarios, gestorIdentidades);
+                                    }
+                                }
+                                mGnossCache.VersionarCacheLocal(ProyectoAD.MetaProyecto);
+                            }
+                        }
+                        else
+                        {
+                            throw new GnossException($"The user didn't participate in the organization {parameters.organization_short_name}.", HttpStatusCode.BadRequest);
+                        }
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The organization short name given dont't exist.", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The user id given dont't exist.", HttpStatusCode.BadRequest);
+            }
+        }
 
-					orgCN.Dispose();
-					usuCN.Dispose();
-				}
-				else
-				{
-					throw new GnossException("El usuario no existe", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("El nombrecortoorg y el cargo no pueden ser vacios", HttpStatusCode.BadRequest);
-			}
-		}
+        /// <summary>
+        /// Return if the user has photo in the current proyect
+        /// </summary>
+        /// <param name="userCommunityModel">Model that contains user id and short name proyect</param>
+        /// <returns>True or false if the user has or not photo</returns>
+        [HttpPost, Route("get-user-photo")]
+        public string ObtenerFotoUsuario(Guid user_id,string login)
+        {
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            if (!user_id.Equals(Guid.Empty))
+            {    
+                return usuarioCN.FotoPerfilPersonalUsuario(user_id);
+            }
+            else
+            {
+                return usuarioCN.FotoPerfilPersonalUsuario(usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID);
+            }
+                
+        }
 
-
-		[HttpPost, Route("delete-user-from-organization-group")]
-		public void DeleteUserFromOrganizationGroup(ParamsDeleteUserOrgGroup parameters)
-		{
-			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			if (usuarioCN.ExisteUsuarioEnBD(parameters.user_id))
-			{
-				OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				if (orgCN.ExisteNombreCortoEnBD(parameters.organization_short_name))
-				{
-					if (EsAdministradorProyectoMyGnoss(UsuarioOAuth) || EsAdministradorOrganizacion(UsuarioOAuth, parameters.organization_short_name))
-					{
-						Guid organizacionID = orgCN.ObtenerOrganizacionesIDPorNombre(parameters.organization_short_name);
-						DataWrapperOrganizacion organizacionesParticipaUsuario = orgCN.ObtenerOrganizacionesParticipaUsuario(parameters.user_id);
-
-						if (organizacionesParticipaUsuario.ListaOrganizacion.Any(item => item.OrganizacionID.Equals(organizacionID)))
-						{
-							PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-							IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-							Guid personaID = persCN.ObtenerPersonaIDPorUsuarioID(parameters.user_id).Value;
-							GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerPerfilesDeUsuario(parameters.user_id), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-							AD.EntityModel.Models.IdentidadDS.PerfilPersonaOrg filaPerfilPersonaOrg = gestorIdentidades.DataWrapperIdentidad.ListaPerfilPersonaOrg.Where(item => item.OrganizacionID.Equals(organizacionID) && item.PersonaID.Equals(personaID)).FirstOrDefault();
-
-							if (filaPerfilPersonaOrg != null)
-							{
-								Guid identidadID = identCN.ObtenerIdentidadIDDePerfilEnProyecto(ProyectoAD.MyGnoss, filaPerfilPersonaOrg.PerfilID).Value;
-								Guid grupoID = identCN.ObtenerGrupoIDPorNombreCortoYOrganizacion(parameters.group_short_name, organizacionID);
-
-								gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerGrupoPorNombreCortoYOrganizacion(parameters.group_short_name, organizacionID, false));
-								gestorIdentidades.CargarGestor();
-
-								if (gestorIdentidades.ListaGrupos.ContainsKey(grupoID))
-								{
-									EliminarParticipanteGrupoOrganizacion(organizacionID, identidadID, grupoID, parameters.group_short_name);
-
-									GestionProyecto gestorProyectos = new GestionProyecto(new DataWrapperProyecto(), mLoggingService, mEntityContext);
-									GestionUsuarios gestorUsuarios = new GestionUsuarios(usuarioCN.ObtenerUsuarioCompletoPorID(parameters.user_id), mLoggingService, mEntityContext, mConfigService);
-
-									ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-									List<GrupoOrgParticipaProy> listaProysParticipaGr = proyectoCN.ObtenerProyectosParticipaGrupoOrganizacion(grupoID);
-
-									foreach(GrupoOrgParticipaProy grupoOrgParticipaProy in listaProysParticipaGr)
-									{
-										gestorProyectos.EliminarUsuarioDeProyecto(parameters.user_id, grupoOrgParticipaProy.ProyectoID, organizacionID, identidadID, gestorUsuarios, gestorIdentidades);
-									}
-								}
-								mGnossCache.VersionarCacheLocal(ProyectoAD.MetaProyecto);
-							}
-						}
-						else
-						{
-							throw new GnossException($"The user {parameters.user_id} dind't participate in the organization {parameters.organization_short_name}.", HttpStatusCode.BadRequest);
-						}
-					}
-				}
-				else
-				{
-					throw new GnossException("The organization short name given dont't exist.", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The user id given dont't exist.", HttpStatusCode.BadRequest);
-			}
-		}
-
-		/// <summary>
-		/// Return if the user has photo in the current proyect
-		/// </summary>
-		/// <param name="userCommunityModel">Model that contains user id and short name proyect</param>
-		/// <returns>True or false if the user has or not photo</returns>
-		[HttpPost, Route("get-user-photo")]
-		public string ObtenerFotoUsuario(Guid user_id)
-		{
-			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			return usuarioCN.FotoPerfilPersonalUsuario(user_id);
-		}
-
-		/// <summary>
-		/// Gets userID by login or email
-		/// </summary>
-		/// <param name="pLogin">User's login or email</param>
-		/// <returns>UserID Guid?</returns>
-		[HttpGet, Route("get-user-id-by-login")]
-		public Guid? ObtenerUsuarioIDPorLogin(string pLogin)
-		{
-			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			return usuarioCN.ObtenerUsuarioIDPorLoginOEmail(pLogin);
-		}
+        /// <summary>
+        /// Gets userID by login or email
+        /// </summary>
+        /// <param name="pLogin">User's login or email</param>
+        /// <returns>UserID Guid?</returns>
+        [HttpGet, Route("get-user-id-by-login")]
+        public Guid? ObtenerUsuarioIDPorLogin(string pLogin)
+        {
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            return usuarioCN.ObtenerUsuarioIDPorLoginOEmail(pLogin);
+        }
 
         /// <summary>
         /// Get a user by accreditation document
@@ -1296,13 +1340,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 		[HttpGet, Route("get-user-by-accreditation-document")]
         public User ObtenerUsuarioPorValorDocumentoAcreditativo(string pValorDocumentoAcreditativo, string pNombreCorto)
         {
-            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
 
-			Guid personaID = usuarioCN.ObtenerPersonaIDPorValorDocumentoAcreditativo(pValorDocumentoAcreditativo);
-			Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(pNombreCorto);
+            Guid personaID = usuarioCN.ObtenerPersonaIDPorValorDocumentoAcreditativo(pValorDocumentoAcreditativo);
+            Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(pNombreCorto);
 
-			return ObtenerUserModelPorPersonaID(personaID, proyectoID, pNombreCorto);
+            return ObtenerUserModelPorPersonaID(personaID, proyectoID, pNombreCorto);
         }
 
         /// <summary>
@@ -1310,22 +1354,37 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// </summary>
         /// <param name="pValorDocumentoAcreditativo">User's accreditation document</param>
         /// <param name="pUserID">User's identificator</param>
+        /// <param name="pTipoDocumentoAcreditativo">
+        /// Types of accreditation document 
+        /// -1 -> None (Por defecto)
+        ///  0 -> DNI
+        ///  1 -> Passport
+        ///  2 -> Residence card
+        /// </param>
         /// <returns>True or false if the user ID exist or not</returns>
         [HttpPost, Route("set-accreditation-document-by-user")]
-        public bool ModificarDocumentoAcreditativoUsuario(string pValorDocumentoAcreditativo, Guid pUserID)
-		{ 
-            AD.EntityModel.Models.PersonaDS.Persona persona = mEntityContext.Persona.Where(item => item.UsuarioID.Equals(pUserID)).FirstOrDefault();
+        public bool ModificarDocumentoAcreditativoUsuario(string pValorDocumentoAcreditativo, Guid pUserID, string pLogin, short pTipoDocumentoAcreditativo = -1)
+        {        
+            if (pUserID.Equals(Guid.Empty) && !string.IsNullOrEmpty(pLogin))
+            {
+                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                pUserID = usuarioCN.ObtenerUsuarioIDPorLoginOEmail(pLogin).Value;
+                usuarioCN.Dispose();
+            }
 
-            if (persona != null)
-			{
+			AD.EntityModel.Models.PersonaDS.Persona persona = mEntityContext.Persona.Where(item => item.UsuarioID.Equals(pUserID)).FirstOrDefault();
+
+			if (persona != null)
+            {
                 persona.ValorDocumentoAcreditativo = pValorDocumentoAcreditativo;
+                persona.TipoDocumentoAcreditativo = pTipoDocumentoAcreditativo;
                 mEntityContext.SaveChanges();
                 return true;
-			}
-			else
-			{
+            }
+            else
+            {
                 return false;
-            }            
+            }
         }
 
         /// <summary>
@@ -1334,89 +1393,129 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <param name="user_id">User's identificator</param>
         /// <example>POST community/block-member</example>
         [HttpPost, Route("block")]
-		public void BloquearUsuario(Guid user_id)
+        public void BloquearUsuario(Guid user_id, string login)
+        {
+            BloquearDesbloquearUsuario(user_id, login, true);
+        }
+
+        /// <summary>
+        /// Blocks a user at the platform
+        /// </summary>
+        /// <param name="user_id">User's identificator</param>
+        /// <example>POST community/block-member</example>
+        [HttpPost, Route("unblock")]
+        public void DesbloquearUsuario(Guid user_id, string login)
+        {
+            BloquearDesbloquearUsuario(user_id, login, false);
+        }
+
+        /// <summary>
+        /// Blocks a user at the platform
+        /// </summary>
+        /// <param name="user_id">User's identificator</param>
+        /// <param name="blocked">True if the user has been blocked, false if the user has been unblocked</param>
+        private void BloquearDesbloquearUsuario(Guid user_id,string login, bool blocked)
+        {
+            try
+            {
+                if (!user_id.Equals(Guid.Empty))
+                {
+                    //Es administrador quien realiza la petición
+                    if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                    {
+                        UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                        DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
+                        AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = usuarioCN.ObtenerUsuarioPorID(user_id);
+                        dataWrapperUsuario.ListaUsuario.Add(filaUsuario);
+
+
+                        if (filaUsuario != null)
+                        {
+                            filaUsuario.EstaBloqueado = blocked;
+                            usuarioCN.GuardarActualizaciones(dataWrapperUsuario);
+                        }
+                        else
+                        {
+                            throw new GnossException("The user doesn't exists", HttpStatusCode.BadRequest);
+                        }
+
+                        usuarioCN.Dispose();
+                    }
+                    else
+                    {
+                        throw new GnossException("The oauth user does not have permission in the community", HttpStatusCode.Unauthorized);
+                    }
+                }
+                else
+                {
+                    //Es administrador quien realiza la petición
+                    if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                    {
+                        UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                        AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login, !blocked);
+                        DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
+                        dataWrapperUsuario.ListaUsuario.Add(filaUsuario);
+
+                        if (filaUsuario != null)
+                        {
+                            filaUsuario.EstaBloqueado = blocked;
+                            usuarioCN.GuardarActualizaciones(dataWrapperUsuario);
+                        }
+                        else
+                        {
+                            throw new GnossException("The user doesn't exists", HttpStatusCode.BadRequest);
+                        }
+
+                        usuarioCN.Dispose();
+                    }
+                    else
+                    {
+                        throw new GnossException("The oauth user does not have permission in the community", HttpStatusCode.Unauthorized);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex, mlogger);
+                throw new GnossException("Unexpected error. Try it again later. ", HttpStatusCode.InternalServerError);
+            }
+        }
+
+        #endregion
+
+        #region Nuevos Métodos Api V3
+
+
+        /// <summary>
+        /// Get the data a user by user id
+        /// </summary>
+        /// <param name="listaIds">List Ids Users</param>
+        /// <returns>User data that has been requested</returns>
+        /// <example>GET user/get-users-by-id</example>
+        [HttpPost, Route("get-users-by-id")]
+        public Dictionary<Guid, Userlite> GetUsuariosPorIds(List<Guid> listaIds)
+        {
+            //Usuario, Nombre, apellidos, IDUsuario, NombreCorto, Numero de Recursos, Numero de Comentarios, Grupos a los que pertenece en la comunidad
+            return ObtenerUsuariosLitePorID(UsuarioOAuth, listaIds);
+        }
+
+		[HttpPost, Route("get-users-by-shortname-or-email")]
+		public Dictionary<Guid, Userlite> GetUsuariosPorIds(List<string> lista)
 		{
-			BloquearDesbloquearUsuario(user_id, true);
-		}
-
-		/// <summary>
-		/// Blocks a user at the platform
-		/// </summary>
-		/// <param name="user_id">User's identificator</param>
-		/// <example>POST community/block-member</example>
-		[HttpPost, Route("unblock")]
-		public void DesbloquearUsuario(Guid user_id)
-		{
-			BloquearDesbloquearUsuario(user_id, false);
-		}
-
-		/// <summary>
-		/// Blocks a user at the platform
-		/// </summary>
-		/// <param name="user_id">User's identificator</param>
-		/// <param name="blocked">True if the user has been blocked, false if the user has been unblocked</param>
-		private void BloquearDesbloquearUsuario(Guid user_id, bool blocked)
-		{
-			try
-			{
-				if (!user_id.Equals(Guid.Empty))
-				{
-					//es administrador quien realiza la petición
-					if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-					{
-						UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
-						dataWrapperUsuario.ListaUsuario.Add(usuarioCN.ObtenerUsuarioPorID(user_id));
-
-						AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = dataWrapperUsuario?.ListaUsuario.Find(usuario => usuario.UsuarioID.Equals(user_id));
-
-						if (filaUsuario != null)
-						{
-							filaUsuario.EstaBloqueado = blocked;
-							usuarioCN.GuardarActualizaciones(dataWrapperUsuario);
-						}
-						else
-						{
-							throw new GnossException("The user doesn't exists", HttpStatusCode.BadRequest);
-						}
-
-						usuarioCN.Dispose();
-					}
-					else
-					{
-						throw new GnossException("The oauth user does not have permission in the community", HttpStatusCode.Unauthorized);
-					}
+			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+			List<Guid> listaIds = new List<Guid>();        
+            foreach (string login in lista)
+            {
+                Guid usuarioID = usuarioCN.ObtenerUsuarioIDPorLoginOEmail(login).Value;
+                if (!usuarioID.Equals(Guid.Empty))
+                {
+					listaIds.Add(usuarioID);
 				}
-				else
-				{
-					throw new GnossException("The user ID can not be empty", HttpStatusCode.BadRequest);
-				}
-			}
-			catch (Exception ex)
-			{
-				mLoggingService.GuardarLogError(ex);
-				throw new GnossException("Unexpected error. Try it again later. ", HttpStatusCode.InternalServerError);
-			}
-		}
+            }
 
-		#endregion
+            usuarioCN.Dispose();
 
-		#region Nuevos Métodos Api V3
-
-
-		/// <summary>
-		/// Get the data a user by user id
-		/// </summary>
-		/// <param name="listaIds">List Ids Users</param>
-		/// <returns>User data that has been requested</returns>
-		/// <example>GET user/get-users-by-id</example>
-		[HttpPost, Route("get-users-by-id")]
-		public Dictionary<Guid, Userlite> GetUsuariosPorIds(List<Guid> listaIds)
-		{
-			//Usuario, Nombre, apellidos, IDUsuario, NombreCorto, Numero de Recursos, Numero de Comentarios, Grupos a los que pertenece en la comunidad
-			Dictionary<Guid, Userlite> lista = new Dictionary<Guid, Userlite>();
-			lista = ObtenerUsuariosLitePorID(UsuarioOAuth, listaIds);
-			return lista;
+            return ObtenerUsuariosLitePorID(UsuarioOAuth, listaIds);
 		}
 
 		/// <summary>
@@ -1428,2365 +1527,2470 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 		/// <returns>List of the identifiers of modified users</returns>
 		/// <example>GET resource/get-modified-users?community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
 		[HttpGet, Route("get-modified-users")]
-		public List<Guid> GetModifiedUsersFromDate(string search_date, string community_short_name = null, Guid? community_id = null)
-		{
-			List<Guid> listaIDs = null;
-			DateTime fechaBusqueda = DateTime.MinValue;
-			bool esFecha = DateTime.TryParse(search_date, out fechaBusqueda);
-
-			if (string.IsNullOrEmpty(community_short_name) && community_id.HasValue)
-			{
-				ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-				community_short_name = proyCL.ObtenerNombreCortoProyecto(community_id.Value);
-			}
-
-			if (!string.IsNullOrEmpty(community_short_name) && esFecha && !fechaBusqueda.Equals(DateTime.MinValue) && !fechaBusqueda.Equals(DateTime.MaxValue))
-			{
-				if (!ComprobarFechaISO8601(search_date))
-				{
-					throw new GnossException("The parameter search_date has not the ISO8601 format", HttpStatusCode.BadRequest);
-				}
-
-				ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				List<Guid> lista = proyCN.ObtenerProyectoIDOrganizacionIDPorNombreCorto(community_short_name);
-				proyCN.Dispose();
-
-				Guid organizacionID = Guid.Empty;
-				Guid proyectoID = Guid.Empty;
-
-				if (lista.Count > 0)
-				{
-					organizacionID = lista[0];
-					proyectoID = lista[1];
-				}
-
-				if (proyectoID != Guid.Empty && organizacionID != Guid.Empty)
-				{
-					//buscar novedades en los usuarios: suscripciones a tesauro comunidad, a otros usuarios, altas en la comunidad...
-					UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					listaIDs = usuCN.ObtenerUsuariosActivosEnFecha(proyectoID, fechaBusqueda);
-					usuCN.Dispose();
-				}
-				else
-				{
-					throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The required parameters can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			return listaIDs;
-		}
-
-		/// <summary>
-		/// Get the novelties from a user by its user identifier. The novelties of the user can also be obtained providing either a community identifier or a community short name.
-		/// </summary>
-		/// <param name="user_id"">User identifier</param>
-		/// <param name="search_date">String of date with ISO 8601 format from which the search will filter to get the results</param>
-		/// <param name="community_short_name">Community short name</param>
-		/// <param name="community_id">Community identifier</param>
-		/// <example>GET resource/get-user-novelties?user_id={user_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
-		[HttpGet, Route("get-user-novelties")]
-		public UserNoveltiesModel GetUserNoveltiesFromDate(Guid user_id, string search_date, string community_short_name = null, Guid? community_id = null)
-		{
-			UserNoveltiesModel novedadesUsuario = null;
-			DateTime fechaBusqueda = DateTime.MinValue;
-			bool esFecha = DateTime.TryParse(search_date, out fechaBusqueda);
-
-			if (string.IsNullOrEmpty(community_short_name) && community_id.HasValue)
-			{
-				ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-				community_short_name = proyCL.ObtenerNombreCortoProyecto(community_id.Value);
-			}
-
-			if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name) && esFecha && !fechaBusqueda.Equals(DateTime.MinValue) && !fechaBusqueda.Equals(DateTime.MaxValue))
-			{
-				if (!ComprobarFechaISO8601(search_date))
-				{
-					throw new GnossException("The parameter search_date has not the ISO8601 format", HttpStatusCode.BadRequest);
-				}
-
-				mNombreCortoComunidad = community_short_name;
-				UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-				if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
-				{
-					IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					Guid identidadIDMyGnoss = identCN.ObtenerIdentidadUsuarioEnProyecto(user_id, ProyectoAD.MetaProyecto);
-					Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(user_id, FilaProy.ProyectoID);
-					if (identidadID.Equals(Guid.Empty))
-					{
-						throw new GnossException($"The user does not participate in the community {community_short_name}", HttpStatusCode.BadRequest);
-					}
-
-					SuscripcionCN suscCN = new SuscripcionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					DataWrapperSuscripcion suscDW = suscCN.ObtenerSuscripcionesDeIdentidad(identidadID, true);
-					//obtengo las suscripciones a usuarios con la identidad de MyGnoss porque el usuario está suscrito a otros usuarios con su identidad de MyGnoss
-					suscDW.Merge(suscCN.ObtenerSuscripcionesDeIdentidad(identidadIDMyGnoss, true));
-					GestionSuscripcion gestorSuscripciones = new GestionSuscripcion(suscDW, mLoggingService, mEntityContext);
-					suscCN.Dispose();
-					//Suscripcion suscripcion = gestorSuscripciones.ObtenerSuscripcionAProyecto(FilaProy.ProyectoID);
-
-					TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-					GestionTesauro gestorTesauro = new GestionTesauro(tesauroCL.ObtenerTesauroDeProyecto(FilaProy.ProyectoID), mLoggingService, mEntityContext);
-					gestorTesauro.CargarCategorias();
-					tesauroCL.Dispose();
-
-					novedadesUsuario = new UserNoveltiesModel();
-					novedadesUsuario.user_id = user_id;
-
-					//miembro comunidad
-					GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-					if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
-					{
-						Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
-						novedadesUsuario.user_community_membership = new UserCommunityMembership();
-						novedadesUsuario.user_community_membership.community_short_name = community_short_name;
-						novedadesUsuario.user_community_membership.user_id = user_id;
-						novedadesUsuario.user_community_membership.registration_date = identidad.FilaIdentidad.FechaAlta;
-						novedadesUsuario.user_community_membership.administrator_rol = false;
-					}
-
-					foreach (Guid suscripcionID in gestorSuscripciones.ListaSuscripciones.Keys)
-					{
-						DateTime fechaSuscripcion = gestorSuscripciones.ListaSuscripciones[suscripcionID].Fecha;
-
-						if (fechaSuscripcion >= fechaBusqueda)
-						{
-							//Suscripciones tesauro comunidad
-							if (gestorSuscripciones.ListaSuscripciones[suscripcionID].FilasCategoriasVinculadas != null)
-							{
-								novedadesUsuario.community_subscriptions = new CommunitySubscriptionModel();
-								novedadesUsuario.community_subscriptions.user_id = user_id;
-								novedadesUsuario.community_subscriptions.community_short_name = community_short_name;
-								novedadesUsuario.community_subscriptions.category_list = new List<ThesaurusCategory>();
-
-								foreach (AD.EntityModel.Models.Suscripcion.CategoriaTesVinSuscrip filaCat in gestorSuscripciones.ListaSuscripciones[suscripcionID].FilasCategoriasVinculadas)
-								{
-									string nomCat = gestorTesauro.ListaCategoriasTesauro[filaCat.CategoriaTesauroID].Nombre["es"];
-									novedadesUsuario.community_subscriptions.category_list.Add(ObtenerCategoriasJerarquicas(filaCat.CategoriaTesauroID, gestorTesauro.ListaCategoriasTesauro));
-								}
-							}
-
-							//suscripciones usuario
-							if (gestorSuscripciones.ListaSuscripciones[suscripcionID].FilaSuscripcionIdentidadProyecto != null)
-							{
-								if (novedadesUsuario.user_subscriptions == null)
-								{
-									novedadesUsuario.user_subscriptions = new List<UserSubscriptionModel>();
-								}
-
-								foreach (AD.EntityModel.Models.Suscripcion.SuscripcionIdentidadProyecto filaSusIdentProy in gestorSuscripciones.ListaSuscripciones[suscripcionID].FilaSuscripcionIdentidadProyecto)
-								{
-									UserSubscriptionModel suscripcionUsuario = new UserSubscriptionModel();
-									suscripcionUsuario.user_id = user_id;
-									suscripcionUsuario.community_short_name = community_short_name;
-									suscripcionUsuario.user_followed_id = filaSusIdentProy.IdentidadID;
-									suscripcionUsuario.subscription_date = fechaSuscripcion;
-									novedadesUsuario.user_subscriptions.Add(suscripcionUsuario);
-								}
-							}
-						}
-					}
-				}
-				else
-				{
-					throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
-				}
-
-				usuarioCN.Dispose();
-			}
-			else
-			{
-				throw new GnossException("The required parameters can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			return novedadesUsuario;
-		}
-
-		/// <summary>
-		/// Add a user's social network login based on their social network type data and user identifier. 
-		/// </summary>
-		/// <param name="user_id">User identifier</param>
-		/// <param name="social_network_user_id">Social network user identifier</param>
-		/// <param name="social_network">Social network name</param>
-		/// <example>GET resource/get-user-novelties?user_id={user_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
-		[HttpPost, Route("add-social-network-login")]
-		public void AddSocialNetworkLogin(Guid user_id, string social_network_user_id, string social_network)
-		{
-			if (string.IsNullOrEmpty(social_network_user_id))
-			{
-				throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				if (usuCN.ExisteUsuarioEnBD(user_id))
-				{
-					TipoRedSocialLogin tipoRedSocial;
-					if (!Enum.TryParse(social_network, true, out tipoRedSocial))
-					{
-						tipoRedSocial = TipoRedSocialLogin.Otros;
-					}
-
-					DataWrapperUsuario usuDW = new DataWrapperUsuario();
-
-					UsuarioVinculadoLoginRedesSociales filaLoginRedSocial = new UsuarioVinculadoLoginRedesSociales();
-
-					filaLoginRedSocial.UsuarioID = user_id;
-					filaLoginRedSocial.IDenRedSocial = social_network_user_id;
-					filaLoginRedSocial.TipoRedSocial = (short)tipoRedSocial;
-
-					usuDW.ListaUsuarioVinculadoLoginRedesSociales.Add(filaLoginRedSocial);
-					mEntityContext.UsuarioVinculadoLoginRedesSociales.Add(filaLoginRedSocial);
-
-					usuCN.ActualizarUsuario(false);
-				}
-				else
-				{
-					throw new GnossException($"The user {user_id} does not belong to the database", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
-
-		/// <summary>
-		/// Modifies the social network user identifier
-		/// </summary>
-		/// <param name="user_id">User identifier</param>
-		/// <param name="social_network_user_id">User identifier in the social network</param>
-		/// <param name="social_network">Name of the social network</param>
-		/// <example>POST resource/modify-social-network-login?user_id={user_id}social_network_user_id={social_network_user_id}social_network={social_network}</example>
-		[HttpPost, Route("modify-social-network-login")]
-		public void ModifySocialNetworkLogin(Guid user_id, string social_network_user_id, string social_network)
-		{
-			if (string.IsNullOrEmpty(social_network_user_id))
-			{
-				throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				if (usuCN.ExisteUsuarioEnBD(user_id))
-				{
-					TipoRedSocialLogin tipoRedSocial;
-					if (!Enum.TryParse(social_network, true, out tipoRedSocial))
-					{
-						tipoRedSocial = TipoRedSocialLogin.Otros;
-					}
-
-					string socialNetworkLogin = usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, user_id);
-					if (string.IsNullOrEmpty(socialNetworkLogin))
-					{
-						throw new GnossException($"Could not find any social network login with user {user_id} at {social_network}", HttpStatusCode.BadRequest);
-					}
-
-					usuCN.ActualizarLoginEnRedSocialPorUsuario(tipoRedSocial, user_id, social_network_user_id);
-					usuCN.Dispose();
-				}
-				else
-				{
-					throw new GnossException($"The user {user_id} does not belong to the database", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
-
-		/// <summary>
-		/// Gets a user by a social network login
-		/// </summary>
-		/// <param name="socialNetworkUserId">Social network user's identifier</param>
-		/// <param name="socialNetwork">Social network (Facebook, twitter, instagram...)</param>
-		[HttpGet, Route("get-user_id-by-social-network-login")]
-		public Guid? GetUserBySocialNetworkLogin(string social_network_user_id, string social_network)
-		{
-			Guid? user_id = null;
-
-			if (string.IsNullOrEmpty(social_network_user_id))
-			{
-				throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-				TipoRedSocialLogin tipoRedSocial;
-				if (!Enum.TryParse(social_network, true, out tipoRedSocial))
-				{
-					tipoRedSocial = TipoRedSocialLogin.Otros;
-				}
-
-				Guid resultado = usuCN.ObtenerUsuarioPorLoginEnRedSocial(tipoRedSocial, social_network_user_id);
-				if (!resultado.Equals(Guid.Empty))
-				{
-					user_id = resultado;
-				}
-				else
-				{
-					throw new GnossException($"Could not find any user with social network id {social_network_user_id} at {social_network}", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-
-			return user_id;
-		}
-
-		/// <summary>
-		/// Checks if a user id in a social network exists in the system
-		/// </summary>
-		/// <param name="social_network_user_id">Social network user's identifier</param>
-		/// <param name="social_network">Social network (Facebook, twitter, instagram...)</param>
-		[HttpGet, Route("exists-social-network-login")]
-		public bool ExistsSocialNetworkLogin(string social_network_user_id, string social_network)
-		{
-			if (string.IsNullOrEmpty(social_network_user_id))
-			{
-				throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-				TipoRedSocialLogin tipoRedSocial;
-				if (!Enum.TryParse(social_network, true, out tipoRedSocial))
-				{
-					tipoRedSocial = TipoRedSocialLogin.Otros;
-				}
-
-				Guid resultado = usuCN.ObtenerUsuarioPorLoginEnRedSocial(tipoRedSocial, social_network_user_id);
-				return !resultado.Equals(Guid.Empty);
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-		}
-
-		/// <summary>
-		/// Gets the user
-		/// </summary>
-		/// <param name="user_id">User identifier</param>
-		/// <param name="social_network">Social network short name</param>
-		/// <returns>Social network login of the user</returns>
-		[HttpGet, Route("get-social-network-login-by-user_id")]
-		public string GetSocialNetworkLoginByUserId(string social_network, Guid user_id)
-		{
-			string socialNetworkLogin;
-
-			if (string.IsNullOrEmpty(social_network))
-			{
-				throw new GnossException("The parameter \"social_network\" can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			if (user_id.Equals(Guid.Empty))
-			{
-				throw new GnossException("The parameter \"user_id\" can not be empty", HttpStatusCode.BadRequest);
-			}
-
-			if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-			{
-				UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-				TipoRedSocialLogin tipoRedSocial;
-				if (!Enum.TryParse(social_network, true, out tipoRedSocial))
-				{
-					tipoRedSocial = TipoRedSocialLogin.Otros;
-				}
-
-				string resultado = usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, user_id);
-				if (!string.IsNullOrEmpty(resultado))
-				{
-					socialNetworkLogin = resultado;
-				}
-				else
-				{
-					throw new GnossException($"Could not find any social network login with user {user_id} at {social_network}", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-
-			return socialNetworkLogin;
-		}
-
-		/// <summary>
-		/// Add CMS Admin rol privilege to a specific user.
-		/// </summary>
-		/// <param name="user_id">User identifier</param>
-		/// <param name="community_short_name">Community short name</param>
-		/// <param name="admin_page_type">Administation page type</param>
-		/// <example>POST user/add-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>  
-		[HttpPost, Route("add-permission")]
-		public void AddPermissionToUser(Guid user_id, string community_short_name, string admin_page_type)
-		{
-			if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name))
-			{
-				TipoPaginaAdministracion tipoPaginaAdministracion;
-				if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
-				{
-					throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
-				}
-
-				mNombreCortoComunidad = community_short_name;
-				UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-				if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
-				{
-					ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-					Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(user_id, FilaProy.ProyectoID);
-					List<Guid> identidadesSupervisores = proyCN.ObtenerListaIdentidadesSupervisoresPorProyecto(FilaProy.ProyectoID);
-
-					//si el usuario no es supervisor se le cambia el rol
-					if (!identidadesSupervisores.Contains(identidadID))
-					{
-						if (!CambiarRolUsuarioEnProyecto(user_id, FilaProy.ProyectoID, TipoRolUsuario.Supervisor))
-						{
-							throw new GnossException($"Could not assign the 'Supervisor' role to user {user_id}", HttpStatusCode.BadRequest);
-						}
-					}
-
-					List<PermisosPaginasUsuarios> filasPermisoProyectoUsuario = mEntityContext.PermisosPaginasUsuarios.Where(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(user_id)).ToList();
-					List<Guid> idsUsuariosBD = filasPermisoProyectoUsuario.Select(fila => fila.UsuarioID).ToList();
-
-					if (!idsUsuariosBD.Contains(user_id))
-					{
-						PermisosPaginasUsuarios filaNuevoUsuario = CrearFilaPermisosPaginasUsuarios(tipoPaginaAdministracion, user_id, FilaProy.OrganizacionID, FilaProy.ProyectoID);
-						mEntityContext.PermisosPaginasUsuarios.Add(filaNuevoUsuario);
-						mEntityContext.SaveChanges();
-					}
-				}
-				else
-				{
-					throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The required parameters can not be empty", HttpStatusCode.BadRequest);
-			}
-		}
-
-		/// <summary>
-		/// Remove CMS Admin rol privilege to a specific user.
-		/// </summary>
-		/// <param name="community_short_name">Community short name</param>
-		/// <param name="admin_page_type">Administation page type</param>
-		/// <example>POST user/remove-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>
-		[HttpPost, Route("remove-permission")]
-		public void RemovePermissionToUser(Guid user_id, string community_short_name, string admin_page_type)
-		{
-			if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name))
-			{
-				TipoPaginaAdministracion tipoPaginaAdministracion;
-				if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
-				{
-					throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
-				}
-
-				mNombreCortoComunidad = community_short_name;
-				UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-				if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
-				{
-					PermisosPaginasUsuarios filaUsuarioEliminar = mEntityContext.PermisosPaginasUsuarios.FirstOrDefault(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(user_id));
-
-					if (filaUsuarioEliminar != null)
-					{
-						mEntityContext.PermisosPaginasUsuarios.Remove(filaUsuarioEliminar);
-						mEntityContext.SaveChanges();
-					}
-				}
-				else
-				{
-					throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The required parameters can not be empty", HttpStatusCode.BadRequest);
-			}
-		}
-
-		#endregion
-
-		#region Métodos privados
-
-		private bool comprobarUsuarioExisteConIdentitidadEnProyecto(Guid pUserID, List<Guid> pListaProyectosID)
-		{
-			bool tieneIdentidadEnProyecto = false;
-			IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			foreach (Guid proyectoID in pListaProyectosID)
-			{
-				if (identCN.ObtenerIdentidadUsuarioEnProyecto(pUserID, proyectoID).Equals(Guid.Empty))
-				{
-					return true;
-				}
-			}
-			return tieneIdentidadEnProyecto;
-
-		}
-
-		private Dictionary<Guid, Userlite> ObtenerUsuariosLitePorID(Guid pUsuarioIDOauth, List<Guid> listaIds)
-		{
-			Dictionary<Guid, Userlite> devolver = new Dictionary<Guid, Userlite>();
-			//como esta función se usa en varios métodos, en la de eliminación la petición Oauth ya se ha realizado y ya tenemos el usuario
-			if (pUsuarioIDOauth.Equals(Guid.Empty))
-			{
-				pUsuarioIDOauth = ComprobarPermisosOauth(mHttpContextAccessor.HttpContext.Request);
-				if (UsuarioOAuth.Equals(Guid.Empty))
-				{
-					throw new GnossException("Invalid OAuth signature", HttpStatusCode.Unauthorized);
-				}
-			}
-
-			if (EsAdministradorProyectoMyGnoss(pUsuarioIDOauth))
-			{
-				foreach (Guid userID in listaIds)
-				{
-					Userlite userDevolver = new Userlite();
-					userDevolver = mEntityContext.Usuario.JoinPersona().JoinPerfil().JoinIdentidad().Where(item => item.Usuario.UsuarioID.Equals(userID)).ToList().Select(item =>
-					new Userlite
-					{
-						name = item.Persona.Nombre,
-						last_name = item.Persona.Apellidos,
-						user_short_name = item.Usuario.NombreCorto,
-						image = item.Identidad.Foto,
-						born_date = item.Persona.FechaNacimiento
-					}).FirstOrDefault();
-					if (userDevolver != null)
-					{
-						devolver.Add(userID, userDevolver);
-					}
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-
-			return devolver;
-		}
-
-		/// <summary>
-		/// Da de alta a un nuevo usuario en Gnoss y en una serie de comunidades.
-		/// </summary>
-		/// <param name="pUsuarioJSON">UsuarioJson</param>
-		/// <returns></returns>
-		private Dictionary<string, Guid> AltaUsuarioEnGnossYComunidades(User pUsuarioJSON)
-		{
-			Dictionary<string, Guid> salida = new Dictionary<string, Guid>();
-			AgregarTraza("Empieza AltaUsuarioEnGnossYComunidades");
-
-			#region Comprobar incoherencias
-
-			if (string.IsNullOrEmpty(pUsuarioJSON.name) || string.IsNullOrEmpty(pUsuarioJSON.last_name) || string.IsNullOrEmpty(pUsuarioJSON.email)/* || string.IsNullOrEmpty(pSexo)*/)
-			{
-				throw new GnossException("Missing one or more parameters", HttpStatusCode.BadRequest);
-			}
-
-			//Comprobar buen email:
-			if (!UtilCadenas.ValidarEmail(pUsuarioJSON.email))
-			{
-				throw new GnossException("The email does not have the correct format", HttpStatusCode.BadRequest);
-			}
-
-			string RegExPatternPass = "(?!^[0-9]*$)(?!^[a-zA-ZñÑüÜ]*$)^([a-zA-ZñÑüÜ0-9#_$*]{6,12})$";
-			Regex r = new Regex(RegExPatternPass);
-
-			//Comprobar sexo
-			if (!string.IsNullOrEmpty(pUsuarioJSON.sex) && pUsuarioJSON.sex != "H" && pUsuarioJSON.sex != "M")
-			{
-				throw new GnossException("The GenderCode does not have the correct format (H/M)", HttpStatusCode.BadRequest);
-			}
-
-			int hashNumUsu = 1;
-			string login = GenerarLoginUsuario(pUsuarioJSON.name, pUsuarioJSON.last_name, ref hashNumUsu);
-			//comprobar el email despues del login.
-
-			PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			if (personaCN.ExisteEmail(pUsuarioJSON.email))
-			{
-				throw new GnossException("The email is already being used", HttpStatusCode.BadRequest);
-			}
-			personaCN.Dispose();
-
-			//Comprobamos que no exista el usuario:
-			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			string password = "";
-			if (!string.IsNullOrEmpty(pUsuarioJSON.password))
-			{
-				if (pUsuarioJSON.password.Length < 6 || pUsuarioJSON.password.Length > 12)
-				{
-					throw new GnossException("The user password must contain between 6 and 12 characters", HttpStatusCode.BadRequest);
-				}
-
-				password = pUsuarioJSON.password;
-			}
-
-			#endregion
-
-			#region Generar solicitud usuario
-
-			AgregarTraza("Empiezo a Generar solicitud usuario");
-
-			string nombre = pUsuarioJSON.name.Substring(0, 1).ToUpper() + pUsuarioJSON.name.Substring(1);
-			//Antes de la migracion del V2 Incidencia LRE-145
-			//string nombreCorto = GenerarNombreCortoUsuario(login, ref hashNumUsu);
-			DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
-			string nombreCorto = GenerarNombreCortoUsuario(ref login, pUsuarioJSON.name, pUsuarioJSON.last_name, dataWrapperUsuario);
-
-			//Usuario
-			//UsuarioDS usuarioDS = new UsuarioDS();
-			GestionUsuarios gestorUsuarios = new GestionUsuarios(dataWrapperUsuario, mLoggingService, mEntityContext, mConfigService);
-			UsuarioGnoss usuario = gestorUsuarios.AgregarUsuario(login, nombreCorto, HashHelper.CalcularHash(password, true), true);
-			AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = usuario.FilaUsuario;
-			filaUsuario.EstaBloqueado = true;
-
-			//Solicitud
-			DataWrapperSolicitud solicitudDW = new DataWrapperSolicitud();
-			Guid organizacionID = ProyectoAD.MetaOrganizacion;
-			Guid proyectoID = ProyectoAD.MetaProyecto;
-
-			if (!pUsuarioJSON.community_id.Equals(Guid.Empty))
-			{
-				proyectoID = pUsuarioJSON.community_id;
-			}
-			else if (!string.IsNullOrEmpty(pUsuarioJSON.community_short_name))
-			{
-				ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-				proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(pUsuarioJSON.community_short_name);
-
-				if (proyectoID.Equals(Guid.Empty))
-				{
-					throw new ArgumentException($"The community {pUsuarioJSON.community_short_name} does not exists", "community_short_name");
-				}
-			}
-
-			Solicitud filaSolicitud = new Solicitud();
-			filaSolicitud.Estado = (short)EstadoSolicitud.Espera;
-			filaSolicitud.FechaSolicitud = DateTime.Now;
-			filaSolicitud.OrganizacionID = organizacionID;
-			filaSolicitud.ProyectoID = proyectoID;
-			filaSolicitud.SolicitudID = Guid.NewGuid();
-
-			solicitudDW.ListaSolicitud.Add(filaSolicitud);
-			mEntityContext.Solicitud.Add(filaSolicitud);
-
-			SolicitudNuevoUsuario filaNuevoUsuario = new SolicitudNuevoUsuario();
-			filaNuevoUsuario.SolicitudID = filaSolicitud.SolicitudID;
-			filaNuevoUsuario.UsuarioID = filaUsuario.UsuarioID;
-			filaNuevoUsuario.Nombre = nombre;
-			filaNuevoUsuario.NombreCorto = nombreCorto;
-			filaNuevoUsuario.Apellidos = pUsuarioJSON.last_name;
-			filaNuevoUsuario.Email = pUsuarioJSON.email;
-			filaNuevoUsuario.EsBuscable = true;
-			filaNuevoUsuario.EsBuscableExterno = false;
-
-			try
-			{
-				ParametroGeneralCL paramCL = new ParametroGeneralCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-				GestorParametroGeneral parametroGeneralDS = paramCL.ObtenerParametrosGeneralesDeProyecto(pUsuarioJSON.community_id);
-				paramCL.Dispose();
-				//ParametroGeneral parametrosGeneralesRow = parametroGeneralDS.ListaParametroGeneral.FindByOrganizacionIDProyectoID(ProyectoAD.MyGnoss, pUsuarioJSON.community_id);
-				ParametroGeneral parametrosGeneralesRow = parametroGeneralDS.ListaParametroGeneral.Find(parametroGen => parametroGen.OrganizacionID.Equals(ProyectoAD.MyGnoss) && parametroGen.ProyectoID.Equals(pUsuarioJSON.community_id));
-				if (parametrosGeneralesRow != null && !parametrosGeneralesRow.PrivacidadObligatoria)
-				{
-					filaNuevoUsuario.EsBuscable = false;
-					filaNuevoUsuario.EsBuscableExterno = false;
-				}
-			}
-			catch { }
-
-			if (pUsuarioJSON.country_id != null)
-			{
-				filaNuevoUsuario.PaisID = pUsuarioJSON.country_id;
-			}
-			if (pUsuarioJSON.province_id != null)
-			{
-				filaNuevoUsuario.ProvinciaID = pUsuarioJSON.province_id;
-			}
-
-			filaNuevoUsuario.Provincia = " ";
-			if (pUsuarioJSON.provice != null)
-			{
-				filaNuevoUsuario.Provincia = pUsuarioJSON.provice;
-			}
-
-			filaNuevoUsuario.Poblacion = " ";
-			if (pUsuarioJSON.city != null)
-			{
-				filaNuevoUsuario.Poblacion = pUsuarioJSON.city;
-			}
-
-			filaNuevoUsuario.Direccion = " ";
-			if (pUsuarioJSON.address != null)
-			{
-				filaNuevoUsuario.Direccion = pUsuarioJSON.address;
-			}
-
-			filaNuevoUsuario.Sexo = " ";
-			if (pUsuarioJSON.sex != null)
-			{
-				filaNuevoUsuario.Sexo = pUsuarioJSON.sex;
-			}
-
-			filaNuevoUsuario.FaltanDatos = false;
-
-			if (pUsuarioJSON.born_date != null && !pUsuarioJSON.born_date.Equals(DateTime.MinValue) && !pUsuarioJSON.born_date.Equals(DateTime.MaxValue))
-			{
-				filaNuevoUsuario.FechaNacimiento = pUsuarioJSON.born_date;
-			}
-
-			string dni = " ";
-			if (!string.IsNullOrEmpty(pUsuarioJSON.id_card))
-			{
-				dni = pUsuarioJSON.id_card;
-			}
-
-			/*if (pUsuarioJSON.extra_data != null && pUsuarioJSON.extra_data.Count > 0)
+        public List<Guid> GetModifiedUsersFromDate(string search_date, string community_short_name = null, Guid? community_id = null)
+        {
+            List<Guid> listaIDs = null;
+            DateTime fechaBusqueda;
+            bool esFecha = DateTime.TryParse(search_date, out fechaBusqueda);
+
+            if (string.IsNullOrEmpty(community_short_name) && community_id.HasValue)
             {
-                filaNuevoUsuario.ClausulasAdicionales = ObtenerClausulasAdicionales(pUsuarioJSON.community_id, pUsuarioJSON.extra_data);
+                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+                community_short_name = proyCL.ObtenerNombreCortoProyecto(community_id.Value);
+            }
 
-                GuardarDatosExtraSolicitud(solicitudDW, filaSolicitud, pUsuarioJSON.extra_data, filaSolicitud.OrganizacionID, pUsuarioJSON.community_id, pUsuarioJSON.community_id.Equals(ProyectoAD.MyGnoss));
-            }*/
+            if (!string.IsNullOrEmpty(community_short_name) && esFecha && !fechaBusqueda.Equals(DateTime.MinValue) && !fechaBusqueda.Equals(DateTime.MaxValue))
+            {
+                if (!ComprobarFechaISO8601(search_date))
+                {
+                    throw new GnossException("The parameter search_date has not the ISO8601 format", HttpStatusCode.BadRequest);
+                }
 
-			if (!string.IsNullOrEmpty(pUsuarioJSON.languaje))
+                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                List<Guid> lista = proyCN.ObtenerProyectoIDOrganizacionIDPorNombreCorto(community_short_name);
+                proyCN.Dispose();
+
+                Guid organizacionID = Guid.Empty;
+                Guid proyectoID = Guid.Empty;
+
+                if (lista.Count > 0)
+                {
+                    organizacionID = lista[0];
+                    proyectoID = lista[1];
+                }
+
+                if (proyectoID != Guid.Empty && organizacionID != Guid.Empty)
+                {
+                    //buscar novedades en los usuarios: suscripciones a tesauro comunidad, a otros usuarios, altas en la comunidad...
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    listaIDs = usuCN.ObtenerUsuariosActivosEnFecha(proyectoID, fechaBusqueda);
+                    usuCN.Dispose();
+                }
+                else
+                {
+                    throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The required parameters can not be empty", HttpStatusCode.BadRequest);
+            }
+
+            return listaIDs;
+        }
+
+        /// <summary>
+        /// Get the novelties from a user by its user identifier. The novelties of the user can also be obtained providing either a community identifier or a community short name.
+        /// </summary>
+        /// <param name="user_id"">User identifier</param>
+        /// <param name="search_date">String of date with ISO 8601 format from which the search will filter to get the results</param>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="community_id">Community identifier</param>
+        /// <example>GET resource/get-user-novelties?user_id={user_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
+        [HttpGet, Route("get-user-novelties")]
+        public UserNoveltiesModel GetUserNoveltiesFromDate(Guid user_id, string search_date, string community_short_name = null, Guid? community_id = null, string login = null)
+        {
+			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+			UserNoveltiesModel novedadesUsuario = null;
+            DateTime fechaBusqueda;
+            bool esFecha = DateTime.TryParse(search_date, out fechaBusqueda);
+
+            if (string.IsNullOrEmpty(community_short_name) && community_id.HasValue)
+            {
+                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+                community_short_name = proyCL.ObtenerNombreCortoProyecto(community_id.Value);
+            }
+
+            if (user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(login))
+            {
+                user_id = usuarioCN.ObtenerUsuarioIDPorLogin(login);
+            }
+
+            if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name) && esFecha && !fechaBusqueda.Equals(DateTime.MinValue) && !fechaBusqueda.Equals(DateTime.MaxValue))
+            {
+                if (!ComprobarFechaISO8601(search_date))
+                {
+                    throw new GnossException("The parameter search_date has not the ISO8601 format", HttpStatusCode.BadRequest);
+                }
+
+                mNombreCortoComunidad = community_short_name;
+                
+
+                if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
+                {
+                    IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                    Guid identidadIDMyGnoss = identCN.ObtenerIdentidadUsuarioEnProyecto(user_id, ProyectoAD.MetaProyecto);
+                    Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(user_id, FilaProy.ProyectoID);
+                    if (identidadID.Equals(Guid.Empty))
+                    {
+                        throw new GnossException($"The user does not participate in the community {community_short_name}", HttpStatusCode.BadRequest);
+                    }
+
+                    SuscripcionCN suscCN = new SuscripcionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<SuscripcionCN>(), mLoggerFactory);
+                    DataWrapperSuscripcion suscDW = suscCN.ObtenerSuscripcionesDeIdentidad(identidadID, true);
+
+                    //Obtengo las suscripciones a usuarios con la identidad de MyGnoss porque el usuario está suscrito a otros usuarios con su identidad de MyGnoss
+                    suscDW.Merge(suscCN.ObtenerSuscripcionesDeIdentidad(identidadIDMyGnoss, true));
+                    GestionSuscripcion gestorSuscripciones = new GestionSuscripcion(suscDW, mLoggingService, mEntityContext);
+                    suscCN.Dispose();
+
+                    TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCL>(), mLoggerFactory);
+                    GestionTesauro gestorTesauro = new GestionTesauro(tesauroCL.ObtenerTesauroDeProyecto(FilaProy.ProyectoID), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionTesauro>(), mLoggerFactory);
+                    gestorTesauro.CargarCategorias();
+                    tesauroCL.Dispose();
+
+                    novedadesUsuario = new UserNoveltiesModel();
+                    novedadesUsuario.user_id = user_id;
+
+                    //Miembro comunidad
+                    GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                    if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+                    {
+                        Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                        novedadesUsuario.user_community_membership = new UserCommunityMembership();
+                        novedadesUsuario.user_community_membership.community_short_name = community_short_name;
+                        novedadesUsuario.user_community_membership.user_id = user_id;
+                        novedadesUsuario.user_community_membership.registration_date = identidad.FilaIdentidad.FechaAlta;
+                        novedadesUsuario.user_community_membership.administrator_rol = false;
+                    }
+
+                    foreach (Guid suscripcionID in gestorSuscripciones.ListaSuscripciones.Keys)
+                    {
+                        DateTime fechaSuscripcion = gestorSuscripciones.ListaSuscripciones[suscripcionID].Fecha;
+
+                        if (fechaSuscripcion >= fechaBusqueda)
+                        {
+                            //Suscripciones tesauro comunidad
+                            if (gestorSuscripciones.ListaSuscripciones[suscripcionID].FilasCategoriasVinculadas != null)
+                            {
+                                novedadesUsuario.community_subscriptions = new CommunitySubscriptionModel();
+                                novedadesUsuario.community_subscriptions.user_id = user_id;
+                                novedadesUsuario.community_subscriptions.community_short_name = community_short_name;
+                                novedadesUsuario.community_subscriptions.category_list = new List<ThesaurusCategory>();
+
+                                foreach (AD.EntityModel.Models.Suscripcion.CategoriaTesVinSuscrip filaCat in gestorSuscripciones.ListaSuscripciones[suscripcionID].FilasCategoriasVinculadas)
+                                {
+                                    novedadesUsuario.community_subscriptions.category_list.Add(ObtenerCategoriasJerarquicas(filaCat.CategoriaTesauroID, gestorTesauro.ListaCategoriasTesauro));
+                                }
+                            }
+
+                            //suscripciones usuario
+                            if (gestorSuscripciones.ListaSuscripciones[suscripcionID].FilaSuscripcionIdentidadProyecto != null)
+                            {
+                                if (novedadesUsuario.user_subscriptions == null)
+                                {
+                                    novedadesUsuario.user_subscriptions = new List<UserSubscriptionModel>();
+                                }
+
+                                foreach (AD.EntityModel.Models.Suscripcion.SuscripcionIdentidadProyecto filaSusIdentProy in gestorSuscripciones.ListaSuscripciones[suscripcionID].FilaSuscripcionIdentidadProyecto)
+                                {
+                                    UserSubscriptionModel suscripcionUsuario = new UserSubscriptionModel();
+                                    suscripcionUsuario.user_id = user_id;
+                                    suscripcionUsuario.community_short_name = community_short_name;
+                                    suscripcionUsuario.user_followed_id = filaSusIdentProy.IdentidadID;
+                                    suscripcionUsuario.subscription_date = fechaSuscripcion;
+                                    novedadesUsuario.user_subscriptions.Add(suscripcionUsuario);
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
+                }
+
+                usuarioCN.Dispose();
+            }
+            else
+            {
+                throw new GnossException("The required parameters can not be empty", HttpStatusCode.BadRequest);
+            }
+
+            return novedadesUsuario;
+        }
+
+        /// <summary>
+        /// Add a user's social network login based on their social network type data and user identifier. 
+        /// </summary>
+        /// <param name="user_id">User identifier</param>
+        /// <param name="social_network_user_id">Social network user identifier</param>
+        /// <param name="social_network">Social network name</param>
+        /// <param name="shortNameOrEmail">Email or short name user</param>
+        /// <example>GET resource/get-user-novelties?user_id={user_id}&community_short_name={community_short_name}&search_date={ISO8601 search_date}</example>
+        [HttpPost, Route("add-social-network-login")]
+        public void AddSocialNetworkLogin(Guid user_id,string login, string social_network_user_id, string social_network)
+        {
+            if (string.IsNullOrEmpty(social_network_user_id))
+            {
+                throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
+            }
+
+            if (!user_id.Equals(Guid.Empty))
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    if (usuCN.ExisteUsuarioEnBD(user_id))
+                    {
+                        TipoRedSocialLogin tipoRedSocial;
+                        if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                        {
+                            tipoRedSocial = TipoRedSocialLogin.Otros;
+                        }
+
+                        DataWrapperUsuario usuDW = new DataWrapperUsuario();
+
+                        UsuarioVinculadoLoginRedesSociales filaLoginRedSocial = new UsuarioVinculadoLoginRedesSociales();
+
+                        filaLoginRedSocial.UsuarioID = user_id;
+                        filaLoginRedSocial.IDenRedSocial = social_network_user_id;
+                        filaLoginRedSocial.TipoRedSocial = (short)tipoRedSocial;
+
+                        usuDW.ListaUsuarioVinculadoLoginRedesSociales.Add(filaLoginRedSocial);
+                        mEntityContext.UsuarioVinculadoLoginRedesSociales.Add(filaLoginRedSocial);
+
+                        usuCN.ActualizarUsuario(false);
+                    }
+                    else
+                    {
+                        throw new GnossException($"The user {user_id} does not belong to the database", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+            else
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    Guid usuarioId = usuCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
+                    if (usuCN.ExisteUsuarioEnBD(usuarioId))
+                    {
+                        TipoRedSocialLogin tipoRedSocial;
+                        if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                        {
+                            tipoRedSocial = TipoRedSocialLogin.Otros;
+                        }
+
+                        DataWrapperUsuario usuDW = new DataWrapperUsuario();
+
+                        UsuarioVinculadoLoginRedesSociales filaLoginRedSocial = new UsuarioVinculadoLoginRedesSociales();
+
+                        filaLoginRedSocial.UsuarioID = usuarioId;
+                        filaLoginRedSocial.IDenRedSocial = social_network_user_id;
+                        filaLoginRedSocial.TipoRedSocial = (short)tipoRedSocial;
+
+                        usuDW.ListaUsuarioVinculadoLoginRedesSociales.Add(filaLoginRedSocial);
+                        mEntityContext.UsuarioVinculadoLoginRedesSociales.Add(filaLoginRedSocial);
+
+                        usuCN.ActualizarUsuario(false);
+                    }
+                    else
+                    {
+                        throw new GnossException($"The user {login} does not belong to the database", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Modifies the social network user identifier
+        /// </summary>
+        /// <param name="user_id">User identifier</param>
+        /// <param name="social_network_user_id">User identifier in the social network</param>
+        /// <param name="social_network">Name of the social network</param>
+        /// <example>POST resource/modify-social-network-login?user_id={user_id}social_network_user_id={social_network_user_id}social_network={social_network}</example>
+        [HttpPost, Route("modify-social-network-login")]
+        public void ModifySocialNetworkLogin(Guid user_id,string login, string social_network_user_id, string social_network)
+        {
+            if (string.IsNullOrEmpty(social_network_user_id))
+            {
+                throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
+            }
+            if (!user_id.Equals(Guid.Empty))
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    if (usuCN.ExisteUsuarioEnBD(user_id))
+                    {
+                        TipoRedSocialLogin tipoRedSocial;
+                        if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                        {
+                            tipoRedSocial = TipoRedSocialLogin.Otros;
+                        }
+
+                        string socialNetworkLogin = usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, user_id);
+                        if (string.IsNullOrEmpty(socialNetworkLogin))
+                        {
+                            throw new GnossException($"Could not find any social network login with user {user_id} at {social_network}", HttpStatusCode.BadRequest);
+                        }
+
+                        usuCN.ActualizarLoginEnRedSocialPorUsuario(tipoRedSocial, user_id, social_network_user_id);
+                        usuCN.Dispose();
+                    }
+                    else
+                    {
+                        throw new GnossException($"The user {user_id} does not belong to the database", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+            else
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    Guid usuarioId = usuCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
+                    if (usuCN.ExisteUsuarioEnBD(usuarioId))
+                    {
+                        TipoRedSocialLogin tipoRedSocial;
+                        if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                        {
+                            tipoRedSocial = TipoRedSocialLogin.Otros;
+                        }
+
+                        string socialNetworkLogin = usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, usuarioId);
+                        if (string.IsNullOrEmpty(socialNetworkLogin))
+                        {
+                            throw new GnossException($"Could not find any social network login with user {usuarioId} at {social_network}", HttpStatusCode.BadRequest);
+                        }
+
+                        usuCN.ActualizarLoginEnRedSocialPorUsuario(tipoRedSocial, usuarioId, social_network_user_id);
+                        usuCN.Dispose();
+                    }
+                    else
+                    {
+                        throw new GnossException($"The user {login} does not belong to the database", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets a user by a social network login
+        /// </summary>
+        /// <param name="socialNetworkUserId">Social network user's identifier</param>
+        /// <param name="socialNetwork">Social network (Facebook, twitter, instagram...)</param>
+        [HttpGet, Route("get-user_id-by-social-network-login")]
+        public Guid? GetUserBySocialNetworkLogin(string social_network_user_id, string social_network)
+        {
+            Guid? user_id = null;
+
+            if (string.IsNullOrEmpty(social_network_user_id))
+            {
+                throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
+            }
+
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
+                UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+
+                TipoRedSocialLogin tipoRedSocial;
+                if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                {
+                    tipoRedSocial = TipoRedSocialLogin.Otros;
+                }
+
+                Guid resultado = usuCN.ObtenerUsuarioPorLoginEnRedSocial(tipoRedSocial, social_network_user_id);
+                if (!resultado.Equals(Guid.Empty))
+                {
+                    user_id = resultado;
+                }
+                else
+                {
+                    throw new GnossException($"Could not find any user with social network id {social_network_user_id} at {social_network}", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+
+            return user_id;
+        }
+
+        /// <summary>
+        /// Checks if a user id in a social network exists in the system
+        /// </summary>
+        /// <param name="social_network_user_id">Social network user's identifier</param>
+        /// <param name="social_network">Social network (Facebook, twitter, instagram...)</param>
+        [HttpGet, Route("exists-social-network-login")]
+        public bool ExistsSocialNetworkLogin(string social_network_user_id, string social_network)
+        {
+            if (string.IsNullOrEmpty(social_network_user_id))
+            {
+                throw new GnossException("The parameter \"social_network_user_id\" can not be empty", HttpStatusCode.BadRequest);
+            }
+
+            if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+            {
+                UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+
+                TipoRedSocialLogin tipoRedSocial;
+                if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                {
+                    tipoRedSocial = TipoRedSocialLogin.Otros;
+                }
+
+                Guid resultado = usuCN.ObtenerUsuarioPorLoginEnRedSocial(tipoRedSocial, social_network_user_id);
+                return !resultado.Equals(Guid.Empty);
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+        }
+
+        /// <summary>
+        /// Gets the user
+        /// </summary>
+        /// <param name="user_id">User identifier</param>
+        /// <param name="social_network">Social network short name</param>
+        /// <returns>Social network login of the user</returns>
+        [HttpGet, Route("get-social-network-login-by-user_id")]
+        public string GetSocialNetworkLoginByUserId(string social_network, Guid user_id,string login)
+        {
+            string socialNetworkLogin;
+
+            if (string.IsNullOrEmpty(social_network))
+            {
+                throw new GnossException("The parameter \"social_network\" can not be empty", HttpStatusCode.BadRequest);
+            }
+
+            if (!user_id.Equals(Guid.Empty))
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+
+                    TipoRedSocialLogin tipoRedSocial;
+                    if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                    {
+                        tipoRedSocial = TipoRedSocialLogin.Otros;
+                    }
+
+                    string resultado = usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, user_id);
+                    if (!string.IsNullOrEmpty(resultado))
+                    {
+                        socialNetworkLogin = resultado;
+                    }
+                    else
+                    {
+                        throw new GnossException($"Could not find any social network login with user {user_id} at {social_network}", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+
+                return socialNetworkLogin;
+            }
+            else
+            {
+                if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                {
+                    UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    Guid userId = usuCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
+                    TipoRedSocialLogin tipoRedSocial;
+                    if (!Enum.TryParse(social_network, true, out tipoRedSocial))
+                    {
+                        tipoRedSocial = TipoRedSocialLogin.Otros;
+                    }
+
+                    string resultado = usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, userId);
+                    if (!string.IsNullOrEmpty(resultado))
+                    {
+                        socialNetworkLogin = resultado;
+                    }
+                    else
+                    {
+                        throw new GnossException($"Could not find any social network login with user {userId} at {social_network}", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+                }
+
+                return socialNetworkLogin;
+            }
+        }
+
+        /// <summary>
+        /// Add CMS Admin rol privilege to a specific user.
+        /// </summary>
+        /// <param name="user_id">User identifier</param>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="admin_page_type">Administation page type</param>
+        /// <example>POST user/add-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>  
+        [HttpPost, Route("add-permission")]
+        public void AddPermissionToUser(Guid user_id, string community_short_name, string admin_page_type,string login)
+        {
+            if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name))
+            {
+                TipoPaginaAdministracion tipoPaginaAdministracion;
+                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
+                {
+                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
+                }
+
+                mNombreCortoComunidad = community_short_name;
+                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+
+                if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
+                {
+                    ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                    IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+
+                    Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(user_id, FilaProy.ProyectoID);
+                    List<Guid> identidadesSupervisores = proyCN.ObtenerListaIdentidadesSupervisoresPorProyecto(FilaProy.ProyectoID);
+
+                    //si el usuario no es supervisor se le cambia el rol
+                    if (!identidadesSupervisores.Contains(identidadID) && !CambiarRolUsuarioEnProyecto(user_id, FilaProy.ProyectoID, TipoRolUsuario.Supervisor))
+                    {
+                        throw new GnossException($"Could not assign the 'Supervisor' role to user {user_id}", HttpStatusCode.BadRequest);
+                    }
+
+                    List<PermisosPaginasUsuarios> filasPermisoProyectoUsuario = mEntityContext.PermisosPaginasUsuarios.Where(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(user_id)).ToList();
+                    List<Guid> idsUsuariosBD = filasPermisoProyectoUsuario.Select(fila => fila.UsuarioID).ToList();
+
+                    if (!idsUsuariosBD.Contains(user_id))
+                    {
+                        PermisosPaginasUsuarios filaNuevoUsuario = CrearFilaPermisosPaginasUsuarios(tipoPaginaAdministracion, user_id, FilaProy.OrganizacionID, FilaProy.ProyectoID);
+                        mEntityContext.PermisosPaginasUsuarios.Add(filaNuevoUsuario);
+                        mEntityContext.SaveChanges();
+                    }
+                }
+                else
+                {
+                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                TipoPaginaAdministracion tipoPaginaAdministracion;
+                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
+                {
+                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
+                }
+
+                mNombreCortoComunidad = community_short_name;
+                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                Guid usuarioId = usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
+
+                if (usuarioCN.EstaUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID))
+                {
+                    ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                    IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+
+                    Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID);
+                    List<Guid> identidadesSupervisores = proyCN.ObtenerListaIdentidadesSupervisoresPorProyecto(FilaProy.ProyectoID);
+
+                    //si el usuario no es supervisor se le cambia el rol
+                    if (!identidadesSupervisores.Contains(identidadID) && !CambiarRolUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID, TipoRolUsuario.Supervisor))
+                    {
+                        throw new GnossException($"Could not assign the 'Supervisor' role to user {usuarioId}", HttpStatusCode.BadRequest);
+                    }
+
+                    List<PermisosPaginasUsuarios> filasPermisoProyectoUsuario = mEntityContext.PermisosPaginasUsuarios.Where(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(usuarioId)).ToList();
+                    List<Guid> idsUsuariosBD = filasPermisoProyectoUsuario.Select(fila => fila.UsuarioID).ToList();
+
+                    if (!idsUsuariosBD.Contains(usuarioId))
+                    {
+                        PermisosPaginasUsuarios filaNuevoUsuario = CrearFilaPermisosPaginasUsuarios(tipoPaginaAdministracion, usuarioId, FilaProy.OrganizacionID, FilaProy.ProyectoID);
+                        mEntityContext.PermisosPaginasUsuarios.Add(filaNuevoUsuario);
+                        mEntityContext.SaveChanges();
+                    }
+                }
+                else
+                {
+                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Remove CMS Admin rol privilege to a specific user.
+        /// </summary>
+        /// <param name="community_short_name">Community short name</param>
+        /// <param name="admin_page_type">Administation page type</param>
+        /// <example>POST user/remove-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>
+        [HttpPost, Route("remove-permission")]
+        public void RemovePermissionToUser(Guid user_id, string community_short_name, string admin_page_type,string login)
+        {
+            if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name))
+            {
+                TipoPaginaAdministracion tipoPaginaAdministracion;
+                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
+                {
+                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
+                }
+
+                mNombreCortoComunidad = community_short_name;
+                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+
+                if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
+                {
+                    PermisosPaginasUsuarios filaUsuarioEliminar = mEntityContext.PermisosPaginasUsuarios.FirstOrDefault(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(user_id));
+
+                    if (filaUsuarioEliminar != null)
+                    {
+                        mEntityContext.PermisosPaginasUsuarios.Remove(filaUsuarioEliminar);
+                        mEntityContext.SaveChanges();
+                    }
+                }
+                else
+                {
+                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+
+                TipoPaginaAdministracion tipoPaginaAdministracion;
+                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
+                {
+                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
+                }
+
+                mNombreCortoComunidad = community_short_name;
+                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                Guid usuarioId = usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
+
+                if (usuarioCN.EstaUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID))
+                {
+                    PermisosPaginasUsuarios filaUsuarioEliminar = mEntityContext.PermisosPaginasUsuarios.FirstOrDefault(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(usuarioId));
+
+                    if (filaUsuarioEliminar != null)
+                    {
+                        mEntityContext.PermisosPaginasUsuarios.Remove(filaUsuarioEliminar);
+                        mEntityContext.SaveChanges();
+                    }
+                }
+                else
+                {
+                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
+                }
+            }
+        }
+
+        #endregion
+
+        #region Métodos privados
+
+        private bool ComprobarUsuarioExisteConIdentitidadEnProyecto(Guid pUserID, List<Guid> pListaProyectosID)
+        {
+            bool tieneIdentidadEnProyecto = false;
+            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+
+            if (pListaProyectosID.Any(item => identCN.ObtenerIdentidadUsuarioEnProyecto(pUserID, item).Equals(Guid.Empty)))
+            {
+                return true;
+            }
+
+            return tieneIdentidadEnProyecto;
+        }
+
+        private Dictionary<Guid, Userlite> ObtenerUsuariosLitePorID(Guid pUsuarioIDOauth, List<Guid> listaIds)
+        {
+            Dictionary<Guid, Userlite> devolver = new Dictionary<Guid, Userlite>();
+            //como esta función se usa en varios métodos, en la de eliminación la petición Oauth ya se ha realizado y ya tenemos el usuario
+            if (pUsuarioIDOauth.Equals(Guid.Empty))
+            {
+                pUsuarioIDOauth = ComprobarPermisosOauth(mHttpContextAccessor.HttpContext.Request);
+                if (UsuarioOAuth.Equals(Guid.Empty))
+                {
+                    throw new GnossException("Invalid OAuth signature", HttpStatusCode.Unauthorized);
+                }
+            }
+
+            if (EsAdministradorProyectoMyGnoss(pUsuarioIDOauth))
+            {
+                foreach (Guid userID in listaIds)
+                {
+                    Userlite userDevolver = mEntityContext.Usuario.JoinPersona().JoinPerfil().JoinIdentidad().Where(item => item.Usuario.UsuarioID.Equals(userID)).Select(item =>
+                    new Userlite
+                    {
+                        name = item.Persona.Nombre,
+                        last_name = item.Persona.Apellidos,
+                        user_short_name = item.Usuario.NombreCorto,
+                        image = item.Identidad.Foto,
+                        born_date = item.Persona.FechaNacimiento
+                    }).FirstOrDefault();
+                    if (userDevolver != null)
+                    {
+                        devolver.Add(userID, userDevolver);
+                    }
+                }
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+
+            return devolver;
+        }
+
+        /// <summary>
+        /// Da de alta a un nuevo usuario en Gnoss y en una serie de comunidades.
+        /// </summary>
+        /// <param name="pUsuarioJSON">UsuarioJson</param>
+        /// <returns></returns>
+        private Dictionary<string, Guid> AltaUsuarioEnGnossYComunidades(User pUsuarioJSON)
+        {
+            Dictionary<string, Guid> salida = new Dictionary<string, Guid>();
+            AgregarTraza("Empieza AltaUsuarioEnGnossYComunidades");
+
+            #region Comprobar incoherencias
+
+            if (string.IsNullOrEmpty(pUsuarioJSON.name) || string.IsNullOrEmpty(pUsuarioJSON.last_name) || string.IsNullOrEmpty(pUsuarioJSON.email))
+            {
+                throw new GnossException("Missing one or more parameters", HttpStatusCode.BadRequest);
+            }
+
+            //Comprobar buen email:
+            if (!UtilCadenas.ValidarEmail(pUsuarioJSON.email))
+            {
+                throw new GnossException("The email does not have the correct format", HttpStatusCode.BadRequest);
+            }
+
+            //Comprobar sexo
+            if (!string.IsNullOrEmpty(pUsuarioJSON.sex) && pUsuarioJSON.sex != "H" && pUsuarioJSON.sex != "M")
+            {
+                throw new GnossException("The GenderCode does not have the correct format (H/M)", HttpStatusCode.BadRequest);
+            }
+
+            int hashNumUsu = 1;
+            string login = GenerarLoginUsuario(pUsuarioJSON.name, pUsuarioJSON.last_name, ref hashNumUsu);
+            //comprobar el email despues del login.
+
+            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+            if (personaCN.ExisteEmail(pUsuarioJSON.email))
+            {
+                throw new GnossException("The email is already being used", HttpStatusCode.BadRequest);
+            }
+            personaCN.Dispose();
+
+            //Comprobamos que no exista el usuario:
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+
+            string password = "";
+            if (!string.IsNullOrEmpty(pUsuarioJSON.password))
+            {
+                if (pUsuarioJSON.password.Length < 6 || pUsuarioJSON.password.Length > 12)
+                {
+                    throw new GnossException("The user password must contain between 6 and 12 characters", HttpStatusCode.BadRequest);
+                }
+
+                password = pUsuarioJSON.password;
+            }
+
+            #endregion
+
+            #region Generar solicitud usuario
+
+            AgregarTraza("Empiezo a Generar solicitud usuario");
+
+            string nombre = pUsuarioJSON.name.Substring(0, 1).ToUpper() + pUsuarioJSON.name.Substring(1);
+
+            DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
+            string nombreCorto = GenerarNombreCortoUsuario(ref login, pUsuarioJSON.name, pUsuarioJSON.last_name, dataWrapperUsuario);
+
+            //Usuario
+            GestionUsuarios gestorUsuarios = new GestionUsuarios(dataWrapperUsuario, mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
+            UsuarioGnoss usuario = gestorUsuarios.AgregarUsuario(login, nombreCorto, HashHelper.CalcularHash(password, true), pUsuarioJSON.validate_email);
+            AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = usuario.FilaUsuario;
+            filaUsuario.EstaBloqueado = true;
+
+            //Solicitud
+            DataWrapperSolicitud solicitudDW = new DataWrapperSolicitud();
+            Guid organizacionID = ProyectoAD.MetaOrganizacion;
+            Guid proyectoID = ProyectoAD.MetaProyecto;
+
+            if (!pUsuarioJSON.community_id.Equals(Guid.Empty))
+            {
+                proyectoID = pUsuarioJSON.community_id;
+            }
+            else if (!string.IsNullOrEmpty(pUsuarioJSON.community_short_name))
+            {
+                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+                proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(pUsuarioJSON.community_short_name);
+
+                if (proyectoID.Equals(Guid.Empty))
+                {
+                    throw new BadHttpRequestException($"The community {pUsuarioJSON.community_short_name} does not exists");
+                }
+            }
+
+            Solicitud filaSolicitud = new Solicitud();
+            filaSolicitud.Estado = (short)EstadoSolicitud.Espera;
+            filaSolicitud.FechaSolicitud = DateTime.Now;
+            filaSolicitud.OrganizacionID = organizacionID;
+            filaSolicitud.ProyectoID = proyectoID;
+            filaSolicitud.SolicitudID = Guid.NewGuid();
+
+            solicitudDW.ListaSolicitud.Add(filaSolicitud);
+            mEntityContext.Solicitud.Add(filaSolicitud);
+
+            SolicitudNuevoUsuario filaNuevoUsuario = new SolicitudNuevoUsuario();
+            filaNuevoUsuario.SolicitudID = filaSolicitud.SolicitudID;
+            filaNuevoUsuario.UsuarioID = filaUsuario.UsuarioID;
+            filaNuevoUsuario.Nombre = nombre;
+            filaNuevoUsuario.NombreCorto = nombreCorto;
+            filaNuevoUsuario.Apellidos = pUsuarioJSON.last_name;
+            filaNuevoUsuario.Email = pUsuarioJSON.email;
+            filaNuevoUsuario.EsBuscable = true;
+            filaNuevoUsuario.EsBuscableExterno = false;
+
+            try
+            {
+                ParametroGeneralCL paramCL = new ParametroGeneralCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ParametroGeneralCL>(), mLoggerFactory);
+                GestorParametroGeneral parametroGeneralDS = paramCL.ObtenerParametrosGeneralesDeProyecto(pUsuarioJSON.community_id);
+                paramCL.Dispose();
+                ParametroGeneral parametrosGeneralesRow = parametroGeneralDS.ListaParametroGeneral.Find(parametroGen => parametroGen.OrganizacionID.Equals(ProyectoAD.MyGnoss) && parametroGen.ProyectoID.Equals(pUsuarioJSON.community_id));
+                if (parametrosGeneralesRow != null && !parametrosGeneralesRow.PrivacidadObligatoria)
+                {
+                    filaNuevoUsuario.EsBuscable = false;
+                    filaNuevoUsuario.EsBuscableExterno = false;
+                }
+            }
+            catch
+            {
+                //Si no encontamos el parametro generl del proyecto no hacemos nada
+            }
+
+            filaNuevoUsuario.PaisID = pUsuarioJSON.country_id;
+            filaNuevoUsuario.ProvinciaID = pUsuarioJSON.province_id;
+
+            filaNuevoUsuario.Provincia = " ";
+            if (pUsuarioJSON.provice != null)
+            {
+                filaNuevoUsuario.Provincia = pUsuarioJSON.provice;
+            }
+
+            filaNuevoUsuario.Poblacion = " ";
+            if (pUsuarioJSON.city != null)
+            {
+                filaNuevoUsuario.Poblacion = pUsuarioJSON.city;
+            }
+
+            filaNuevoUsuario.Direccion = " ";
+            if (pUsuarioJSON.address != null)
+            {
+                filaNuevoUsuario.Direccion = pUsuarioJSON.address;
+            }
+
+            filaNuevoUsuario.Sexo = " ";
+            if (pUsuarioJSON.sex != null)
+            {
+                filaNuevoUsuario.Sexo = pUsuarioJSON.sex;
+            }
+
+            filaNuevoUsuario.FaltanDatos = false;
+
+            if (!pUsuarioJSON.born_date.Equals(DateTime.MinValue) && !pUsuarioJSON.born_date.Equals(DateTime.MaxValue))
+            {
+                filaNuevoUsuario.FechaNacimiento = pUsuarioJSON.born_date;
+            }
+
+            string dni = " ";
+            if (!string.IsNullOrEmpty(pUsuarioJSON.id_card))
+            {
+                dni = pUsuarioJSON.id_card;
+            }
+
+            if (!string.IsNullOrEmpty(pUsuarioJSON.languaje))
+            {
+                filaNuevoUsuario.Idioma = pUsuarioJSON.languaje;
+            }
+            else
+            {
+                filaNuevoUsuario.Idioma = "es";
+            }
+
+            filaNuevoUsuario.CrearClase = false;
+            filaNuevoUsuario.CambioPassword = false;
+
+            solicitudDW.ListaSolicitudNuevoUsuario.Add(filaNuevoUsuario);
+            mEntityContext.SolicitudNuevoUsuario.Add(filaNuevoUsuario);
+
+            AgregarTraza("Antes guardar solicitud.");
+
+            //Guardado
+            usuarioCN.ActualizarUsuario(false);
+            mEntityContext.SaveChanges();
+
+            AgregarTraza("Solicitud guardada.");
+
+            #endregion
+            DataWrapperNotificacion notifDW = new DataWrapperNotificacion();
+            GestionNotificaciones gestorNotificaciones = new GestionNotificaciones(notifDW, null, mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<GestionNotificaciones>(), mLoggerFactory);
+
+            if ((!mControladorBase.RegistroAutomaticoEcosistema || !mControladorBase.RegistroAutomaticoEnComunidad) && !pUsuarioJSON.validate_email)
+            {
+                //Enviamos un correo de confirmación
+                SolicitudNuevoUsuario filaSolicitudNuevoUsuario2 = solicitudDW.ListaSolicitudNuevoUsuario.FirstOrDefault();
+
+                string urlEnlace2 = mConfigService.ObtenerUrlBase();
+                ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                string nombreCortoProyecto = proyectoCN.ObtenerNombreCortoProyecto(filaSolicitud.ProyectoID);
+                string urlProyecto = proyectoCN.ObtenerURLPropiaProyecto(filaSolicitud.ProyectoID);
+
+                if (!filaSolicitud.ProyectoID.Equals(ProyectoAD.MyGnoss))
+                {
+                    urlEnlace2 = mControladorBase.UrlsSemanticas.ObtenerURLComunidad(UtilIdiomas, urlProyecto, nombreCortoProyecto);
+                }
+
+                urlEnlace2 += $"/{UtilIdiomas.GetText("URLSEM", "REGISTROUSUARIO")}/{UtilIdiomas.GetText("URLSEM", "ACTIVACIONGNOSS")}/{filaSolicitudNuevoUsuario2.SolicitudID}";
+
+
+                //Diferenciar entre el email de tutor o de usuario normal.
+                if (string.IsNullOrEmpty(filaNuevoUsuario.EmailTutor) || !NecesitaTutor(filaNuevoUsuario.FechaNacimiento))
+                {
+                    gestorNotificaciones.AgregarNotificacionSolicitudEntradaGNOSS(filaSolicitudNuevoUsuario2.SolicitudID, filaSolicitudNuevoUsuario2.Nombre, null, TiposNotificacion.SolicitudNuevoUsuario, filaNuevoUsuario.Email, null, urlProyecto, filaSolicitudNuevoUsuario2.Idioma, urlEnlace2, "", filaSolicitud.ProyectoID);
+                }
+                else
+                {
+                    //Es necesario compilar el servicio de correo tambien.
+                    gestorNotificaciones.AgregarNotificacionSolicitudEntradaGNOSS(filaSolicitudNuevoUsuario2.SolicitudID, $"{filaSolicitudNuevoUsuario2.Nombre} {filaSolicitudNuevoUsuario2.Apellidos}", nombreCortoProyecto, TiposNotificacion.SolicitudNuevoUsuarioTutor, filaNuevoUsuario.EmailTutor, null, urlProyecto, filaSolicitudNuevoUsuario2.Idioma, urlEnlace2, UtilCadenas.ObtenerTextoDeIdioma(nombreCortoProyecto, UtilIdiomas.LanguageCode, mControladorBase.IdiomaPorDefecto), filaSolicitud.ProyectoID);
+                }
+
+                NotificacionCN notificacionCN = new NotificacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<NotificacionCN>(), mLoggerFactory);
+                notificacionCN.ActualizarNotificacion(mAvailableServices);
+                notificacionCN.Dispose();
+                gestorNotificaciones.Dispose();
+            }
+            else
+            {
+                AceptarUsuario(filaSolicitud.SolicitudID, TipoDocumentoAcreditativo.DNI, dni, password, filaNuevoUsuario.Idioma, dataWrapperUsuario, solicitudDW, pUsuarioJSON.extra_data, pUsuarioJSON.community_id);
+                salida.Add(login, filaNuevoUsuario.UsuarioID);
+
+                AgregarTraza("Acabado AceptarUsuario.");
+                usuarioCN.Dispose();
+            }
+            return salida;
+        }
+
+        /// <summary>
+        /// Comprueba la diferencia de una fecha pasada con la actual
+        /// </summary>
+        /// <param name="fechaNacimiento">Fecha</param>
+        /// <returns>bool dependiendo de si la diferencia es mayor de 14 anios</returns>
+        private bool NecesitaTutor(DateTime? fechaNacimiento)
+        {
+            bool necesitaTutor = false;
+
+			if (fechaNacimiento!=null)
 			{
-				filaNuevoUsuario.Idioma = pUsuarioJSON.languaje;
-			}
-			else
-			{
-				filaNuevoUsuario.Idioma = "es";
-			}
+                int dias = DateTime.Now.Date.Subtract((DateTime)fechaNacimiento).Days;
+                int anios = dias / 365;
+				necesitaTutor = (anios <= 14);
+            }   
+			         
+            return necesitaTutor;
+        }
 
-			filaNuevoUsuario.CrearClase = false;
-			filaNuevoUsuario.CambioPassword = false;
 
-			solicitudDW.ListaSolicitudNuevoUsuario.Add(filaNuevoUsuario);
-			mEntityContext.SolicitudNuevoUsuario.Add(filaNuevoUsuario);
-
-			AgregarTraza("Antes guardar solicitud.");
-
-			//Guardado
-
-			usuarioCN.ActualizarUsuario(false);
-			mEntityContext.SaveChanges();
-
-			AgregarTraza("Solicitud guardada.");
-
-			#endregion
-
-			AceptarUsuario(filaSolicitud.SolicitudID, TipoDocumentoAcreditativo.DNI, dni, password, filaNuevoUsuario.Idioma, dataWrapperUsuario, solicitudDW, pUsuarioJSON.extra_data, pUsuarioJSON.community_id);
-			salida.Add(login, filaNuevoUsuario.UsuarioID);
-
-			AgregarTraza("Acabado AceptarUsuario.");
-			usuarioCN.Dispose();
-
-			return salida;
-		}
-
-		/// <summary>
-		/// Método para aceptar el usuario
-		/// </summary>
-		/// <param name="pIdSolicitud">Identificador de solicitud</param>
-		/// <param name="pPassword">Contraseña</param>
-		private void AceptarUsuario(Guid pIdSolicitud, TipoDocumentoAcreditativo pTipoDocumentoAcreditativo, string pDNI, string pPassword, string pIdioma, DataWrapperUsuario pDataWrapperUsuario, DataWrapperSolicitud pDataWrapperSolicitud, List<ExtraUserData> pDatosExtra, Guid pProyecto)
+        /// <summary>
+        /// Método para aceptar el usuario
+        /// </summary>
+        /// <param name="pIdSolicitud">Identificador de solicitud</param>
+        /// <param name="pPassword">Contraseña</param>
+        private void AceptarUsuario(Guid pIdSolicitud, TipoDocumentoAcreditativo pTipoDocumentoAcreditativo, string pDNI, string pPassword, string pIdioma, DataWrapperUsuario pDataWrapperUsuario, DataWrapperSolicitud pDataWrapperSolicitud, List<ExtraUserData> pDatosExtra, Guid pProyecto)
 		{
 			AgregarTraza("Empiezo AceptarUsuario");
 
-			UtilIdiomas utilIdiomas = new UtilIdiomas(pIdioma, mLoggingService, mEntityContext, mConfigService,mRedisCacheWrapper);
-			string baseUrlIdioma = ObtenerUrlBaseIdioma(pIdioma);
+            UtilIdiomas utilIdiomas = new UtilIdiomas(pIdioma, mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mLoggerFactory.CreateLogger<UtilIdiomas>(), mLoggerFactory);
+            SolicitudNuevoUsuario filaSU = pDataWrapperSolicitud.ListaSolicitudNuevoUsuario.Find(item => item.SolicitudID.Equals(pIdSolicitud));
 
-			SolicitudNuevoUsuario filaSU = pDataWrapperSolicitud.ListaSolicitudNuevoUsuario.Where(item => item.SolicitudID.Equals(pIdSolicitud)).FirstOrDefault();
+            Solicitud fila = pDataWrapperSolicitud.ListaSolicitud.Find(item => item.SolicitudID.Equals(pIdSolicitud));
 
-			Solicitud fila = pDataWrapperSolicitud.ListaSolicitud.Where(item => item.SolicitudID.Equals(pIdSolicitud)).FirstOrDefault();
+            AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = pDataWrapperUsuario.ListaUsuario[0];
 
-			AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = pDataWrapperUsuario.ListaUsuario.First();
+            filaUsuario.EstaBloqueado = false;
 
-			filaUsuario.EstaBloqueado = false;
+            GestionPersonas gestorPersonas = null;
 
-			GestionPersonas gestorPersonas = null;
+            GeneralCN generalCN = new GeneralCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<GeneralCN>(), mLoggerFactory);
+            DateTime fechaHoy = generalCN.HoraServidor;
 
-			GeneralCN generalCN = new GeneralCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DateTime fechaHoy = generalCN.HoraServidor;
+            fila.Estado = (short)EstadoSolicitud.Aceptada;
+            fila.FechaProcesado = fechaHoy;
 
-			fila.Estado = (short)EstadoSolicitud.Aceptada;
-			fila.FechaProcesado = fechaHoy;
+            //Identidad
+            DataWrapperIdentidad dataWrapperIdentidad = new DataWrapperIdentidad();
 
-			//Identidad
-			DataWrapperIdentidad dataWrapperIdentidad = new DataWrapperIdentidad();
-
-			//Persona
-			DataWrapperPersona dataWrapperPersona = new DataWrapperPersona();
-			gestorPersonas = new GestionPersonas(dataWrapperPersona, mLoggingService, mEntityContext);
+            //Persona
+            DataWrapperPersona dataWrapperPersona = new DataWrapperPersona();
+            gestorPersonas = new GestionPersonas(dataWrapperPersona, mLoggingService, mEntityContext);
             Elementos.ServiciosGenerales.Persona persona = gestorPersonas.AgregarPersona();
 
-			AD.EntityModel.Models.PersonaDS.Persona filaPersona = persona.FilaPersona;
-			filaPersona.UsuarioID = filaSU.UsuarioID;
-			filaPersona.Usuario = filaUsuario;
-			filaPersona.Apellidos = filaSU.Apellidos;
-			filaPersona.CPPersonal = filaSU.CP;
-			filaPersona.DireccionPersonal = filaSU.Direccion;
-			filaPersona.Email = filaSU.Email;
-			filaPersona.EsBuscable = filaSU.EsBuscable;
-			filaPersona.EsBuscableExternos = filaSU.EsBuscableExterno;
-			if (filaSU.FechaNacimiento.HasValue)
-			{
-				filaPersona.FechaNacimiento = filaSU.FechaNacimiento;
-			}
-			filaPersona.LocalidadPersonal = filaSU.Poblacion;
-			filaPersona.Nombre = filaSU.Nombre;
-			if (filaSU.PaisID.HasValue)
-			{
-				filaPersona.PaisPersonalID = filaSU.PaisID;
-			}
-			filaPersona.EstadoCorreccion = (short)EstadoCorreccion.NoCorreccion;
+            AD.EntityModel.Models.PersonaDS.Persona filaPersona = persona.FilaPersona;
+            filaPersona.UsuarioID = filaSU.UsuarioID;
+            filaPersona.Usuario = filaUsuario;
+            filaPersona.Apellidos = filaSU.Apellidos;
+            filaPersona.CPPersonal = filaSU.CP;
+            filaPersona.DireccionPersonal = filaSU.Direccion;
+            filaPersona.Email = filaSU.Email.ToLower();
+            filaPersona.EsBuscable = filaSU.EsBuscable;
+            filaPersona.EsBuscableExternos = filaSU.EsBuscableExterno;
+            if (filaSU.FechaNacimiento.HasValue)
+            {
+                filaPersona.FechaNacimiento = filaSU.FechaNacimiento;
+            }
+            filaPersona.LocalidadPersonal = filaSU.Poblacion;
+            filaPersona.Nombre = filaSU.Nombre;
+            if (filaSU.PaisID.HasValue)
+            {
+                filaPersona.PaisPersonalID = filaSU.PaisID;
+            }
+            filaPersona.EstadoCorreccion = (short)EstadoCorreccion.NoCorreccion;
 
-			if (!string.IsNullOrEmpty(pDNI))
-			{
-				filaPersona.TipoDocumentoAcreditativo = (short)pTipoDocumentoAcreditativo;
-				filaPersona.ValorDocumentoAcreditativo = pDNI;
-			}
+            if (!string.IsNullOrEmpty(pDNI))
+            {
+                filaPersona.TipoDocumentoAcreditativo = (short)pTipoDocumentoAcreditativo;
+                filaPersona.ValorDocumentoAcreditativo = pDNI;
+            }
 
-			if (!filaSU.ProvinciaID.HasValue)
-			{
-				filaPersona.ProvinciaPersonal = filaSU.Provincia;
-			}
-			else
-			{
-				filaPersona.ProvinciaPersonalID = filaSU.ProvinciaID;
-			}
-			filaPersona.Sexo = filaSU.Sexo;
-			if (!string.IsNullOrEmpty(pIdioma))
-			{
-				filaPersona.Idioma = pIdioma;
-			}
-			AD.EntityModel.Models.PersonaDS.ConfiguracionGnossPersona filaConfigPers = gestorPersonas.AgregarConfiguracionGnossPersona(filaPersona.PersonaID);
+            if (!filaSU.ProvinciaID.HasValue)
+            {
+                filaPersona.ProvinciaPersonal = filaSU.Provincia;
+            }
+            else
+            {
+                filaPersona.ProvinciaPersonalID = filaSU.ProvinciaID;
+            }
+            filaPersona.Sexo = filaSU.Sexo;
+            if (!string.IsNullOrEmpty(pIdioma))
+            {
+                filaPersona.Idioma = pIdioma;
+            }
+            AD.EntityModel.Models.PersonaDS.ConfiguracionGnossPersona filaConfigPers = gestorPersonas.AgregarConfiguracionGnossPersona(filaPersona.PersonaID);
 
-			if (filaSU.EsBuscable)
-			{
-				filaConfigPers.VerRecursos = true;
-				filaConfigPers.VerAmigos = true;
-				filaConfigPers.VerRecursos = true;
+            if (filaSU.EsBuscable)
+            {
+                filaConfigPers.VerRecursos = true;
+                filaConfigPers.VerAmigos = true;
+                filaConfigPers.VerRecursos = true;
 
-			}
+            }
 
-			if (filaSU.EsBuscableExterno)
-			{
-				filaConfigPers.VerRecursos = true;
-				filaConfigPers.VerAmigos = true;
-				filaConfigPers.VerRecursos = true;
-				filaConfigPers.VerRecursosExterno = true;
-				filaConfigPers.VerAmigos = true;
-				filaConfigPers.VerRecursosExterno = true;
-			}
+            if (filaSU.EsBuscableExterno)
+            {
+                filaConfigPers.VerRecursos = true;
+                filaConfigPers.VerAmigos = true;
+                filaConfigPers.VerRecursos = true;
+                filaConfigPers.VerRecursosExterno = true;
+                filaConfigPers.VerAmigos = true;
+                filaConfigPers.VerRecursosExterno = true;
+            }
 
-			AgregarTraza("Persona creada");
+            AgregarTraza("Persona creada");
 
-			GestionIdentidades gestorIdentidades = new GestionIdentidades(dataWrapperIdentidad, gestorPersonas, new GestionOrganizaciones(new DataWrapperOrganizacion(), mLoggingService, mEntityContext), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-			GestionUsuarios gestorUsuarios = new GestionUsuarios(pDataWrapperUsuario, mLoggingService, mEntityContext, mConfigService);
+            GestionIdentidades gestorIdentidades = new GestionIdentidades(dataWrapperIdentidad, gestorPersonas, new GestionOrganizaciones(new DataWrapperOrganizacion(), mLoggingService, mEntityContext), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+            GestionUsuarios gestorUsuarios = new GestionUsuarios(pDataWrapperUsuario, mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
 
-			if (!persona.UsuarioCargado)
-			{
-				if (persona.GestorPersonas.GestorUsuarios == null)
-				{
-					persona.GestorPersonas.GestorUsuarios = new GestionUsuarios(new DataWrapperUsuario(), mLoggingService, mEntityContext, mConfigService);
-				}
-			}
+            if (!persona.UsuarioCargado && persona.GestorPersonas.GestorUsuarios == null)
+            {
+                persona.GestorPersonas.GestorUsuarios = new GestionUsuarios(new DataWrapperUsuario(), mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
+            }
 
-			ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			Dictionary<Guid, bool> recibirNewsletterDefectoProyectos = proyCN.ObtenerProyectosConConfiguracionNewsletterPorDefecto();
+            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            Dictionary<Guid, bool> recibirNewsletterDefectoProyectos = proyCN.ObtenerProyectosConConfiguracionNewsletterPorDefecto();
 
-			Perfil perfilPersona = gestorIdentidades.AgregarPerfilPersonal(filaPersona, true, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, recibirNewsletterDefectoProyectos);
-			Identidad objetoIdentidad = (Identidad)perfilPersona.Hijos[0];
-			AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = objetoIdentidad.FilaIdentidad;
+            Perfil perfilPersona = gestorIdentidades.AgregarPerfilPersonal(filaPersona, true, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, recibirNewsletterDefectoProyectos);
+            Identidad objetoIdentidad = (Identidad)perfilPersona.Hijos[0];
+            AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = objetoIdentidad.FilaIdentidad;
 
-			AgregarTraza("Identidad creada");
+            AgregarTraza("Identidad creada");
 
-			if (!proyCN.ParticipaUsuarioEnProyecto(ProyectoAD.MetaProyecto, filaUsuario.UsuarioID))
-			{
-				gestorUsuarios.AgregarUsuarioAProyecto(filaUsuario, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, filaIdentidad.IdentidadID);
-			}
+            if (!proyCN.ParticipaUsuarioEnProyecto(ProyectoAD.MetaProyecto, filaUsuario.UsuarioID))
+            {
+                gestorUsuarios.AgregarUsuarioAProyecto(filaUsuario, ProyectoAD.MetaOrganizacion, ProyectoAD.MetaProyecto, filaIdentidad.IdentidadID);
+            }
 
-			AgregarTraza("Agregada a MyGnoss");
+            AgregarTraza("Agregada a MyGnoss");
 
-			ControladorDeSolicitudes.RegistrarUsuarioEnProyectosObligatorios(filaSU.Solicitud.OrganizacionID, filaSU.Solicitud.ProyectoID, filaPersona.PersonaID, perfilPersona, filaUsuario, gestorUsuarios, gestorIdentidades);
+            ControladorDeSolicitudes.RegistrarUsuarioEnProyectosObligatorios(filaSU.Solicitud.OrganizacionID, filaSU.Solicitud.ProyectoID, filaPersona.PersonaID, perfilPersona, filaUsuario, gestorUsuarios, gestorIdentidades);
 
-			ControladorDeSolicitudes controladorDeSolicitudes = new ControladorDeSolicitudes(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-			controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfilPersona, filaUsuario, gestorUsuarios, gestorIdentidades);
+            ControladorDeSolicitudes controladorDeSolicitudes = new ControladorDeSolicitudes(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDeSolicitudes>(), mLoggerFactory);
+            controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfilPersona, filaUsuario, gestorUsuarios, gestorIdentidades);
 
-			gestorIdentidades.RecargarHijos();
+            gestorIdentidades.RecargarHijos();
 
-			if (!fila.ProyectoID.Equals(ProyectoAD.MetaProyecto) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoFAQ) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoNoticias) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoDidactalia))
-			{
-				Guid organizacionID = fila.OrganizacionID;
-				Guid proyectoID = fila.ProyectoID;
+            if (!fila.ProyectoID.Equals(ProyectoAD.MetaProyecto) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoFAQ) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoNoticias) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoDidactalia))
+            {
+                Guid organizacionID = fila.OrganizacionID;
+                Guid proyectoID = fila.ProyectoID;
 
-				//si el usuario aún no participa en el proyecto se agrega
-				if (!proyCN.ParticipaUsuarioEnProyecto(proyectoID, filaUsuario.UsuarioID) && gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Count(identidad => identidad.ProyectoID.Equals(proyectoID)) == 0)
-				{
-					Identidad ObjetoIdentidadProy = ControladorIdentidades.AgregarIdentidadPerfilYUsuarioAProyecto(gestorIdentidades, gestorUsuarios, organizacionID, proyectoID, filaUsuario, perfilPersona, recibirNewsletterDefectoProyectos);
+                //si el usuario aún no participa en el proyecto se agrega
+                if (!proyCN.ParticipaUsuarioEnProyecto(proyectoID, filaUsuario.UsuarioID) && !gestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Any(identidad => identidad.ProyectoID.Equals(proyectoID)))
+                {
+                    ControladorIdentidades.AgregarIdentidadPerfilYUsuarioAProyecto(gestorIdentidades, gestorUsuarios, organizacionID, proyectoID, filaUsuario, perfilPersona, recibirNewsletterDefectoProyectos);
 
-					controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfilPersona, filaUsuario, gestorUsuarios, gestorIdentidades, proyectoID);
+                    controladorDeSolicitudes.RegistrarUsuarioEnProyectoAutomatico(perfilPersona, filaUsuario, gestorUsuarios, gestorIdentidades, proyectoID);
 
-					gestorIdentidades.RecargarHijos();
-				}
-			}
+                    gestorIdentidades.RecargarHijos();
+                }
+            }
 
-			//Invalido la cache de Mis comunidades
-			ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			proyCL.InvalidarMisProyectos(filaIdentidad.PerfilID);
-			proyCL.Dispose();
+            //Invalido la cache de Mis comunidades
+            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+            proyCL.InvalidarMisProyectos(filaIdentidad.PerfilID);
+            proyCL.Dispose();
 
-			AgregarTraza("Agregada a Ayuda y Noticias");
+            AgregarTraza("Agregada a Ayuda y Noticias");
 
-			//Invalido la cache de Mis comunidades
-			DataWrapperIdentidad idenDW = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication).ObtenerIdentidadPorID(gestorIdentidades.ObtenerIdentidadDeProyecto(ProyectoAD.ProyectoFAQ, filaPersona.PersonaID), true);
+            //Invalido la cache de Mis comunidades
+            DataWrapperIdentidad idenDW = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory).ObtenerIdentidadPorID(gestorIdentidades.ObtenerIdentidadDeProyecto(ProyectoAD.ProyectoFAQ, filaPersona.PersonaID), true);
 
-			if (idenDW.ListaIdentidad.Count > 0)
-			{
-				proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-				proyCL.InvalidarMisProyectos(idenDW.ListaIdentidad.FirstOrDefault().PerfilID);
-				proyCL.Dispose();
-			}
+            if (idenDW.ListaIdentidad.Count > 0)
+            {
+                proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+                proyCL.InvalidarMisProyectos(idenDW.ListaIdentidad.FirstOrDefault().PerfilID);
+                proyCL.Dispose();
+            }
 
-			AgregarTraza("Borrada caché identidades");
+            AgregarTraza("Borrada caché identidades");
 
-			gestorPersonas.CrearDatosTrabajoPersonaLibre(persona);
-			gestorUsuarios.GestorTesauro = new GestionTesauro(new DataWrapperTesauro(), mLoggingService, mEntityContext);
-			gestorUsuarios.GestorDocumental = new GestorDocumental(new DataWrapperDocumentacion(), mLoggingService, mEntityContext);
-			gestorUsuarios.CompletarUsuarioNuevo(filaUsuario, utilIdiomas.GetText("TESAURO", "RECURSOSPUBLICOS"), utilIdiomas.GetText("TESAURO", "RECURSOSPRIVADOS"));
+            gestorPersonas.CrearDatosTrabajoPersonaLibre(persona);
+            gestorUsuarios.GestorTesauro = new GestionTesauro(new DataWrapperTesauro(), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionTesauro>(), mLoggerFactory);
+            gestorUsuarios.GestorDocumental = new GestorDocumental(new DataWrapperDocumentacion(), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestorDocumental>(), mLoggerFactory);
+            gestorUsuarios.CompletarUsuarioNuevo(filaUsuario, utilIdiomas.GetText("TESAURO", "RECURSOSPUBLICOS"), utilIdiomas.GetText("TESAURO", "RECURSOSPRIVADOS"));
 
-			AgregarTraza("Completado usuario");
-			mEntityContext.SaveChanges();
-			IdentidadCN idenCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			IdentidadCL idenCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-			Identidad identidadnuevo = new GestionIdentidades(idenCN.ObtenerIdentidadPorID(filaIdentidad.IdentidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication).ListaIdentidades[filaIdentidad.IdentidadID];
+            AgregarTraza("Completado usuario");
+            mEntityContext.SaveChanges();
+            IdentidadCN idenCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            IdentidadCL idenCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCL>(), mLoggerFactory);
+            Identidad identidadnuevo = new GestionIdentidades(idenCN.ObtenerIdentidadPorID(filaIdentidad.IdentidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication).ListaIdentidades[filaIdentidad.IdentidadID];
 
-			//GuardarDatosExtraDeSolicitudEnIdentidad(dataWrapperIdentidad, filaIdentidad.PerfilID, pIdSolicitud, pDataWrapperSolicitud, pDatosExtra);
-			Dictionary<int, string> dicDatosExtraProyectoVirtuoso = new Dictionary<int, string>();
-			Dictionary<int, string> dicDatosExtraEcosistemaVirtuoso = new Dictionary<int, string>();
-			GuardarDatosExtra(pDatosExtra, identidadnuevo, dicDatosExtraProyectoVirtuoso, dicDatosExtraEcosistemaVirtuoso);
-			mEntityContext.SaveChanges();
+            Dictionary<int, string> dicDatosExtraProyectoVirtuoso = new Dictionary<int, string>();
+            Dictionary<int, string> dicDatosExtraEcosistemaVirtuoso = new Dictionary<int, string>();
+            GuardarDatosExtra(pDatosExtra, identidadnuevo, dicDatosExtraProyectoVirtuoso, dicDatosExtraEcosistemaVirtuoso);
+            mEntityContext.SaveChanges();
 
-			AgregarTraza("Datos guardados");
+            AgregarTraza("Datos guardados");
 
-			try
-			{
-				ControladorIdentidades.NotificarEdicionPerfilEnProyectos(TipoAccionExterna.Registro, filaPersona.PersonaID, "", "", filaIdentidad.ProyectoID);
-			}
-			catch (Exception ex)
-			{
-				mLoggingService.GuardarLogError(ex, " Error al enviar el usuario: " + filaPersona.UsuarioID + " a Smart Focus");
-			}
+            try
+            {
+                ControladorIdentidades.NotificarEdicionPerfilEnProyectos(TipoAccionExterna.Registro, filaPersona.PersonaID, string.Empty, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex, $" Error al enviar el usuario: {filaPersona.UsuarioID} a Smart Focus", mlogger);
+            }
 
+            PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+            identidadnuevo.GestorIdentidades.GestorPersonas = new GestionPersonas(persCN.ObtenerPersonaPorID(identidadnuevo.PersonaID.Value), mLoggingService, mEntityContext);
+            identidadnuevo.GestorIdentidades.GestorPersonas.CargarGestor();
 
-			PersonaCN persCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			identidadnuevo.GestorIdentidades.GestorPersonas = new GestionPersonas(persCN.ObtenerPersonaPorID(identidadnuevo.PersonaID.Value), mLoggingService, mEntityContext);
-			identidadnuevo.GestorIdentidades.GestorPersonas.CargarGestor();
+            //Actualizo el modelo base:
+            ControladorPersonas controladorPersonas = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorPersonas>(), mLoggerFactory);
+            foreach (Identidad iden in gestorIdentidades.ListaIdentidades.Values)
+            {
+                controladorPersonas.ActualizarModeloBaseSimple(iden, iden.FilaIdentidad.ProyectoID, UrlIntragnoss);
+            }
 
-			//Actualizo el modelo base:
-			ControladorPersonas controladorPersonas = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-			foreach (Identidad iden in gestorIdentidades.ListaIdentidades.Values)
-			{
-				//controladorPersonas.ActualizarModeloBaseSimple(filaPersona.PersonaID, iden.FilaIdentidad.ProyectoID, PrioridadBase.Alta);
-				controladorPersonas.ActualizarModeloBaseSimple(iden, iden.FilaIdentidad.ProyectoID, UrlIntragnoss);
-			}
+            idenCL.Dispose();
 
-			idenCL.Dispose();
+            AgregarTraza("Modelo base de identidad actualizado");
 
-			AgregarTraza("Modelo base de identidad actualizado");
+            #region Actualizar cola GnossLIVE
 
-			#region Actualizar cola GnossLIVE
-			LiveCN liveCN = new LiveCN("base", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			LiveDS liveDS = new LiveDS();
-			foreach (Identidad iden in gestorIdentidades.ListaIdentidades.Values)
-			{
-				liveDS.Cola.AddColaRow(iden.FilaIdentidad.ProyectoID, iden.FilaIdentidad.PerfilID, (int)AccionLive.Agregado, (int)TipoLive.Miembro, 0, DateTime.Now, false, (short)PrioridadLive.Alta, null);
-			}
-			liveCN.ActualizarBD(liveDS);
-			liveCN.Dispose();
-			liveDS.Dispose();
+            LiveCN liveCN = new LiveCN("base", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<LiveCN>(), mLoggerFactory);
+            LiveDS liveDS = new LiveDS();
+            foreach (AD.EntityModel.Models.IdentidadDS.Identidad identidad in gestorIdentidades.ListaIdentidades.Values.Select(item => item.FilaIdentidad))
+            {
+                liveDS.Cola.AddColaRow(identidad.ProyectoID, identidad.PerfilID, (int)AccionLive.Agregado, (int)TipoLive.Miembro, 0, DateTime.Now, false, (short)PrioridadLive.Alta, null);
+            }
+            liveCN.ActualizarBD(liveDS);
+            liveCN.Dispose();
+            liveDS.Dispose();
 
-			#endregion
+            #endregion
 
-			AgregarTraza("Live actualizado");
+            AgregarTraza("Live actualizado");
+        }
 
-			//#region Actualizo el Base
+        [NonAction]
+        private void EliminarUsuario(Guid pIdentidadID)
+        {
+            //código obtenido de la funcionalidad de la web al eliminar un usuario en mygnoss
+            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+            GestionPersonas GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonasPorIdentidad(pIdentidadID), mLoggingService, mEntityContext);
+            personaCN.Dispose();
 
-			//if (correoID != Guid.Empty)
-			//{
-			//    foreach (Guid destinatario in listaDestinatarios)
-			//    {
-			//        ControladorDocumentacion.AgregarMensajeFacModeloBaseSimple(correoID, Guid.Empty, ProyectoAD.MetaProyecto, "base", destinatario.ToString(), null, PrioridadBase.Alta);
-			//    }
-			//}
+            OrganizacionCN organizacionCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<OrganizacionCN>(), mLoggerFactory);
+            GestionOrganizaciones GestorOrganizaciones = new GestionOrganizaciones(organizacionCN.ObtenerOrganizacionesPorIdentidad(pIdentidadID), mLoggingService, mEntityContext);
+            personaCN.Dispose();
 
-			//AgregarTraza("Fila de mensaje actualizada en el base");
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            GestionIdentidades GestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(pIdentidadID, true), GestorPersonas, GestorOrganizaciones, mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+            identidadCN.Dispose();
 
-			//#endregion
-		}
-		[NonAction]
-		private void EliminarUsuario(Guid pIdentidadID)
-		{
-			//código obtenido de la funcionalidad de la web al eliminar un usuario en mygnoss
-			PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			GestionPersonas GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonasPorIdentidad(pIdentidadID), mLoggingService, mEntityContext);
-			personaCN.Dispose();
+            Identidad identidadInvitado = GestorIdentidades.ListaIdentidades[pIdentidadID];
 
-			OrganizacionCN organizacionCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			GestionOrganizaciones GestorOrganizaciones = new GestionOrganizaciones(organizacionCN.ObtenerOrganizacionesPorIdentidad(pIdentidadID), mLoggingService, mEntityContext);
-			personaCN.Dispose();
+            ControladorAmigos contrAmigos = new ControladorAmigos(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorAmigos>(), mLoggerFactory);
+            contrAmigos.CargarAmigos(identidadInvitado, false, mAvailableServices);
 
-			IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			GestionIdentidades GestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(pIdentidadID, true), GestorPersonas, GestorOrganizaciones, mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-			identidadCN.Dispose();
+            //Obtengo usuario:
+            UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            DataWrapperUsuario dataWrapperUsuario = usuCN.ObtenerUsuarioCompletoPorID(identidadInvitado.Persona.UsuarioID);
+            dataWrapperUsuario.Merge(usuCN.ObtenerFilaUsuarioVincRedSocialPorUsuarioID(identidadInvitado.Persona.UsuarioID));
+            usuCN.Dispose();
 
-			Identidad identidadInvitado = GestorIdentidades.ListaIdentidades[pIdentidadID];
+            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            identidadInvitado.GestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerPerfilesDePersona(identidadInvitado.PersonaID.Value, false));
+            identCN.Dispose();
 
-			ControladorAmigos contrAmigos = new ControladorAmigos(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
-			contrAmigos.CargarAmigos(identidadInvitado, false);
+            //Boqueo Usuario:
+            dataWrapperUsuario.ListaUsuario.FirstOrDefault().EstaBloqueado = true;
 
-			//Obtengo usuario:
-			UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperUsuario dataWrapperUsuario = usuCN.ObtenerUsuarioCompletoPorID(identidadInvitado.Persona.UsuarioID);
-			dataWrapperUsuario.Merge(usuCN.ObtenerFilaUsuarioVincRedSocialPorUsuarioID(identidadInvitado.Persona.UsuarioID));
-			usuCN.Dispose();
+            //Borro ProyectoUsuarioIdentidad:
+            foreach (ProyectoUsuarioIdentidad filaProyUsuIdent in dataWrapperUsuario.ListaProyectoUsuarioIdentidad)
+            {
+                mEntityContext.Entry(filaProyUsuIdent).State = EntityState.Deleted;
+            }
 
-			IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			identidadInvitado.GestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerPerfilesDePersona(identidadInvitado.PersonaID.Value, false));
-			identCN.Dispose();
+            //Bloqueo ProyectoRolUsuario:
+            foreach (ProyectoRolUsuario filaProyRolUsu in dataWrapperUsuario.ListaProyectoRolUsuario)
+            {
+                filaProyRolUsu.EstaBloqueado = true;
+            }
 
-			//Boqueo Usuario:
-			dataWrapperUsuario.ListaUsuario.FirstOrDefault().EstaBloqueado = true;
+            // Borro UsuarioVinculadoLoginRedesSociales
+            foreach (UsuarioVinculadoLoginRedesSociales filaRedSocial in dataWrapperUsuario.ListaUsuarioVinculadoLoginRedesSociales)
+            {
+                mEntityContext.Entry(filaRedSocial).State = EntityState.Deleted;
+            }
 
-			//Borro ProyectoUsuarioIdentidad:
-			foreach (AD.EntityModel.Models.UsuarioDS.ProyectoUsuarioIdentidad filaProyUsuIdent in dataWrapperUsuario.ListaProyectoUsuarioIdentidad)
-			{
-				mEntityContext.Entry(filaProyUsuIdent).State = EntityState.Deleted;
-			}
-
-			//Bloqueo ProyectoRolUsuario:
-			foreach (AD.EntityModel.Models.UsuarioDS.ProyectoRolUsuario filaProyRolUsu in dataWrapperUsuario.ListaProyectoRolUsuario)
-			{
-				filaProyRolUsu.EstaBloqueado = true;
-			}
-
-			// Borro UsuarioVinculadoLoginRedesSociales
-			foreach (AD.EntityModel.Models.UsuarioDS.UsuarioVinculadoLoginRedesSociales filaRedSocial in dataWrapperUsuario.ListaUsuarioVinculadoLoginRedesSociales)
-			{
-				mEntityContext.Entry(filaRedSocial).State = EntityState.Deleted;
-			}
-
-			SolicitudNuevoUsuario solicitud = mEntityContext.SolicitudNuevoUsuario.Where(entry => entry.Email.Equals(identidadInvitado.Persona.FilaPersona.Email)).FirstOrDefault();
+            SolicitudNuevoUsuario solicitud = mEntityContext.SolicitudNuevoUsuario.Where(entry => entry.Email.Equals(identidadInvitado.Persona.FilaPersona.Email.ToLower())).FirstOrDefault();
             identidadInvitado.Persona.FilaPersona.Email = $"{identidadInvitado.Persona.FilaPersona.Email}_eliminado";
             if (solicitud != null)
             {
                 solicitud.Email = identidadInvitado.Persona.FilaPersona.Email;
             }
 
-			//Elimino Persona:
-			identidadInvitado.Persona.FilaPersona.Eliminado = true;
+            //Elimino Persona:
+            identidadInvitado.Persona.FilaPersona.Eliminado = true;
 
-			//Borro perfiles:
-			List<Guid> perfilesEliminados = new List<Guid>();
-			foreach (AD.EntityModel.Models.IdentidadDS.Perfil filaPerfil in identidadInvitado.GestorIdentidades.DataWrapperIdentidad.ListaPerfil.Where(perfil => perfil.PersonaID.Equals(identidadInvitado.PersonaID)).ToList())
-			{
-				perfilesEliminados.Add(filaPerfil.PerfilID);
-				filaPerfil.Eliminado = true;
-			}
+            //Borro perfiles:
+            List<Guid> perfilesEliminados = new List<Guid>();
+            foreach (AD.EntityModel.Models.IdentidadDS.Perfil filaPerfil in identidadInvitado.GestorIdentidades.DataWrapperIdentidad.ListaPerfil.Where(perfil => perfil.PersonaID.Equals(identidadInvitado.PersonaID)).ToList())
+            {
+                perfilesEliminados.Add(filaPerfil.PerfilID);
+                filaPerfil.Eliminado = true;
+            }
 
-			//Pongo como expulsadas las identidades:
-			List<Guid> listaProyectosEliminados = new List<Guid>();
-			foreach (Guid perfilID in perfilesEliminados)
-			{
-				List<AD.EntityModel.Models.IdentidadDS.Identidad> filasIdent = identidadInvitado.GestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Where(identidad => identidad.PerfilID.Equals(perfilID)).ToList();
-				foreach (AD.EntityModel.Models.IdentidadDS.Identidad filaIdent in filasIdent)
-				{
-					listaProyectosEliminados.Add(filaIdent.ProyectoID);
-					filaIdent.FechaExpulsion = DateTime.Now;
-					filaIdent.FechaBaja = DateTime.Now;
-				}
-			}
+            //Pongo como expulsadas las identidades:
+            List<Guid> listaProyectosEliminados = new List<Guid>();
+            foreach (Guid perfilID in perfilesEliminados)
+            {
+                List<AD.EntityModel.Models.IdentidadDS.Identidad> filasIdent = identidadInvitado.GestorIdentidades.DataWrapperIdentidad.ListaIdentidad.Where(identidad => identidad.PerfilID.Equals(perfilID)).ToList();
+                foreach (AD.EntityModel.Models.IdentidadDS.Identidad filaIdent in filasIdent)
+                {
+                    listaProyectosEliminados.Add(filaIdent.ProyectoID);
+                    filaIdent.FechaExpulsion = DateTime.Now;
+                    filaIdent.FechaBaja = DateTime.Now;
+                }
+            }
 
-			#region Elimino Contactos
+            #region Elimino Contactos
 
-			List<Guid> listaContactosEliminados = new List<Guid>();
+            List<Guid> listaContactosEliminados = new List<Guid>();
 
-			foreach (Identidad amigo in identidadInvitado.GestorAmigos.ListaContactos.Values)
-			{
-				listaContactosEliminados.Add(amigo.Clave);
-				identidadInvitado.GestorAmigos.EliminarAmigos(identidadInvitado.IdentidadMyGNOSS, amigo.IdentidadMyGNOSS);
-			}
+            foreach (Identidad amigo in identidadInvitado.GestorAmigos.ListaContactos.Values)
+            {
+                listaContactosEliminados.Add(amigo.Clave);
+                identidadInvitado.GestorAmigos.EliminarAmigos(identidadInvitado.IdentidadMyGNOSS, amigo.IdentidadMyGNOSS);
+            }
 
-			#endregion
+            #endregion
 
-			//GestionNotificaciones gestorNotificaciones = new GestionNotificaciones(new NotificacionDS());
-			//gestorNotificaciones.AgregarNotificacionEliminacionDeUsuario(identidadInvitado.Persona);
+            //Guardo:
+            mEntityContext.SaveChanges();
 
-			//Guardo:
-			mEntityContext.SaveChanges();
+            //Actualizo Live:
+            foreach (Guid proyectoID in listaProyectosEliminados)
+            {
+                ControladorDocumentacion.ActualizarGnossLive(proyectoID, identidadInvitado.FilaIdentidad.PerfilID, AccionLive.Eliminado, (int)TipoLive.Miembro, false, PrioridadLive.Alta, mAvailableServices);
+            }
 
 			//Actualizo Live:
 			foreach (Guid proyectoID in listaProyectosEliminados)
 			{
-				ControladorDocumentacion.ActualizarGnossLive(proyectoID, identidadInvitado.FilaIdentidad.PerfilID, AccionLive.Eliminado, (int)TipoLive.Miembro, false, PrioridadLive.Alta);
+				ControladorDocumentacion.ActualizarGnossLive(proyectoID, identidadInvitado.FilaIdentidad.PerfilID, AccionLive.Eliminado, (int)TipoLive.Miembro, false, PrioridadLive.Alta, mAvailableServices);
 			}
 
 			//Actualizo modelo base:
-			ControladorPersonas controPer = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
+			ControladorPersonas controPer = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorPersonas>(), mLoggerFactory);
 			foreach (Guid proyectoID in listaProyectosEliminados)
 			{
-				controPer.ActualizarEliminacionModeloBaseSimple(identidadInvitado.PersonaID.Value, proyectoID, PrioridadBase.Alta);
-			}
-
-			//Limpio Caches:
-			try
-			{
-				foreach (Guid perfilID in perfilesEliminados)
-				{
-					//Invalido la cache de Mis comunidades
-					ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-					proyCL.InvalidarMisProyectos(perfilID);
-					proyCL.Dispose();
-				}
-
-				foreach (Guid proyectoID in listaProyectosEliminados)
-				{
-					//Invalidamos la cache de amigos en la comunidad
-					AmigosCL amigosCL = new AmigosCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-					amigosCL.InvalidarAmigosPertenecenProyecto(proyectoID);
-					amigosCL.Dispose();
-				}
-
-				foreach (Guid identidadID in listaContactosEliminados)
-				{
-					//Limpiamos la cache de los contactos
-					AmigosCL amigosCL = new AmigosCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-					amigosCL.InvalidarAmigos(identidadID);
-					amigosCL.Dispose();
-				}
-			}
-			catch (Exception ex)
-			{
-				mLoggingService.GuardarLogError(ex);
-			}
-		}
-		[NonAction]
-		private User ObtenerJsonUsuarioProyecto(string pNombreCortoUsuario, string pEmail, Guid pUsuarioIDOauth, Guid pUsuarioID, string pNombreCortoComunidad, bool pObtenerPorEmail)
-		{
-			//como esta función se usa en varios métodos, en la de eliminación la petición Oauth ya se ha realizado y ya tenemos el usuario
-			if (pUsuarioIDOauth.Equals(Guid.Empty))
-			{
-				pUsuarioIDOauth = ComprobarPermisosOauth(mHttpContextAccessor.HttpContext.Request);
-				if (UsuarioOAuth.Equals(Guid.Empty))
-				{
-					throw new GnossException("Invalid OAuth signature", HttpStatusCode.Unauthorized);
-				}
-			}
-
-			if (EsAdministradorProyectoMyGnoss(pUsuarioIDOauth))
-			{
-				PersonaCN personaCN = null;
-				ProyectoCN proyectoCN = null;
-				UsuarioCN usuarioCN = null;
-
-				if ((!string.IsNullOrEmpty(pNombreCortoUsuario) || !string.IsNullOrEmpty(pEmail) || !pUsuarioID.Equals(Guid.Empty)) && !string.IsNullOrEmpty(pNombreCortoComunidad))
-				{
-					personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					if (usuarioCN.ExisteNombreCortoEnBD(pNombreCortoUsuario) || personaCN.ExisteEmail(pEmail) || usuarioCN.ExisteUsuarioEnBD(pUsuarioID))
-					{
-						Guid proyectoID = Guid.Empty;
-						List<Guid> lista = proyectoCN.ObtenerProyectoIDOrganizacionIDPorNombreCorto(pNombreCortoComunidad);
-						if (lista != null && lista.Count > 1)
-						{
-							proyectoID = lista[1];
-						}
-						if (proyectoID != Guid.Empty)
-						{
-							Guid usuarioID = Guid.Empty;
-							//si se quiere obtener el usuario por usuarioID
-							if (!pUsuarioID.Equals(Guid.Empty))
-							{
-								usuarioID = pUsuarioID;
-							}
-							else
-							{
-								//si se quiere obtener el usuario por NombreCorto o Email
-								List<AD.EntityModel.Models.UsuarioDS.Usuario> tablaUsuario = null;
-
-								if (pObtenerPorEmail && !string.IsNullOrEmpty(pEmail))
-								{
-									tablaUsuario = usuarioCN.ObtenerUsuarioPorLoginOEmail(pEmail, proyectoID.Equals(ProyectoAD.MyGnoss)).ListaUsuario;
-								}
-								else if (!pObtenerPorEmail && !string.IsNullOrEmpty(pNombreCortoUsuario))
-								{
-									tablaUsuario = usuarioCN.ObtenerUsuarioPorLoginOEmail(usuarioCN.ObtenerLoginUsuarioPorNombreCorto(pNombreCortoUsuario), proyectoID.Equals(ProyectoAD.MyGnoss)).ListaUsuario;
-								}
-
-								if (tablaUsuario.Count > 0)
-								{
-									usuarioID = tablaUsuario[0].UsuarioID;
-								}
-							}
-
-							if (usuarioID != Guid.Empty)
-							{
-								IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-								Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(usuarioID, proyectoID);
-								if (identidadID != Guid.Empty)
-								{
-									GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-									if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
-									{
-										Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
-										gestorIdentidades.DataWrapperIdentidad.Merge(identidadCN.ObtenerDatosExtraProyectoOpcionIdentidadPorIdentidadID(identidadID));
-										gestorIdentidades.CargarGestor();
-										gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
-										gestorIdentidades.GestorPersonas.CargarGestor();
-
-										DataWrapperProyecto dataWrapperProyecto = proyectoCN.ObtenerDatosExtraProyectoPorID(proyectoID);
-										User jsonUsuario = MontarJsonUsuario(identidad, dataWrapperProyecto, pNombreCortoComunidad);
-
-										return jsonUsuario;
-									}
-									else
-									{
-										throw new GnossException("The user does not participate in this community", HttpStatusCode.BadRequest);
-									}
-								}
-								else
-								{
-									throw new GnossException("The user does not participate in this community", HttpStatusCode.BadRequest);
-								}
-							}
-							else
-							{
-								throw new GnossException("The user does not participate in this community", HttpStatusCode.BadRequest);
-							}
-						}
-						else
-						{
-							throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
-						}
-					}
-					else
-					{
-						throw new GnossException("The user does not exist", HttpStatusCode.BadRequest);
-					}
-				}
-				else
-				{
-					throw new GnossException("The requested params can not be empty", HttpStatusCode.BadRequest);
-				}
-			}
-			else
-			{
-				throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
-			}
-
-		}
-		[NonAction]
-		private User MontarJsonUsuario(Identidad pIdentidad, DataWrapperProyecto pDataWrapperProyecto, string pNombreCortoComunidad)
-		{
-			User usuario = new User();
-			usuario.name = pIdentidad.Persona.Nombre;
-			usuario.last_name = pIdentidad.Persona.Apellidos;
-			usuario.email = pIdentidad.Persona.Mail;
-			usuario.sex = pIdentidad.Persona.Sexo;
-			usuario.community_id = pIdentidad.FilaIdentidad.ProyectoID;
-			usuario.community_short_name = pNombreCortoComunidad;
-			usuario.user_id = pIdentidad.Persona.UsuarioID;
-			usuario.photo = pIdentidad.UrlImagen;
-			if (pIdentidad.PerfilUsuario.NombreCortoUsu != null)
-			{
-				usuario.user_short_name = pIdentidad.PerfilUsuario.NombreCortoUsu;
-			}
-
-			usuario.born_date = pIdentidad.Persona.Fecha;
-
-			if (pIdentidad.Persona.PaisID != Guid.Empty)
-			{
-				usuario.country_id = pIdentidad.Persona.PaisID;
-			}
-
-			usuario.join_community_date = pIdentidad.FilaIdentidad.FechaAlta;
-
-			if (pIdentidad.Persona.ProvinciaID != Guid.Empty)
-			{
-				usuario.province_id = pIdentidad.Persona.ProvinciaID;
-			}
-
-			if (pIdentidad.Persona.FilaPersona != null && !string.IsNullOrEmpty(pIdentidad.Persona.ValorDocumentoAcreditativo))
-			{
-				usuario.id_card = pIdentidad.Persona.ValorDocumentoAcreditativo;
-			}
-
-			PaisCL paisCL = new PaisCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperPais paisDW = paisCL.ObtenerPaisesProvincias();
-			paisCL.Dispose();
-
-			Pais filaPais = paisDW.ListaPais.Where(item => item.PaisID.Equals(usuario.country_id)).FirstOrDefault();
-			if (filaPais != null)
-			{
-				usuario.country = filaPais.Nombre;
-			}
-
-			Provincia filaProvincia = paisDW.ListaProvincia.Where(item => item.ProvinciaID.Equals(usuario.province_id)).FirstOrDefault();
-			if (filaProvincia != null)
-			{
-				usuario.provice = filaProvincia.Nombre;
-			}
-			else
-			{
-				usuario.provice = pIdentidad.Persona.Provincia;
-			}
-			usuario.city = pIdentidad.Persona.Localidad;
-			usuario.postal_code = pIdentidad.Persona.CodPostal;
-
-			List<UserEvent> listadoEventosusuarioProyecto;
-			List<ExtraUserData> listaDatosExtra = new List<ExtraUserData>();
-			//Obtención de las cláusulas del registro y eventos activos
-			ObtenerClausulasYEventosUsuarioEnProyecto(usuario.user_id, usuario.community_id, ref listaDatosExtra, out listadoEventosusuarioProyecto);
-			//Obtención de DatosExtra
-			ObtenerListaDatosExtraUsuario(pIdentidad, pDataWrapperProyecto, ref listaDatosExtra);
-
-			if (listaDatosExtra.Count > 0)
-			{
-				usuario.extra_data = listaDatosExtra;
-			}
-			usuario.user_events = listadoEventosusuarioProyecto;
-
-			//Suscripciones
-			SuscripcionCN suscCN = new SuscripcionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperSuscripcion suscDW = suscCN.ObtenerSuscripcionesDeIdentidad(pIdentidad.Clave, true);
-			GestionSuscripcion gestorSuscripciones = new GestionSuscripcion(suscDW, mLoggingService, mEntityContext);
-			suscCN.Dispose();
-			Suscripcion suscripcion = gestorSuscripciones.ObtenerSuscripcionAProyecto(usuario.community_id);
-
-			if (suscripcion != null && suscripcion.FilasCategoriasVinculadas != null)
-			{
-				usuario.preferences = new List<ThesaurusCategory>();
-
-				TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-				GestionTesauro gestorTesauro = new GestionTesauro(tesauroCL.ObtenerTesauroDeProyecto(usuario.community_id), mLoggingService, mEntityContext);
-				gestorTesauro.CargarCategorias();
-				tesauroCL.Dispose();
-
-				foreach (AD.EntityModel.Models.Suscripcion.CategoriaTesVinSuscrip filaCat in suscripcion.FilasCategoriasVinculadas)
-				{
-					if (gestorTesauro.ListaCategoriasTesauro.ContainsKey(filaCat.CategoriaTesauroID))
-					{
-						string nomCat = gestorTesauro.ListaCategoriasTesauro[filaCat.CategoriaTesauroID].Nombre["es"];
-						usuario.preferences.Add(ObtenerCategoriasJerarquicas(filaCat.CategoriaTesauroID, gestorTesauro.ListaCategoriasTesauro));
-					}					
-				}
-			}
-
-			//Contadores
-			UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			usuario.num_access = usuCN.ObtenerContadorDeAccesosDeUsuario(pIdentidad.Persona.UsuarioID);
-			usuario.last_login = usuCN.ObtenerFechaUltimoAccesoDeUsuario(pIdentidad.Persona.UsuarioID);
-			usuCN.Dispose();
-
-			return usuario;
-		}
-		[NonAction]
-		private static ThesaurusCategory ObtenerCategoriasJerarquicas(Guid pCategoriaID, SortedList<Guid, CategoriaTesauro> pListaCategoriasTesauro)
-		{
-			ThesaurusCategory preferenciaJerarquica = new ThesaurusCategory();
-			preferenciaJerarquica.category_id = pCategoriaID;
-			preferenciaJerarquica.category_name = pListaCategoriasTesauro[pCategoriaID].Nombre["es"];
-
-			if (pListaCategoriasTesauro[pCategoriaID].Padre != null && pListaCategoriasTesauro[pCategoriaID].Padre is CategoriaTesauro)
-			{
-				ThesaurusCategory padre = ObtenerCategoriasJerarquicas(((CategoriaTesauro)pListaCategoriasTesauro[pCategoriaID].Padre).Clave, pListaCategoriasTesauro);
-
-				preferenciaJerarquica.parent_category_id = padre.category_id;
-			}
-
-			return preferenciaJerarquica;
-		}
-		[NonAction]
-		private static void ObtenerListaDatosExtraUsuario(Identidad pIdentidad, DataWrapperProyecto pDataWrapperProyecto, ref List<ExtraUserData> pListaJsonDatosExtra)
-		{
-			foreach (var filaDatoExtraEcosOpc in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil)
-			{
-				if (pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion != null && pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Count > 0)
-				{
-					List<AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistema> filasDatoExtraProy = pDataWrapperProyecto.ListaDatoExtraEcosistema.Where(dato => dato.DatoExtraID.Equals(filaDatoExtraEcosOpc.DatoExtraID)).ToList();
-					List<AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaOpcion> filasDatoExtraProyOpcion = pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Where(dato => dato.OpcionID.Equals(filaDatoExtraEcosOpc.OpcionID)).ToList();
-
-					if (filasDatoExtraProy.Count > 0 && filasDatoExtraProyOpcion.Count > 0)
-					{
-						ExtraUserData datosExtraUsuario = new ExtraUserData();
-						datosExtraUsuario.name = filasDatoExtraProy[0].Titulo;
-						datosExtraUsuario.name_id = filasDatoExtraProy[0].DatoExtraID;
-						datosExtraUsuario.value = filasDatoExtraProyOpcion[0].Opcion;
-						datosExtraUsuario.value_id = filasDatoExtraProyOpcion[0].OpcionID;
-						pListaJsonDatosExtra.Add(datosExtraUsuario);
-					}
-				}
-			}
-
-			foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil filaDatoExtraProyVirtuosoIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil)
-			{
-				if (pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso != null && pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.Count > 0)
-				{
-					AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaVirtuoso filaDatoExtraVirtuosoProy = pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.DatoExtraID.Equals(filaDatoExtraProyVirtuosoIdent.DatoExtraID));
-
-					if (filaDatoExtraVirtuosoProy != null)
-					{
-						ExtraUserData datosExtraUsuario = new ExtraUserData();
-						datosExtraUsuario.name = filaDatoExtraVirtuosoProy.Titulo;
-						datosExtraUsuario.name_id = filaDatoExtraVirtuosoProy.DatoExtraID;
-						datosExtraUsuario.value_id = filaDatoExtraVirtuosoProy.DatoExtraID;
-						datosExtraUsuario.value = filaDatoExtraProyVirtuosoIdent.Opcion;
-						pListaJsonDatosExtra.Add(datosExtraUsuario);
-					}
-				}
-			}
-
-			foreach (AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad filaDatoExtraProyIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad)
-			{
-				if (pDataWrapperProyecto.ListaDatoExtraProyecto != null && pDataWrapperProyecto.ListaDatoExtraProyecto.Count > 0)
-				{
-					List<AD.EntityModel.Models.ProyectoDS.DatoExtraProyecto> filasDatoExtraProy = pDataWrapperProyecto.ListaDatoExtraProyecto.Where(dato => dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(filaDatoExtraProyIdent.DatoExtraID)).ToList();
-					List<AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcion> filasDatoExtraProyOpcion = pDataWrapperProyecto.ListaDatoExtraProyectoOpcion.Where(dato => dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.OpcionID.Equals(filaDatoExtraProyIdent.OpcionID)).ToList();
-
-					if (filasDatoExtraProy.Count > 0 && filasDatoExtraProyOpcion.Count > 0)
-					{
-						ExtraUserData datosExtraUsuario = new ExtraUserData();
-						datosExtraUsuario.name = filasDatoExtraProy[0].Titulo;
-						datosExtraUsuario.name_id = filasDatoExtraProy[0].DatoExtraID;
-						datosExtraUsuario.value = filasDatoExtraProyOpcion[0].Opcion;
-						datosExtraUsuario.value_id = filasDatoExtraProyOpcion[0].OpcionID;
-						pListaJsonDatosExtra.Add(datosExtraUsuario);
-					}
-				}
-			}
-
-			foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad filaDatoExtraProyVirtuosoIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad)
-			{
-				if (pDataWrapperProyecto.ListaDatoExtraProyectoVirtuoso != null && pDataWrapperProyecto.ListaDatoExtraProyectoVirtuoso.Count > 0)
-				{
-					AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoVirtuoso filaDatoExtraVirtuosoProy = pDataWrapperProyecto.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(filaDatoExtraProyVirtuosoIdent.DatoExtraID));
-
-					if (filaDatoExtraVirtuosoProy != null)
-					{
-						ExtraUserData datosExtraUsuario = new ExtraUserData();
-						datosExtraUsuario.name = filaDatoExtraVirtuosoProy.Titulo;
-						datosExtraUsuario.name_id = filaDatoExtraVirtuosoProy.DatoExtraID;
-						datosExtraUsuario.value_id = filaDatoExtraVirtuosoProy.DatoExtraID;
-						datosExtraUsuario.value = filaDatoExtraProyVirtuosoIdent.Opcion;
-						pListaJsonDatosExtra.Add(datosExtraUsuario);
-					}
-				}
-			}
-		}
-
-		/// <summary>
-		///
-		/// </summary>
-		/// <param name="pUsuarioID">Identificador del usuario que participa en el proyecto con alguna identidad</param>
-		/// <param name="pProyectoID">Identificador del proyecto en el que participa el usuario</param>
-		/// <param name="pListaJsonDatosExtra">Lista de DatosExtra con las clausulas del registro</param>
-		/// <param name="listadoEventosusuarioProyecto">Eventos del proyecto activos durante el registro del usuario</param>
-		[NonAction]
-		private void ObtenerClausulasYEventosUsuarioEnProyecto(Guid pUsuarioID, Guid pProyectoID, ref List<ExtraUserData> pListaJsonDatosExtra, out List<UserEvent> pListadoEventosUsuarioProyecto)
-		{
-			if (pListaJsonDatosExtra == null)
-			{
-				pListaJsonDatosExtra = new List<ExtraUserData>();
-			}
-			pListadoEventosUsuarioProyecto = new List<UserEvent>();
-
-			ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			DataWrapperUsuario usuClauProyDS = proyCL.ObtenerClausulasRegitroProyecto(pProyectoID);
-			proyCL.Dispose();
-
-			UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			usuClauProyDS.Merge(usuCN.ObtenerProyClausulasUsuPorUsuarioID(pUsuarioID));
-			usuCN.Dispose();
-
-			foreach (ClausulaRegistro filaClausula in usuClauProyDS.ListaClausulaRegistro.Where(item => item.Tipo.Equals((short)TipoClausulaAdicional.Opcional)))
-			{
-				List<ProyRolUsuClausulaReg> filasProyRolClau = usuClauProyDS.ListaProyRolUsuClausulaReg.Where(item => item.UsuarioID.Equals(pUsuarioID) && item.ProyectoID.Equals(pProyectoID) && item.ClausulaID.Equals(filaClausula.ClausulaID)).ToList();
-
-				if (filasProyRolClau.Count > 0)
-				{
-					ExtraUserData jsonDatosExtra = new ExtraUserData();
-					jsonDatosExtra.name = filaClausula.Texto;
-					jsonDatosExtra.name_id = filaClausula.ClausulaID;
-					jsonDatosExtra.value = filasProyRolClau[0].Valor.ToString();
-					pListaJsonDatosExtra.Add(jsonDatosExtra);
-				}
-			}
-
-			IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(pUsuarioID, pProyectoID);
-			identCN.Dispose();
-
-			if (!identidadID.Equals(Guid.Empty))
-			{
-				ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-				DataSet ds = proyCN.ObtenerEventoProyectoIdentidadID(pProyectoID, identidadID);
-				proyCN.Dispose();
-
-				if (ds.Tables["EventosProyectoIdentidad"] != null && ds.Tables["EventosProyectoIdentidad"].Rows.Count > 0)
-				{
-					foreach (DataRow fila in ds.Tables["EventosProyectoIdentidad"].Rows)
-					{
-						UserEvent jsonEventoUsuario = new UserEvent();
-						jsonEventoUsuario.event_id = (Guid)fila["EventoID"];
-						jsonEventoUsuario.name = fila["Nombre"].ToString();
-						jsonEventoUsuario.Date = (DateTime)fila["Fecha"];
-						pListadoEventosUsuarioProyecto.Add(jsonEventoUsuario);
-					}
-				}
-			}
-		}
-		[NonAction]
-		private void RellenarDatosPersona(Identidad pIdentidad, User pUsuarioJSON, string pIdioma)
-		{
-			bool CambiadoNombre = (pIdentidad.Persona.FilaPersona.Nombre != pUsuarioJSON.name);
-			bool CambiadoApellidos = (pIdentidad.Persona.FilaPersona.Apellidos != pUsuarioJSON.last_name);
-
-			if (!string.IsNullOrEmpty(pUsuarioJSON.name))
-			{
-				pIdentidad.Persona.Nombre = pUsuarioJSON.name;
-			}
-			if (!string.IsNullOrEmpty(pUsuarioJSON.last_name))
-			{
-				pIdentidad.Persona.Apellidos = pUsuarioJSON.last_name;
-			}
-			if (!string.IsNullOrEmpty(pUsuarioJSON.email))
-			{
-				pIdentidad.Persona.Mail = pUsuarioJSON.email;
-			}
-			if (!string.IsNullOrEmpty(pUsuarioJSON.sex))
-			{
-				pIdentidad.Persona.Sexo = pUsuarioJSON.sex;
-			}
-			if (pUsuarioJSON.born_date != null && !pUsuarioJSON.born_date.Equals(DateTime.MinValue))
-			{
-				pIdentidad.Persona.Fecha = pUsuarioJSON.born_date;
-			}
-			if (pUsuarioJSON.country_id != null && !pUsuarioJSON.country_id.Equals(Guid.Empty))
-			{
-				pIdentidad.Persona.PaisID = pUsuarioJSON.country_id;
-			}
-			if (pUsuarioJSON.province_id != null && !pUsuarioJSON.province_id.Equals(Guid.Empty))
-			{
-				pIdentidad.Persona.ProvinciaID = pUsuarioJSON.province_id;
-			}
-			if (!string.IsNullOrEmpty(pUsuarioJSON.provice))
-			{
-				pIdentidad.Persona.Provincia = pUsuarioJSON.provice;
-			}
-			if (!string.IsNullOrEmpty(pUsuarioJSON.city))
-			{
-				pIdentidad.Persona.Localidad = pUsuarioJSON.city;
-			}
-			if (!string.IsNullOrEmpty(pUsuarioJSON.postal_code))
-			{
-				pIdentidad.Persona.CodPostal = pUsuarioJSON.postal_code;
-			}
-
-			// Modificar los tags de nombre de persona
-			if (CambiadoNombre || CambiadoApellidos)
-			{
-				UtilIdiomas utilIdiomas = new UtilIdiomas(pIdioma, mLoggingService, mEntityContext, mConfigService,mRedisCacheWrapper);
-				string profesorSexo = "";
-				if (pIdentidad.Persona.Sexo.Equals("H"))
-				{
-					profesorSexo = utilIdiomas.GetText("SOLICITUDESNUEVOSPROFESORES", "PROFESOR") + " · ";
-				}
-				else
-				{
-					profesorSexo = utilIdiomas.GetText("SOLICITUDESNUEVOSPROFESORES", "PROFESORA") + " · ";
-				}
-
-				foreach (AD.EntityModel.Models.IdentidadDS.Perfil filaPerfil in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaPerfil.Where(perfil => perfil.PersonaID.Equals(pIdentidad.PersonaID)).ToList())
-				{
-					string profesor = "";
-					if (pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaProfesor.Where(item => item.PerfilID.Equals(filaPerfil.PerfilID)).Count() > 0)
-					{
-						profesor = profesorSexo;
-					}
-					filaPerfil.NombrePerfil = profesor + pIdentidad.Persona.NombreConApellidos;
-
-					if (CambiadoNombre)
-					{
-						foreach (AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad in filaPerfil.Identidad)
-						{
-							filaIdentidad.NombreCortoIdentidad = profesor + pIdentidad.Persona.Nombre;
-						}
-					}
-				}
-			}
-
-		}
-
-		/// <summary>
-		/// Agregamos los campos extra de la solicitud a la identidadDS.
-		/// </summary>
-		/// <param name="pIidentidadDS">DS de identidades donde agregamos los nuevos campos.</param>
-		/// <param name="pIdSolicitud">GUID de la solicitud de usuario</param>
-		/// <param name="pSolicitudDW">DS con los datos de la solicitud</param>
-		[NonAction]
-		private void GuardarDatosExtraDeSolicitudEnIdentidad(DataWrapperIdentidad pDataWrapperIdentidad, Guid pPerfilID, Guid pIdSolicitud, DataWrapperSolicitud pSolicitudDW, List<ExtraUserData> pDatosExtra)
-		{
-			//Recorrer las tablas datoextrasolicitudproyectovirtuoso, datoextrasolicitudecosistemavirtuoso, datoextrasolicitudproyecto, datoextrasolicitudecosistema y para la solicitudID agregar los campos para el perfilID.
-			foreach (DatoExtraProyectoOpcionSolicitud deevs in pSolicitudDW.ListaDatoExtraProyectoOpcionSolicitud.Where(item => item.SolicitudID.Equals(pIdSolicitud)))
-			{
-				AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad = pDataWrapperIdentidad.ListaIdentidad.FirstOrDefault(identidad => identidad.PerfilID.Equals(pPerfilID) && identidad.ProyectoID.Equals(deevs.ProyectoID));
-				AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad datoExtraProyectoOpcionIdentidad = new AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad();
-				datoExtraProyectoOpcionIdentidad.OrganizacionID = deevs.OrganizacionID;
-				datoExtraProyectoOpcionIdentidad.ProyectoID = deevs.ProyectoID;
-				datoExtraProyectoOpcionIdentidad.DatoExtraID = deevs.DatoExtraID;
-				datoExtraProyectoOpcionIdentidad.OpcionID = deevs.OpcionID;
-				datoExtraProyectoOpcionIdentidad.IdentidadID = filaIdentidad.IdentidadID;
-				pDataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
-				mEntityContext.DatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
-			}
-
-			foreach (DatoExtraEcosistemaOpcionSolicitud deevs in pSolicitudDW.ListaDatoExtraEcosistemaOpcionSolicitud.Where(item => item.SolicitudID.Equals(pIdSolicitud)))
-			{
-				AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil datoExtraEcosistemaOpcionPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil();
-				datoExtraEcosistemaOpcionPerfil.DatoExtraID = deevs.DatoExtraID;
-				datoExtraEcosistemaOpcionPerfil.OpcionID = deevs.OpcionID;
-				datoExtraEcosistemaOpcionPerfil.PerfilID = pPerfilID;
-				pDataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
-				mEntityContext.DatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
-			}
-		}
-
-		[NonAction]
-		private void GuardarDatosExtraSolicitud(DataWrapperSolicitud pSolicitudDW, Solicitud pSolicitud, List<ExtraUserData> pDatosExtraUsuario, Guid pOrganizacionID, Guid pProyectoID, bool pEsEcosistema)
-		{
-			//cargar la configfuraion
-			//DatoExtraEcosistemaOpcion
-			//DatoExtraEcosistemaVirtuoso
-
-			ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperProyecto dataWrapperProyecto = proyCN.ObtenerDatosExtraProyectoPorID(pProyectoID);
-			proyCN.Dispose();
-
-
-			foreach (ExtraUserData datoExtra in pDatosExtraUsuario)
-			{
-				if (datoExtra.name_id != null && !datoExtra.name_id.Equals(Guid.Empty))
-				{
-					if (pEsEcosistema)
-					{
-						if (datoExtra.value_id != null && !datoExtra.value_id.Equals(Guid.Empty) && dataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Count(dato => dato.DatoExtraID.Equals(datoExtra.name_id) && dato.OpcionID.Equals(datoExtra.value_id)) > 0)
-						{
-							pSolicitudDW.ListaDatoExtraEcosistemaOpcionSolicitud.Add(new DatoExtraEcosistemaOpcionSolicitud { DatoExtraID = datoExtra.name_id, OpcionID = datoExtra.value_id, SolicitudID = pSolicitud.SolicitudID });
-						}
-						else if (!string.IsNullOrEmpty(datoExtra.value) && dataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.Count(dato => dato.DatoExtraID.Equals(datoExtra.name_id)) > 0)
-						{
-							pSolicitudDW.ListaDatoExtraEcosistemaVirtuosoSolicitud.Add(new DatoExtraEcosistemaVirtuosoSolicitud { DatoExtraID = datoExtra.name_id, SolicitudID = pSolicitud.SolicitudID, Opcion = datoExtra.value });
-						}
-					}
-					else
-					{
-						if (datoExtra.value_id != null && !datoExtra.value_id.Equals(Guid.Empty) && dataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Count(dato => dato.DatoExtraID.Equals(datoExtra.name_id) && dato.OpcionID.Equals(datoExtra.value_id)) > 0)
-						{
-							pSolicitudDW.ListaDatoExtraProyectoOpcionSolicitud.Add(new DatoExtraProyectoOpcionSolicitud { OrganizacionID = pOrganizacionID, ProyectoID = pProyectoID, DatoExtraID = datoExtra.name_id, OpcionID = datoExtra.value_id, SolicitudID = pSolicitud.SolicitudID });
-						}
-						else if (!string.IsNullOrEmpty(datoExtra.value) && dataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.Count(dato => dato.DatoExtraID.Equals(datoExtra.name_id)) > 0)
-						{
-							pSolicitudDW.ListaDatoExtraProyectoVirtuosoSolicitud.Add(new DatoExtraProyectoVirtuosoSolicitud { OrganizacionID = pOrganizacionID, ProyectoID = pProyectoID, DatoExtraID = datoExtra.name_id, SolicitudID = pSolicitud.SolicitudID, Opcion = datoExtra.value });
-						}
-					}
-				}
-			}
-		}
-		[NonAction]
-		private void GuardarDatosExtra(List<ExtraUserData> pDatosExtraUsuario, Identidad pIdentidad, Dictionary<int, string> pDicDatosExtraProyectoVirtuoso, Dictionary<int, string> pDicDatosExtraEcosistemaVirtuoso)
-		{
-			DataWrapperIdentidad dataWrapperIdentidad = pIdentidad.GestorIdentidades.DataWrapperIdentidad;
-			ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperProyecto datosExtraProyectoDWP = proyectoCN.ObtenerDatosExtraProyectoPorID(pIdentidad.FilaIdentidad.ProyectoID);
-			proyectoCN.Dispose();
-
-			foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil filaDatoExtraEcosistema in dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil)
-			{
-				if (filaDatoExtraEcosistema.PerfilID == pIdentidad.PerfilID)
-				{
-					mEntityContext.Entry(filaDatoExtraEcosistema).State = EntityState.Deleted;
-				}
-			}
-
-			foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil filaDatoExtraEcosistemaVirtuoso in dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil)
-			{
-				if (filaDatoExtraEcosistemaVirtuoso.PerfilID == pIdentidad.PerfilID)
-				{
-					mEntityContext.Entry(filaDatoExtraEcosistemaVirtuoso).State = EntityState.Deleted;
-				}
-			}
-			foreach (AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad filaDatoExtra in dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad)
-			{
-				if (filaDatoExtra.IdentidadID == pIdentidad.Clave)
-				{
-					mEntityContext.Entry(filaDatoExtra).State = EntityState.Deleted;
-				}
-			}
-
-			foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad filaDatoExtraVirtuoso in dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad)
-			{
-				if (filaDatoExtraVirtuoso.IdentidadID == pIdentidad.Clave)
-				{
-					mEntityContext.Entry(filaDatoExtraVirtuoso).State = EntityState.Deleted;
-				}
-			}
-			mEntityContext.SaveChanges();
-			Dictionary<Guid, Guid> dicDatosExtraProyecto = new Dictionary<Guid, Guid>();
-			Dictionary<Guid, Guid> dicDatosExtraEcosistema = new Dictionary<Guid, Guid>();
-
-			if (pDatosExtraUsuario != null)
-			{
-				foreach (ExtraUserData campoExtra in pDatosExtraUsuario)
-				{
-					string nombreCampo = campoExtra.name;
-					Guid nombreID = campoExtra.value_id;
-					string valorCampo = campoExtra.value;
-					Guid valorID = campoExtra.value_id;
-					string nombreCorto = campoExtra.short_name;
-
-					if ((nombreID != null && !nombreID.Equals(Guid.Empty)) || !string.IsNullOrEmpty(nombreCorto))
-					{
-						AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistema filaDatoExtraEcosistema = datosExtraProyectoDWP.ListaDatoExtraEcosistema.FirstOrDefault(dato => dato.DatoExtraID.Equals(nombreID));
-						if (filaDatoExtraEcosistema != null)
-						{
-							if (valorID != null && !valorID.Equals(Guid.Empty))
-							{
-								dicDatosExtraEcosistema.Add(filaDatoExtraEcosistema.DatoExtraID, valorID);
-							}
-						}
-						else
-						{
-							AD.EntityModel.Models.ProyectoDS.DatoExtraProyecto filaDatoExtraProyecto = datosExtraProyectoDWP.ListaDatoExtraProyecto.FirstOrDefault(dato => dato.OrganizacionID.Equals(pIdentidad.FilaIdentidad.OrganizacionID) && dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(nombreID));
-							if (filaDatoExtraProyecto != null && valorID != null && !valorID.Equals(Guid.Empty))
-							{
-								dicDatosExtraProyecto.Add(filaDatoExtraProyecto.DatoExtraID, valorID);
-							}
-						}
-
-						AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaVirtuoso filasDatoExtraEcosistemaVirtuoso = datosExtraProyectoDWP.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.DatoExtraID.Equals(nombreID) || dato.NombreCampo.Equals(nombreCorto));
-						if (filasDatoExtraEcosistemaVirtuoso != null)
-						{
-							pDicDatosExtraEcosistemaVirtuoso.Add(filasDatoExtraEcosistemaVirtuoso.Orden, valorCampo);
-						}
-						else
-						{
-							AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoVirtuoso filasDatoExtraProyectoVirtuoso = datosExtraProyectoDWP.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.OrganizacionID.Equals(pIdentidad.FilaIdentidad.OrganizacionID) && dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(nombreID) || dato.NombreCampo.Equals(nombreCorto));
-							if (filasDatoExtraProyectoVirtuoso != null)
-							{
-								pDicDatosExtraProyectoVirtuoso.Add(filasDatoExtraProyectoVirtuoso.Orden, valorCampo);
-							}
-						}
-					}
-				}
-			}
-			foreach (Guid datoExtra in dicDatosExtraEcosistema.Keys)
-			{
-				AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil datoExtraEcosistemaOpcionPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil();
-				datoExtraEcosistemaOpcionPerfil.DatoExtraID = datoExtra;
-				datoExtraEcosistemaOpcionPerfil.DatoExtraID = dicDatosExtraEcosistema[datoExtra];
-				datoExtraEcosistemaOpcionPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
-				dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
-				mEntityContext.DatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
-			}
-
-			foreach (int orden in pDicDatosExtraEcosistemaVirtuoso.Keys)
-			{
-				if (!string.IsNullOrEmpty(pDicDatosExtraEcosistemaVirtuoso[orden].Trim()) && pDicDatosExtraEcosistemaVirtuoso[orden].Trim() != "|")
-				{
-					string valor = pDicDatosExtraEcosistemaVirtuoso[orden].Trim();
-					if (valor.EndsWith("|"))
-					{
-						valor = valor.Substring(0, valor.Length - 1);
-					}
-
-					valor = IntentoObtenerElPais(valor);
-
-					AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil datoExtraEcosistemaVirtuosoPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil();
-					datoExtraEcosistemaVirtuosoPerfil.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.Orden.Equals(orden)).DatoExtraID;
-					datoExtraEcosistemaVirtuosoPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
-					datoExtraEcosistemaVirtuosoPerfil.Opcion = valor;
-					dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
-					mEntityContext.DatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
-				}
-			}
-			foreach (Guid datoExtra in dicDatosExtraProyecto.Keys)
-			{
-				AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad datoExtraProyectoOpcionIdentidad = new AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad();
-				datoExtraProyectoOpcionIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
-				datoExtraProyectoOpcionIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
-				datoExtraProyectoOpcionIdentidad.DatoExtraID = datoExtra;
-				datoExtraProyectoOpcionIdentidad.OpcionID = dicDatosExtraProyecto[datoExtra];
-				datoExtraProyectoOpcionIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
-				mEntityContext.DatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
-				dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
-			}
-
-			foreach (int orden in pDicDatosExtraProyectoVirtuoso.Keys)
-			{
-				if (!string.IsNullOrEmpty(pDicDatosExtraProyectoVirtuoso[orden].Trim()) && pDicDatosExtraProyectoVirtuoso[orden].Trim() != "|")
-				{
-					string valor = pDicDatosExtraProyectoVirtuoso[orden].Trim();
-					if (valor.EndsWith("|"))
-					{
-						valor = valor.Substring(0, valor.Length - 1);
-					}
-
-					valor = IntentoObtenerElPais(valor);
-
-					AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad datoExtraProyectoVirtuosoIdentidad = new AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad();
-					datoExtraProyectoVirtuosoIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
-					datoExtraProyectoVirtuosoIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
-					datoExtraProyectoVirtuosoIdentidad.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.Orden == orden).DatoExtraID;
-					datoExtraProyectoVirtuosoIdentidad.Opcion = valor;
-					datoExtraProyectoVirtuosoIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
-					mEntityContext.DatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
-					dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
-				}
-			}
-		}
-
-		[NonAction]
-		private void EditarSuscripciones(List<Guid> pListacategorias, Identidad pIdentidad)
-		{
-			SuscripcionCN suscCN = new SuscripcionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperSuscripcion suscDS = suscCN.ObtenerSuscripcionesDePerfil(pIdentidad.FilaIdentidad.PerfilID, false);
-			GestionSuscripcion gestorSuscripciones = new GestionSuscripcion(suscDS, mLoggingService, mEntityContext);
-			Suscripcion suscripcion = gestorSuscripciones.ObtenerSuscripcionAProyecto(pIdentidad.FilaIdentidad.ProyectoID);
-
-			TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-			GestionTesauro gestorTesauro = new GestionTesauro(tesauroCL.ObtenerTesauroDeProyecto(pIdentidad.FilaIdentidad.ProyectoID), mLoggingService, mEntityContext);
-			gestorTesauro.CargarCategorias();
-			tesauroCL.Dispose();
-
-			if (suscripcion == null)
-			{
-				Guid suscripcionid = gestorSuscripciones.AgregarNuevaSuscripcion(pIdentidad, 1);
-				gestorSuscripciones.CrearSuscripcionTesauroProyecto(suscripcionid, pIdentidad.FilaIdentidad.OrganizacionID, pIdentidad.FilaIdentidad.ProyectoID, gestorTesauro.TesauroActualID);
-
-				suscripcion = gestorSuscripciones.ObtenerSuscripcionAProyecto(pIdentidad.FilaIdentidad.ProyectoID);
-			}
-
-			if (suscripcion != null)
-			{
-				if (suscripcion.FilasCategoriasVinculadas != null)
-				{
-					foreach (AD.EntityModel.Models.Suscripcion.CategoriaTesVinSuscrip filaCat in suscripcion.FilasCategoriasVinculadas.ToList())
-					{
-						if (!pListacategorias.Contains(filaCat.CategoriaTesauroID))
-						{
-							//Si tengo una categoría que no está en el selector la quito del DataWrapper
-							suscripcion.FilasCategoriasVinculadas.Remove(filaCat);
-							mEntityContext.CategoriaTesVinSuscrip.Remove(filaCat);
-						}
-						else
-						{
-							if (!pListacategorias.Contains(filaCat.CategoriaTesauroID))
-							{
-								//Si la categoría está en el selector, en el DataWrapper y no está seleccionada, la elimino de la lista para dejar sólo las añadidas
-								pListacategorias.Remove(filaCat.CategoriaTesauroID);
-							}
-						}
-					}
-				}
-				foreach (Guid catID in pListacategorias)
-				{
-					//Ya sólo quedan categorías añadidas, así que añado las filas
-					suscripcion.GestorSuscripcion.VincularCategoria(suscripcion, gestorTesauro.ListaCategoriasTesauro[catID]);
-				}
-
-				suscripcion.FilaSuscripcion.Periodicidad = (short)PeriodicidadSuscripcion.NoEnviar;
-				suscCN.ActualizarSuscripcion();
-			}
-			suscCN.Dispose();
-		}
-		[NonAction]
-		private string IntentoObtenerElPais(string pValor)
-		{
-			PaisCL paisCL = new PaisCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-			DataWrapperPais paisDW = paisCL.ObtenerPaisesProvincias();
-
-			foreach (Pais fila in paisDW.ListaPais)
-			{
-				if (fila.PaisID.ToString() == pValor)
-				{
-					pValor = fila.Nombre;
-				}
-			}
-
-			paisCL.Dispose();
-
-			return pValor;
-		}
-		[NonAction]
-		private void EliminarCaches(Identidad pIdentidad)
-		{
-			//TODO : Si se cambia la foto de una organización, hay que pedirle al servicio de refresco de cache que borre las caches de los miembros de la organización
-			//TODO : Si se cambia algun dato de la organizacion, hay que pedirle al servicio de refresco de cache que borre las caches de los miembros de la organización
-
-			List<string> listaClavesInvalidar = new List<string>();
-
-			IdentidadCL identidadCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			foreach (Guid perfilID in pIdentidad.GestorIdentidades.ListaPerfiles.Keys)
-			{
-				string claveIdentidadActual = $"{NombresCL.IdentidadActual}_{pIdentidad.PersonaID}_{perfilID}";
-				string clavePerfil = $"{NombresCL.PerfilMVC}_{perfilID}";
-				listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(claveIdentidadActual).ToLower());
-				listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(clavePerfil).ToLower());
-			}
-
-			foreach (Guid identidadID in pIdentidad.GestorIdentidades.ListaIdentidades.Keys)
-			{
-				string claveFichaIdentidad = $"{NombresCL.FichaIdentidadMVC}_{identidadID}";
-				string claveInfoExtraFichaIdentidad = $"{NombresCL.InfoExtraFichaIdentidadMVC}_{identidadID}";
-				listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(claveFichaIdentidad).ToLower());
-				listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(claveInfoExtraFichaIdentidad).ToLower());
-			}
-
-			identidadCL.InvalidarCachesMultiples(listaClavesInvalidar);
-			identidadCL.Dispose();
-		}
-
-		[NonAction]
-		private string GenerarLoginUsuario(string pNombre, string pApellidos, ref int pHashNumUsu)
-		{
-			string loginUsuario = $"{UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pNombre)}-{UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pApellidos)}";
-			if (loginUsuario.Length > 12)
-			{
-				loginUsuario = loginUsuario.Substring(0, 12);
-			}
-
-			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			if (usuarioCN.ExisteUsuarioEnBD(loginUsuario))
-			{
-				loginUsuario = usuarioCN.ObtenerLoginLibre(loginUsuario);
-			}
-
-			usuarioCN.Dispose();
-
-			return loginUsuario;
-		}
-
-		[NonAction]
-		public string GenerarNombreCortoUsuario(ref string pLoginUsuario, string pNombre, string pApellidos, DataWrapperUsuario pDataWrapperUsuario, int pIntentos = 0)
-		{
-			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			string nombreCortoUsuario = pLoginUsuario;
-			int hashNumUsu = 1;
-			if (usuarioCN.ExisteNombreCortoEnBD(nombreCortoUsuario))
-			{
-				// El login está siendo usado como nombrecorto, le busco uno a partir del nombre y apellidos 
-				string loginUsuario = UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pNombre) + '-' + UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pApellidos);
-				if (loginUsuario.Length > 12)
-				{
-					loginUsuario = loginUsuario.Substring(0, 12);
-				}
-
-				nombreCortoUsuario = usuarioCN.ObtenerNombreCortoLibre(loginUsuario);
-				// Establezco el mismo login que nombre corto. Se ya existía el nombre corto, lo más probable es que también exista el login
-				pLoginUsuario = nombreCortoUsuario;
-			}
-			AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = new AD.EntityModel.Models.UsuarioDS.Usuario();
-			filaUsuario.UsuarioID = Guid.NewGuid();
-			filaUsuario.Login = pLoginUsuario;
-			filaUsuario.Password = " ";
-			filaUsuario.EstaBloqueado = true;
-			filaUsuario.NombreCorto = nombreCortoUsuario;
-			filaUsuario.Version = 1;
-			filaUsuario.FechaCambioPassword = DateTime.Now;
-			filaUsuario.Validado = (short)ValidacionUsuario.Verificado;
-			mEntityContext.Usuario.Add(filaUsuario);
-			try
-			{
-				//Reservo el nombrecorto del usuario
-				usuarioCN.GuardarActualizaciones(pDataWrapperUsuario);
-
-				// Marco la fila como eliminada para que al crear el usuario de verdad, primero elimine la fila de reserva del nombrecorto
-				mEntityContext.Entry(filaUsuario).State = EntityState.Deleted;
-			}
-			catch (Exception ex)
-			{
-				if (pIntentos < 10)
-				{
-					if (pIntentos > 2)
-					{
-						// Hay más de un proceso intentando registrar al mismo usuario, espero un número aleatorio de segundos para desbloquear la situación
-						Random rnd = new Random();
-						int sleepTime = rnd.Next(1, 10);
-						Thread.Sleep(sleepTime * 1000);
-					}
-					mLoggingService.GuardarLogError(ex, $"Ha fallado la creación del usuario {pLoginUsuario} con nombre corto {nombreCortoUsuario}. Le buscamos otro nombre");
-
-					pLoginUsuario = GenerarLoginUsuario(pNombre, pApellidos, ref hashNumUsu);
-					mEntityContext.Entry(filaUsuario).State = EntityState.Deleted;
-					nombreCortoUsuario = GenerarNombreCortoUsuario(ref pLoginUsuario, pNombre, pApellidos, pDataWrapperUsuario, pIntentos + 1);
-				}
-				else
-				{
-					// Si en 10 intentos no hemos sido capaces de crear el usuario, lo dejamos por imposible y devolvemos error.
-					throw;
-				}
-			}
-			usuarioCN.Dispose();
-			return nombreCortoUsuario;
-		}
-		[NonAction]
-		private string ObtenerClausulasAdicionales(Guid pProyectoID, List<ExtraUserData> pDatosExtraUsuario)
-		{
-			string calusulasAdicionales = "";
-			ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			DataWrapperUsuario usuClauProyDW = proyCL.ObtenerClausulasRegitroProyecto(pProyectoID);
-			proyCL.Dispose();
-
-			List<ProyRolUsuClausulaReg> filasProyRolClau = usuClauProyDW.ListaProyRolUsuClausulaReg.Where(item => item.ProyectoID.Equals(pProyectoID)).ToList();
-			foreach (ExtraUserData datoextra in pDatosExtraUsuario)
-			{
-				foreach (ClausulaRegistro filaClausula in usuClauProyDW.ListaClausulaRegistro.Where(item => item.Tipo.Equals((short)TipoClausulaAdicional.Opcional)))
-				{
-					if (datoextra.name_id.Equals(filaClausula.ClausulaID))
-					{
-						calusulasAdicionales += filaClausula.ClausulaID + ", ";
-						break;
-					}
-				}
-			}
-			return calusulasAdicionales;
-		}
-		[NonAction]
-		private void ValidarNombresProyectosYOrganizacion(Guid pOrganizacionID, List<string> pNombresCortosProyectos, out List<Guid> pListaProyectosID)
-		{
-			pListaProyectosID = new List<Guid>();
-			ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			foreach (string proyecto in pNombresCortosProyectos)
-			{
-				Guid proyectoID = proyCN.ObtenerProyectoIDPorNombre(proyecto);
-				if (!proyectoID.Equals(Guid.Empty))
-				{
-					bool participacion = orgCN.ParticipaOrganizacionEnProyecto(proyectoID, pOrganizacionID);
-					if (participacion && !pListaProyectosID.Contains(proyectoID))
-					{
-						if (!pListaProyectosID.Contains(proyectoID))
-						{
-							pListaProyectosID.Add(proyectoID);
-						}
-					}
-					else
-					{
-						throw new GnossException("La organización no participa en el proyecto", HttpStatusCode.BadRequest);
-					}
-				}
-				else
-				{
-					throw new GnossException("La comunidad no existe", HttpStatusCode.BadRequest);
-				}
-			}
-		}
-		[NonAction]
-		private string ValidacionNombresGruposYOrganizacion(Guid pOrganizacionID, List<string> pNombresCortosGrupos, Dictionary<string, Guid> dicGrupos)
-		{
-			string error = string.Empty;
-			IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			foreach (string grupo in pNombresCortosGrupos)
-			{
-				List<string> listaGrupos = new List<string>();
-				listaGrupos.Add(grupo);
-				List<Guid> gruposID = identCN.ObtenerGruposIDPorNombreCortoYOrganizacion(listaGrupos, pOrganizacionID);
-
-				if (gruposID.Count > 0)
-				{
-					if (!dicGrupos.ContainsKey(grupo))
-					{
-						dicGrupos.Add(grupo, gruposID[0]);
-					}
-				}
-				else
-				{
-					error += "\r\n ERROR: El grupo " + grupo + " pasado como parámetro en NombresCortosGrupos no pertenece a la organización.";
-				}
-			}
-
-			return error;
-		}
-
-		[NonAction]
-		private void AgregarParticipantesGrupoOrganizacion(Guid pOrganizacionID, List<Guid> pListaParticipantes, GrupoIdentidades pGrupo)
-		{
-			IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			List<Guid> listaNuevasIdentidades = new List<Guid>();
-
-			StringBuilder sb = new StringBuilder();
-
-			foreach (Guid identidad in pListaParticipantes)
-			{
-				if (!pGrupo.Participantes.ContainsKey(identidad))
-				{
-					AD.EntityModel.Models.IdentidadDS.GrupoIdentidadesParticipacion filaGrupoIdentidadesParticipacion = new AD.EntityModel.Models.IdentidadDS.GrupoIdentidadesParticipacion();
-
-					filaGrupoIdentidadesParticipacion.GrupoID = pGrupo.Clave;
-					filaGrupoIdentidadesParticipacion.IdentidadID = identidad;
-					filaGrupoIdentidadesParticipacion.FechaAlta = DateTime.Now;
-
-					pGrupo.GestorIdentidades.DataWrapperIdentidad.ListaGrupoIdentidadesParticipacion.Add(filaGrupoIdentidadesParticipacion);
-					mEntityContext.GrupoIdentidadesParticipacion.Add(filaGrupoIdentidadesParticipacion);
-
-					sb.Append(FacetadoAD.GenerarTripleta("<http://gnoss/" + pGrupo.Clave.ToString().ToUpper() + ">", "<http://gnoss/hasparticipanteID>", "<http://gnoss/" + identidad.ToString().ToUpper() + ">"));
-
-					listaNuevasIdentidades.Add(identidad);
-				}
-			}
-
-			identidadCN.ActualizaIdentidades();
-
-			FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			facetadoCN.InsertaTripletas(ProyectoAD.MyGnoss.ToString(), sb.ToString(), 0, false);
-			facetadoCN.Dispose();
-
-			////Notificamos a los usuarios de que han sido agregados al grupo.
-			//EnviarMensajeMiembros(listaNuevasIdentidades, Grupo.Nombre, Grupo.NombreCorto, false);
-
-			//ControladorGrupos.ActualizarBase(ProyectoAD.MetaProyecto, pGrupo.Clave);
-
-			List<Guid> perfilesDeIdentidadesNuevas = identidadCN.ObtenerPerfilesDeIdentidades(listaNuevasIdentidades);
-
-			FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			foreach (Guid perfilID in perfilesDeIdentidadesNuevas)
-			{
-				facetadoCL.InvalidarCacheQueContengaCadena(NombresCL.PRIMEROSRECURSOS + "_" + ProyectoAD.MyGnoss.ToString() + "_" + perfilID);
-			}
-
-			facetadoCL.Dispose();
-			identidadCN.Dispose();
-
-			IdentidadCL identidadCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-			identidadCL.InvalidarCacheMiembrosOrganizacionParaFiltroGrupos(pOrganizacionID);
-			identidadCL.InvalidarCacheGrupoPorNombreCortoYOrganizacion(pGrupo.NombreCorto, pOrganizacionID);
-			identidadCL.Dispose();
-		}
-
-		/// <summary>
-		/// Eliminamos a un usuario de un grupo de organizacion
-		/// </summary>
-		/// <param name="pOrganizacionID">Identidad de la organizacion</param>
-		/// <param name="pIdentidadID">Identidad del usuario</param>
-		/// <param name="pGrupoID">Identidad del grupo</param>
-		/// <param name="pNombreCortoGrupo">Nombre corto del grupo</param>
-		[NonAction]
-		private void EliminarParticipanteGrupoOrganizacion(Guid pOrganizacionID, Guid pIdentidadID, Guid pGrupoID, string pNombreCortoGrupo)
-		{
-			IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			AD.EntityModel.Models.IdentidadDS.GrupoIdentidadesParticipacion grupoIdentidadesParticipacion = identidadCN.ObtenerGrupoIdentidadesParticipacion(pGrupoID, pIdentidadID);
-
-			mEntityContext.GrupoIdentidadesParticipacion.Remove(grupoIdentidadesParticipacion);
-
-			identidadCN.ActualizaIdentidades();
-			
-			FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			facetadoCN.BorrarTripleta(ProyectoAD.MyGnoss.ToString(), $"<http://gnoss/{pGrupoID.ToString().ToUpper()}>", "<http://gnoss/hasparticipanteID>", $"<http://gnoss/{pIdentidadID.ToString().ToUpper()}>");
-			facetadoCN.Dispose();
-
-			Guid perfilID = identidadCN.ObtenerPerfilIDDeIdentidadID(pIdentidadID).Value;
-
-			FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-			IdentidadCL identidadCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
-			
-			facetadoCL.InvalidarCacheQueContengaCadena($"{NombresCL.PRIMEROSRECURSOS}_{ProyectoAD.MyGnoss}_{perfilID}");
-			identidadCL.InvalidarCacheMiembrosOrganizacionParaFiltroGrupos(pOrganizacionID);
-			identidadCL.InvalidarCacheGrupoPorNombreCortoYOrganizacion(pNombreCortoGrupo, pOrganizacionID);
-			
-			identidadCL.Dispose();
-			facetadoCL.Dispose();
-			identidadCN.Dispose();
-		}
-
-
-		[NonAction]
-		private void AgregarParticipanteComunidadesParticipaGrupo(Guid pGrupoID, Guid pUsuarioID, GestionIdentidades pGestorIdentidades, Identidad pIdentidad, string pNombreCortoOrg)
-		{
-			//damos de alta al usuario en las comunidades en las que participan los grupos de organización en los que se va a añadir
-			ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			List<GrupoOrgParticipaProy> listaProysParticipaGr = proyCN.ObtenerProyectosParticipaGrupoOrganizacion(pGrupoID);
-
-			if (listaProysParticipaGr != null && listaProysParticipaGr.Count > 0)
-			{
-				Dictionary<Guid, bool> recibirNewsletterDefectoProyectos = proyCN.ObtenerProyectosConConfiguracionNewsletterPorDefecto();
-				List<Guid> idsProyectosGrupo = listaProysParticipaGr.Select(fila => fila.ProyectoID).ToList();
-				GestionProyecto gestorProyecto = new GestionProyecto(proyCN.ObtenerProyectosPorID(idsProyectosGrupo), mLoggingService, mEntityContext);
-				gestorProyecto.CargarGestor();
-
-				foreach (GrupoOrgParticipaProy fila in listaProysParticipaGr)
-				{
-					if (!usuCN.EstaUsuarioEnProyecto(pUsuarioID, fila.ProyectoID))
-					{
-						Proyecto proyecto = gestorProyecto.ListaProyectos[fila.ProyectoID];
-						RegistrarUsuarioEnComunidad(UsuarioOAuth, pGestorIdentidades, pIdentidad, proyecto, pUsuarioID, pNombreCortoOrg, (TiposIdentidad)fila.TipoPerfil, false, recibirNewsletterDefectoProyectos);
-
-						try
-						{
-							DataWrapperProyecto dataWrapperProyecto = proyCN.ObtenerAccionesExternasProyectoPorProyectoID(fila.ProyectoID);
-							ControladorIdentidades.AccionEnServicioExternoProyecto(TipoAccionExterna.Registro, pGestorIdentidades.GestorPersonas.ListaPersonas[pIdentidad.PersonaID.Value], fila.ProyectoID, pIdentidad.Clave, "", "", pIdentidad.FilaIdentidad.FechaAlta, dataWrapperProyecto);
-						}
-						catch (Exception ex)
-						{
-							mLoggingService.GuardarLogError(ex, "\r\n ERROR: AltaUsuarioGrupoOrganizacion. Error en llamada a acciones externas");
-						}
-					}
-				}
-			}
+				controPer.ActualizarEliminacionModeloBaseSimple(identidadInvitado.PersonaID.Value, proyectoID, PrioridadBase.Alta, mAvailableServices);
+			}
+            //Limpio Caches:
+            try
+            {
+                foreach (Guid perfilID in perfilesEliminados)
+                {
+                    //Invalido la cache de Mis comunidades
+                    ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+                    proyCL.InvalidarMisProyectos(perfilID);
+                    proyCL.Dispose();
+                }
+
+                foreach (Guid proyectoID in listaProyectosEliminados)
+                {
+                    //Invalidamos la cache de amigos en la comunidad
+                    AmigosCL amigosCL = new AmigosCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<AmigosCL>(), mLoggerFactory);
+                    amigosCL.InvalidarAmigosPertenecenProyecto(proyectoID);
+                    amigosCL.Dispose();
+                }
+
+                foreach (Guid identidadID in listaContactosEliminados)
+                {
+                    //Limpiamos la cache de los contactos
+                    AmigosCL amigosCL = new AmigosCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<AmigosCL>(), mLoggerFactory);
+                    amigosCL.InvalidarAmigos(identidadID);
+                    amigosCL.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex,mlogger);
+            }
+        }
+        [NonAction]
+        private User ObtenerJsonUsuarioProyecto(string pNombreCortoUsuario, string pEmail, Guid pUsuarioIDOauth, Guid pUsuarioID, string pNombreCortoComunidad, bool pObtenerPorEmail)
+        {
+            //como esta función se usa en varios métodos, en la de eliminación la petición Oauth ya se ha realizado y ya tenemos el usuario
+            if (pUsuarioIDOauth.Equals(Guid.Empty))
+            {
+                pUsuarioIDOauth = ComprobarPermisosOauth(mHttpContextAccessor.HttpContext.Request);
+                if (UsuarioOAuth.Equals(Guid.Empty))
+                {
+                    throw new GnossException("Invalid OAuth signature", HttpStatusCode.Unauthorized);
+                }
+            }
+
+            if (EsAdministradorProyectoMyGnoss(pUsuarioIDOauth))
+            {
+                PersonaCN personaCN = null;
+                ProyectoCN proyectoCN = null;
+                UsuarioCN usuarioCN = null;
+
+                if ((!string.IsNullOrEmpty(pNombreCortoUsuario) || !string.IsNullOrEmpty(pEmail) || !pUsuarioID.Equals(Guid.Empty)) && !string.IsNullOrEmpty(pNombreCortoComunidad))
+                {
+                    personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                    proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                    usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    if (usuarioCN.ExisteNombreCortoEnBD(pNombreCortoUsuario) || personaCN.ExisteEmail(pEmail) || usuarioCN.ExisteUsuarioEnBD(pUsuarioID))
+                    {
+                        Guid proyectoID = Guid.Empty;
+                        List<Guid> lista = proyectoCN.ObtenerProyectoIDOrganizacionIDPorNombreCorto(pNombreCortoComunidad);
+                        if (lista != null && lista.Count > 1)
+                        {
+                            proyectoID = lista[1];
+                        }
+                        if (proyectoID != Guid.Empty)
+                        {
+                            Guid usuarioID = Guid.Empty;
+                            //si se quiere obtener el usuario por usuarioID
+                            if (!pUsuarioID.Equals(Guid.Empty))
+                            {
+                                usuarioID = pUsuarioID;
+                            }
+                            else
+                            {
+                                //si se quiere obtener el usuario por NombreCorto o Email
+                                List<AD.EntityModel.Models.UsuarioDS.Usuario> tablaUsuario = null;
+
+                                if (pObtenerPorEmail && !string.IsNullOrEmpty(pEmail))
+                                {
+                                    tablaUsuario = usuarioCN.ObtenerUsuarioPorLoginOEmail(pEmail, proyectoID.Equals(ProyectoAD.MyGnoss)).ListaUsuario;
+                                }
+                                else if (!pObtenerPorEmail && !string.IsNullOrEmpty(pNombreCortoUsuario))
+                                {
+                                    tablaUsuario = usuarioCN.ObtenerUsuarioPorLoginOEmail(usuarioCN.ObtenerLoginUsuarioPorNombreCorto(pNombreCortoUsuario), proyectoID.Equals(ProyectoAD.MyGnoss)).ListaUsuario;
+                                }
+
+                                if (tablaUsuario.Count > 0)
+                                {
+                                    usuarioID = tablaUsuario[0].UsuarioID;
+                                }
+                            }
+
+                            if (usuarioID != Guid.Empty)
+                            {
+                                IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                                Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(usuarioID, proyectoID);
+                                if (identidadID != Guid.Empty)
+                                {
+                                    GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                                    if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+                                    {
+                                        Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                                        gestorIdentidades.DataWrapperIdentidad.Merge(identidadCN.ObtenerDatosExtraProyectoOpcionIdentidadPorIdentidadID(identidadID));
+                                        gestorIdentidades.CargarGestor();
+                                        gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
+                                        gestorIdentidades.GestorPersonas.CargarGestor();
+
+                                        DataWrapperProyecto dataWrapperProyecto = proyectoCN.ObtenerDatosExtraProyectoPorID(proyectoID);
+                                        User jsonUsuario = MontarJsonUsuario(identidad, dataWrapperProyecto, pNombreCortoComunidad);
+
+                                        return jsonUsuario;
+                                    }
+                                    else
+                                    {
+                                        throw new GnossException("The user does not participate in this community", HttpStatusCode.BadRequest);
+                                    }
+                                }
+                                else
+                                {
+                                    throw new GnossException("The user does not participate in this community", HttpStatusCode.BadRequest);
+                                }
+                            }
+                            else
+                            {
+                                throw new GnossException("The user does not participate in this community", HttpStatusCode.BadRequest);
+                            }
+                        }
+                        else
+                        {
+                            throw new GnossException("The community does not exist", HttpStatusCode.BadRequest);
+                        }
+                    }
+                    else
+                    {
+                        throw new GnossException("The user does not exist", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The requested params can not be empty", HttpStatusCode.BadRequest);
+                }
+            }
+            else
+            {
+                throw new GnossException("The OAuth user does not have permission to perform this action", HttpStatusCode.Unauthorized);
+            }
+
+        }
+        [NonAction]
+        private User MontarJsonUsuario(Identidad pIdentidad, DataWrapperProyecto pDataWrapperProyecto, string pNombreCortoComunidad)
+        {
+            User usuario = new User();
+            usuario.name = pIdentidad.Persona.Nombre;
+            usuario.last_name = pIdentidad.Persona.Apellidos;
+            usuario.email = pIdentidad.Persona.Mail;
+            usuario.sex = pIdentidad.Persona.Sexo;
+            usuario.community_id = pIdentidad.FilaIdentidad.ProyectoID;
+            usuario.community_short_name = pNombreCortoComunidad;
+            usuario.user_id = pIdentidad.Persona.UsuarioID;
+            usuario.photo = pIdentidad.UrlImagen;
+            if (pIdentidad.PerfilUsuario.NombreCortoUsu != null)
+            {
+                usuario.user_short_name = pIdentidad.PerfilUsuario.NombreCortoUsu;
+            }
+
+            usuario.born_date = pIdentidad.Persona.Fecha;
+
+            if (pIdentidad.Persona.PaisID != Guid.Empty)
+            {
+                usuario.country_id = pIdentidad.Persona.PaisID;
+            }
+
+            usuario.join_community_date = pIdentidad.FilaIdentidad.FechaAlta;
+
+            if (pIdentidad.Persona.ProvinciaID != Guid.Empty)
+            {
+                usuario.province_id = pIdentidad.Persona.ProvinciaID;
+            }
+
+            if (pIdentidad.Persona.FilaPersona != null && !string.IsNullOrEmpty(pIdentidad.Persona.ValorDocumentoAcreditativo))
+            {
+                usuario.id_card = pIdentidad.Persona.ValorDocumentoAcreditativo;
+            }
+
+            PaisCL paisCL = new PaisCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PaisCL>(), mLoggerFactory);
+            DataWrapperPais paisDW = paisCL.ObtenerPaisesProvincias();
+            paisCL.Dispose();
+
+            Pais filaPais = paisDW.ListaPais.Find(item => item.PaisID.Equals(usuario.country_id));
+            if (filaPais != null)
+            {
+                usuario.country = filaPais.Nombre;
+            }
+
+            Provincia filaProvincia = paisDW.ListaProvincia.Find(item => item.ProvinciaID.Equals(usuario.province_id));
+            if (filaProvincia != null)
+            {
+                usuario.provice = filaProvincia.Nombre;
+            }
+            else
+            {
+                usuario.provice = pIdentidad.Persona.Provincia;
+            }
+            usuario.city = pIdentidad.Persona.Localidad;
+            usuario.postal_code = pIdentidad.Persona.CodPostal;
+
+            List<UserEvent> listadoEventosusuarioProyecto;
+            List<ExtraUserData> listaDatosExtra = new List<ExtraUserData>();
+            //Obtención de las cláusulas del registro y eventos activos
+            ObtenerClausulasYEventosUsuarioEnProyecto(usuario.user_id, usuario.community_id, ref listaDatosExtra, out listadoEventosusuarioProyecto);
+            //Obtención de DatosExtra
+            ObtenerListaDatosExtraUsuario(pIdentidad, pDataWrapperProyecto, ref listaDatosExtra);
+
+            if (listaDatosExtra.Count > 0)
+            {
+                usuario.extra_data = listaDatosExtra;
+            }
+            usuario.user_events = listadoEventosusuarioProyecto;
+
+            //Suscripciones
+            SuscripcionCN suscCN = new SuscripcionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<SuscripcionCN>(), mLoggerFactory);
+            DataWrapperSuscripcion suscDW = suscCN.ObtenerSuscripcionesDeIdentidad(pIdentidad.Clave, true);
+            GestionSuscripcion gestorSuscripciones = new GestionSuscripcion(suscDW, mLoggingService, mEntityContext);
+            suscCN.Dispose();
+            Suscripcion suscripcion = gestorSuscripciones.ObtenerSuscripcionAProyecto(usuario.community_id);
+
+            if (suscripcion != null && suscripcion.FilasCategoriasVinculadas != null)
+            {
+                usuario.preferences = new List<ThesaurusCategory>();
+
+                TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCL>(), mLoggerFactory);
+                GestionTesauro gestorTesauro = new GestionTesauro(tesauroCL.ObtenerTesauroDeProyecto(usuario.community_id), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionTesauro>(), mLoggerFactory);
+                gestorTesauro.CargarCategorias();
+                tesauroCL.Dispose();
+
+                foreach (AD.EntityModel.Models.Suscripcion.CategoriaTesVinSuscrip filaCat in suscripcion.FilasCategoriasVinculadas.Where(item => gestorTesauro.ListaCategoriasTesauro.ContainsKey(item.CategoriaTesauroID)))
+                {
+                    usuario.preferences.Add(ObtenerCategoriasJerarquicas(filaCat.CategoriaTesauroID, gestorTesauro.ListaCategoriasTesauro));
+                }
+            }
+
+            //Contadores
+            UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            usuario.num_access = usuCN.ObtenerContadorDeAccesosDeUsuario(pIdentidad.Persona.UsuarioID);
+            usuario.last_login = usuCN.ObtenerFechaUltimoAccesoDeUsuario(pIdentidad.Persona.UsuarioID);
+            usuCN.Dispose();
+
+            return usuario;
+        }
+
+        [NonAction]
+        private static ThesaurusCategory ObtenerCategoriasJerarquicas(Guid pCategoriaID, SortedList<Guid, CategoriaTesauro> pListaCategoriasTesauro)
+        {
+            ThesaurusCategory preferenciaJerarquica = new ThesaurusCategory();
+            preferenciaJerarquica.category_id = pCategoriaID;
+            preferenciaJerarquica.category_name = pListaCategoriasTesauro[pCategoriaID].Nombre["es"];
+
+            if (pListaCategoriasTesauro[pCategoriaID].Padre is CategoriaTesauro categoria)
+            {
+                ThesaurusCategory padre = ObtenerCategoriasJerarquicas((categoria).Clave, pListaCategoriasTesauro);
+
+                preferenciaJerarquica.parent_category_id = padre.category_id;
+            }
+
+            return preferenciaJerarquica;
+        }
+
+        [NonAction]
+        private static void ObtenerListaDatosExtraUsuario(Identidad pIdentidad, DataWrapperProyecto pDataWrapperProyecto, ref List<ExtraUserData> pListaJsonDatosExtra)
+        {
+            foreach (var filaDatoExtraEcosOpc in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil)
+            {
+                if (pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion != null && pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Count > 0)
+                {
+                    List<AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistema> filasDatoExtraProy = pDataWrapperProyecto.ListaDatoExtraEcosistema.Where(dato => dato.DatoExtraID.Equals(filaDatoExtraEcosOpc.DatoExtraID)).ToList();
+                    List<AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaOpcion> filasDatoExtraProyOpcion = pDataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Where(dato => dato.OpcionID.Equals(filaDatoExtraEcosOpc.OpcionID)).ToList();
+
+                    if (filasDatoExtraProy.Count > 0 && filasDatoExtraProyOpcion.Count > 0)
+                    {
+                        ExtraUserData datosExtraUsuario = new ExtraUserData();
+                        datosExtraUsuario.name = filasDatoExtraProy[0].Titulo;
+                        datosExtraUsuario.name_id = filasDatoExtraProy[0].DatoExtraID;
+                        datosExtraUsuario.value = filasDatoExtraProyOpcion[0].Opcion;
+                        datosExtraUsuario.value_id = filasDatoExtraProyOpcion[0].OpcionID;
+                        pListaJsonDatosExtra.Add(datosExtraUsuario);
+                    }
+                }
+            }
+
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil filaDatoExtraProyVirtuosoIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil)
+            {
+                if (pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso != null && pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.Count > 0)
+                {
+                    AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaVirtuoso filaDatoExtraVirtuosoProy = pDataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.DatoExtraID.Equals(filaDatoExtraProyVirtuosoIdent.DatoExtraID));
+
+                    if (filaDatoExtraVirtuosoProy != null)
+                    {
+                        ExtraUserData datosExtraUsuario = new ExtraUserData();
+                        datosExtraUsuario.name = filaDatoExtraVirtuosoProy.Titulo;
+                        datosExtraUsuario.name_id = filaDatoExtraVirtuosoProy.DatoExtraID;
+                        datosExtraUsuario.value_id = filaDatoExtraVirtuosoProy.DatoExtraID;
+                        datosExtraUsuario.value = filaDatoExtraProyVirtuosoIdent.Opcion;
+                        pListaJsonDatosExtra.Add(datosExtraUsuario);
+                    }
+                }
+            }
+
+            foreach (AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad filaDatoExtraProyIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad)
+            {
+                if (pDataWrapperProyecto.ListaDatoExtraProyecto != null && pDataWrapperProyecto.ListaDatoExtraProyecto.Count > 0)
+                {
+                    List<AD.EntityModel.Models.ProyectoDS.DatoExtraProyecto> filasDatoExtraProy = pDataWrapperProyecto.ListaDatoExtraProyecto.Where(dato => dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(filaDatoExtraProyIdent.DatoExtraID)).ToList();
+                    List<AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcion> filasDatoExtraProyOpcion = pDataWrapperProyecto.ListaDatoExtraProyectoOpcion.Where(dato => dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.OpcionID.Equals(filaDatoExtraProyIdent.OpcionID)).ToList();
+
+                    if (filasDatoExtraProy.Count > 0 && filasDatoExtraProyOpcion.Count > 0)
+                    {
+                        ExtraUserData datosExtraUsuario = new ExtraUserData();
+                        datosExtraUsuario.name = filasDatoExtraProy[0].Titulo;
+                        datosExtraUsuario.name_id = filasDatoExtraProy[0].DatoExtraID;
+                        datosExtraUsuario.value = filasDatoExtraProyOpcion[0].Opcion;
+                        datosExtraUsuario.value_id = filasDatoExtraProyOpcion[0].OpcionID;
+                        pListaJsonDatosExtra.Add(datosExtraUsuario);
+                    }
+                }
+            }
+
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad filaDatoExtraProyVirtuosoIdent in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad)
+            {
+                if (pDataWrapperProyecto.ListaDatoExtraProyectoVirtuoso != null && pDataWrapperProyecto.ListaDatoExtraProyectoVirtuoso.Count > 0)
+                {
+                    AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoVirtuoso filaDatoExtraVirtuosoProy = pDataWrapperProyecto.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(filaDatoExtraProyVirtuosoIdent.DatoExtraID));
+
+                    if (filaDatoExtraVirtuosoProy != null)
+                    {
+                        ExtraUserData datosExtraUsuario = new ExtraUserData();
+                        datosExtraUsuario.name = filaDatoExtraVirtuosoProy.Titulo;
+                        datosExtraUsuario.name_id = filaDatoExtraVirtuosoProy.DatoExtraID;
+                        datosExtraUsuario.value_id = filaDatoExtraVirtuosoProy.DatoExtraID;
+                        datosExtraUsuario.value = filaDatoExtraProyVirtuosoIdent.Opcion;
+                        pListaJsonDatosExtra.Add(datosExtraUsuario);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name="pUsuarioID">Identificador del usuario que participa en el proyecto con alguna identidad</param>
+        /// <param name="pProyectoID">Identificador del proyecto en el que participa el usuario</param>
+        /// <param name="pListaJsonDatosExtra">Lista de DatosExtra con las clausulas del registro</param>
+        /// <param name="listadoEventosusuarioProyecto">Eventos del proyecto activos durante el registro del usuario</param>
+        [NonAction]
+        private void ObtenerClausulasYEventosUsuarioEnProyecto(Guid pUsuarioID, Guid pProyectoID, ref List<ExtraUserData> pListaJsonDatosExtra, out List<UserEvent> pListadoEventosUsuarioProyecto)
+        {
+            if (pListaJsonDatosExtra == null)
+            {
+                pListaJsonDatosExtra = new List<ExtraUserData>();
+            }
+            pListadoEventosUsuarioProyecto = new List<UserEvent>();
+
+            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+            DataWrapperUsuario usuClauProyDS = proyCL.ObtenerClausulasRegitroProyecto(pProyectoID);
+            proyCL.Dispose();
+
+            UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            usuClauProyDS.Merge(usuCN.ObtenerProyClausulasUsuPorUsuarioID(pUsuarioID));
+            usuCN.Dispose();
+
+            foreach (ClausulaRegistro filaClausula in usuClauProyDS.ListaClausulaRegistro.Where(item => item.Tipo.Equals((short)TipoClausulaAdicional.Opcional)))
+            {
+                List<ProyRolUsuClausulaReg> filasProyRolClau = usuClauProyDS.ListaProyRolUsuClausulaReg.Where(item => item.UsuarioID.Equals(pUsuarioID) && item.ProyectoID.Equals(pProyectoID) && item.ClausulaID.Equals(filaClausula.ClausulaID)).ToList();
+
+                if (filasProyRolClau.Count > 0)
+                {
+                    ExtraUserData jsonDatosExtra = new ExtraUserData();
+                    jsonDatosExtra.name = filaClausula.Texto;
+                    jsonDatosExtra.name_id = filaClausula.ClausulaID;
+                    jsonDatosExtra.value = filasProyRolClau[0].Valor.ToString();
+                    pListaJsonDatosExtra.Add(jsonDatosExtra);
+                }
+            }
+
+            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(pUsuarioID, pProyectoID);
+            identCN.Dispose();
+
+            if (!identidadID.Equals(Guid.Empty))
+            {
+                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                DataSet ds = proyCN.ObtenerEventoProyectoIdentidadID(pProyectoID, identidadID);
+                proyCN.Dispose();
+
+                if (ds.Tables["EventosProyectoIdentidad"] != null && ds.Tables["EventosProyectoIdentidad"].Rows.Count > 0)
+                {
+                    foreach (DataRow fila in ds.Tables["EventosProyectoIdentidad"].Rows)
+                    {
+                        UserEvent jsonEventoUsuario = new UserEvent();
+                        jsonEventoUsuario.event_id = (Guid)fila["EventoID"];
+                        jsonEventoUsuario.name = fila["Nombre"].ToString();
+                        jsonEventoUsuario.Date = (DateTime)fila["Fecha"];
+                        pListadoEventosUsuarioProyecto.Add(jsonEventoUsuario);
+                    }
+                }
+            }
+        }
+
+        [NonAction]
+        private void RellenarDatosPersona(Identidad pIdentidad, User pUsuarioJSON, string pIdioma)
+        {
+            bool CambiadoNombre = (pIdentidad.Persona.FilaPersona.Nombre != pUsuarioJSON.name);
+            bool CambiadoApellidos = (pIdentidad.Persona.FilaPersona.Apellidos != pUsuarioJSON.last_name);
+
+            if (!string.IsNullOrEmpty(pUsuarioJSON.name))
+            {
+                pIdentidad.Persona.Nombre = pUsuarioJSON.name;
+            }
+            if (!string.IsNullOrEmpty(pUsuarioJSON.last_name))
+            {
+                pIdentidad.Persona.Apellidos = pUsuarioJSON.last_name;
+            }
+            if (!string.IsNullOrEmpty(pUsuarioJSON.email))
+            {
+                pIdentidad.Persona.Mail = pUsuarioJSON.email;
+            }
+            if (!string.IsNullOrEmpty(pUsuarioJSON.sex))
+            {
+                pIdentidad.Persona.Sexo = pUsuarioJSON.sex;
+            }
+            if (!pUsuarioJSON.born_date.Equals(DateTime.MinValue))
+            {
+                pIdentidad.Persona.Fecha = pUsuarioJSON.born_date;
+            }
+            if (!pUsuarioJSON.country_id.Equals(Guid.Empty))
+            {
+                pIdentidad.Persona.PaisID = pUsuarioJSON.country_id;
+            }
+            if (!pUsuarioJSON.province_id.Equals(Guid.Empty))
+            {
+                pIdentidad.Persona.ProvinciaID = pUsuarioJSON.province_id;
+            }
+            if (!string.IsNullOrEmpty(pUsuarioJSON.provice))
+            {
+                pIdentidad.Persona.Provincia = pUsuarioJSON.provice;
+            }
+            if (!string.IsNullOrEmpty(pUsuarioJSON.city))
+            {
+                pIdentidad.Persona.Localidad = pUsuarioJSON.city;
+            }
+            if (!string.IsNullOrEmpty(pUsuarioJSON.postal_code))
+            {
+                pIdentidad.Persona.CodPostal = pUsuarioJSON.postal_code;
+            }
+
+            // Modificar los tags de nombre de persona
+            if (CambiadoNombre || CambiadoApellidos)
+            {
+                UtilIdiomas utilIdiomas = new UtilIdiomas(pIdioma, mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mLoggerFactory.CreateLogger<UtilIdiomas>(), mLoggerFactory);
+                string profesorSexo = "";
+                if (pIdentidad.Persona.Sexo.Equals("H"))
+                {
+                    profesorSexo = $"{utilIdiomas.GetText("SOLICITUDESNUEVOSPROFESORES", "PROFESOR")} · ";
+                }
+                else
+                {
+                    profesorSexo = $"{utilIdiomas.GetText("SOLICITUDESNUEVOSPROFESORES", "PROFESORA")} · ";
+                }
+
+                foreach (AD.EntityModel.Models.IdentidadDS.Perfil filaPerfil in pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaPerfil.Where(perfil => perfil.PersonaID.Equals(pIdentidad.PersonaID)).ToList())
+                {
+                    string profesor = "";
+                    if (pIdentidad.GestorIdentidades.DataWrapperIdentidad.ListaProfesor.Any(item => item.PerfilID.Equals(filaPerfil.PerfilID)))
+                    {
+                        profesor = profesorSexo;
+                    }
+                    filaPerfil.NombrePerfil = profesor + pIdentidad.Persona.NombreConApellidos;
+
+                    if (CambiadoNombre)
+                    {
+                        foreach (AD.EntityModel.Models.IdentidadDS.Identidad filaIdentidad in filaPerfil.Identidad)
+                        {
+                            filaIdentidad.NombreCortoIdentidad = profesor + pIdentidad.Persona.Nombre;
+                        }
+                    }
+                }
+            }
+
+        }
+
+        [NonAction]
+        private void GuardarDatosExtraSolicitud(DataWrapperSolicitud pSolicitudDW, Solicitud pSolicitud, List<ExtraUserData> pDatosExtraUsuario, Guid pOrganizacionID, Guid pProyectoID, bool pEsEcosistema)
+        {
+            //cargar la configfuraion
+            //DatoExtraEcosistemaOpcion
+            //DatoExtraEcosistemaVirtuoso
+
+            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            DataWrapperProyecto dataWrapperProyecto = proyCN.ObtenerDatosExtraProyectoPorID(pProyectoID);
+            proyCN.Dispose();
+
+
+            foreach (ExtraUserData datoExtra in pDatosExtraUsuario)
+            {
+                if (!datoExtra.name_id.Equals(Guid.Empty))
+                {
+                    if (pEsEcosistema)
+                    {
+                        if (!datoExtra.value_id.Equals(Guid.Empty) && dataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Any(dato => dato.DatoExtraID.Equals(datoExtra.name_id) && dato.OpcionID.Equals(datoExtra.value_id)))
+                        {
+                            pSolicitudDW.ListaDatoExtraEcosistemaOpcionSolicitud.Add(new DatoExtraEcosistemaOpcionSolicitud { DatoExtraID = datoExtra.name_id, OpcionID = datoExtra.value_id, SolicitudID = pSolicitud.SolicitudID });
+                        }
+                        else if (!string.IsNullOrEmpty(datoExtra.value) && dataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.Any(dato => dato.DatoExtraID.Equals(datoExtra.name_id)))
+                        {
+                            pSolicitudDW.ListaDatoExtraEcosistemaVirtuosoSolicitud.Add(new DatoExtraEcosistemaVirtuosoSolicitud { DatoExtraID = datoExtra.name_id, SolicitudID = pSolicitud.SolicitudID, Opcion = datoExtra.value });
+                        }
+                    }
+                    else
+                    {
+                        if (!datoExtra.value_id.Equals(Guid.Empty) && dataWrapperProyecto.ListaDatoExtraEcosistemaOpcion.Any(dato => dato.DatoExtraID.Equals(datoExtra.name_id) && dato.OpcionID.Equals(datoExtra.value_id)))
+                        {
+                            pSolicitudDW.ListaDatoExtraProyectoOpcionSolicitud.Add(new DatoExtraProyectoOpcionSolicitud { OrganizacionID = pOrganizacionID, ProyectoID = pProyectoID, DatoExtraID = datoExtra.name_id, OpcionID = datoExtra.value_id, SolicitudID = pSolicitud.SolicitudID });
+                        }
+                        else if (!string.IsNullOrEmpty(datoExtra.value) && dataWrapperProyecto.ListaDatoExtraEcosistemaVirtuoso.Any(dato => dato.DatoExtraID.Equals(datoExtra.name_id)))
+                        {
+                            pSolicitudDW.ListaDatoExtraProyectoVirtuosoSolicitud.Add(new DatoExtraProyectoVirtuosoSolicitud { OrganizacionID = pOrganizacionID, ProyectoID = pProyectoID, DatoExtraID = datoExtra.name_id, SolicitudID = pSolicitud.SolicitudID, Opcion = datoExtra.value });
+                        }
+                    }
+                }
+            }
+        }
+
+        [NonAction]
+        private void GuardarDatosExtra(List<ExtraUserData> pDatosExtraUsuario, Identidad pIdentidad, Dictionary<int, string> pDicDatosExtraProyectoVirtuoso, Dictionary<int, string> pDicDatosExtraEcosistemaVirtuoso)
+        {
+            DataWrapperIdentidad dataWrapperIdentidad = pIdentidad.GestorIdentidades.DataWrapperIdentidad;
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            DataWrapperProyecto datosExtraProyectoDWP = proyectoCN.ObtenerDatosExtraProyectoPorID(pIdentidad.FilaIdentidad.ProyectoID);
+            proyectoCN.Dispose();
+
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil filaDatoExtraEcosistema in dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil)
+            {
+                if (filaDatoExtraEcosistema.PerfilID == pIdentidad.PerfilID)
+                {
+                    mEntityContext.Entry(filaDatoExtraEcosistema).State = EntityState.Deleted;
+                }
+            }
+
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil filaDatoExtraEcosistemaVirtuoso in dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil)
+            {
+                if (filaDatoExtraEcosistemaVirtuoso.PerfilID == pIdentidad.PerfilID)
+                {
+                    mEntityContext.Entry(filaDatoExtraEcosistemaVirtuoso).State = EntityState.Deleted;
+                }
+            }
+            foreach (AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad filaDatoExtra in dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad)
+            {
+                if (filaDatoExtra.IdentidadID == pIdentidad.Clave)
+                {
+                    mEntityContext.Entry(filaDatoExtra).State = EntityState.Deleted;
+                }
+            }
+
+            foreach (AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad filaDatoExtraVirtuoso in dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad)
+            {
+                if (filaDatoExtraVirtuoso.IdentidadID == pIdentidad.Clave)
+                {
+                    mEntityContext.Entry(filaDatoExtraVirtuoso).State = EntityState.Deleted;
+                }
+            }
+            mEntityContext.SaveChanges();
+
+            Dictionary<Guid, Guid> dicDatosExtraProyecto = new Dictionary<Guid, Guid>();
+            Dictionary<Guid, Guid> dicDatosExtraEcosistema = new Dictionary<Guid, Guid>();
+
+            if (pDatosExtraUsuario != null)
+            {
+                foreach (ExtraUserData campoExtra in pDatosExtraUsuario)
+                {
+                    Guid nombreID = campoExtra.value_id;
+                    string valorCampo = campoExtra.value;
+                    Guid valorID = campoExtra.value_id;
+                    string nombreCorto = campoExtra.short_name;
+
+                    if (!nombreID.Equals(Guid.Empty) || !string.IsNullOrEmpty(nombreCorto))
+                    {
+                        AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistema filaDatoExtraEcosistema = datosExtraProyectoDWP.ListaDatoExtraEcosistema.FirstOrDefault(dato => dato.DatoExtraID.Equals(nombreID));
+                        if (filaDatoExtraEcosistema != null)
+                        {
+                            if (!valorID.Equals(Guid.Empty))
+                            {
+                                dicDatosExtraEcosistema.Add(filaDatoExtraEcosistema.DatoExtraID, valorID);
+                            }
+                        }
+                        else
+                        {
+                            AD.EntityModel.Models.ProyectoDS.DatoExtraProyecto filaDatoExtraProyecto = datosExtraProyectoDWP.ListaDatoExtraProyecto.FirstOrDefault(dato => dato.OrganizacionID.Equals(pIdentidad.FilaIdentidad.OrganizacionID) && dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(nombreID));
+                            if (filaDatoExtraProyecto != null && !valorID.Equals(Guid.Empty))
+                            {
+                                dicDatosExtraProyecto.Add(filaDatoExtraProyecto.DatoExtraID, valorID);
+                            }
+                        }
+
+                        AD.EntityModel.Models.ProyectoDS.DatoExtraEcosistemaVirtuoso filasDatoExtraEcosistemaVirtuoso = datosExtraProyectoDWP.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.DatoExtraID.Equals(nombreID) || dato.NombreCampo.Equals(nombreCorto));
+                        if (filasDatoExtraEcosistemaVirtuoso != null)
+                        {
+                            pDicDatosExtraEcosistemaVirtuoso.Add(filasDatoExtraEcosistemaVirtuoso.Orden, valorCampo);
+                        }
+                        else
+                        {
+                            AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoVirtuoso filasDatoExtraProyectoVirtuoso = datosExtraProyectoDWP.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.OrganizacionID.Equals(pIdentidad.FilaIdentidad.OrganizacionID) && dato.ProyectoID.Equals(pIdentidad.FilaIdentidad.ProyectoID) && dato.DatoExtraID.Equals(nombreID) || dato.NombreCampo.Equals(nombreCorto));
+                            if (filasDatoExtraProyectoVirtuoso != null)
+                            {
+                                pDicDatosExtraProyectoVirtuoso.Add(filasDatoExtraProyectoVirtuoso.Orden, valorCampo);
+                            }
+                        }
+                    }
+                }
+            }
+            foreach (Guid datoExtra in dicDatosExtraEcosistema.Keys)
+            {
+                AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil datoExtraEcosistemaOpcionPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaOpcionPerfil();
+                datoExtraEcosistemaOpcionPerfil.DatoExtraID = datoExtra;
+                datoExtraEcosistemaOpcionPerfil.DatoExtraID = dicDatosExtraEcosistema[datoExtra];
+                datoExtraEcosistemaOpcionPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
+                dataWrapperIdentidad.ListaDatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
+                mEntityContext.DatoExtraEcosistemaOpcionPerfil.Add(datoExtraEcosistemaOpcionPerfil);
+            }
+
+            foreach (int orden in pDicDatosExtraEcosistemaVirtuoso.Keys)
+            {
+                if (!string.IsNullOrEmpty(pDicDatosExtraEcosistemaVirtuoso[orden].Trim()) && pDicDatosExtraEcosistemaVirtuoso[orden].Trim() != "|")
+                {
+                    string valor = pDicDatosExtraEcosistemaVirtuoso[orden].Trim();
+                    if (valor.EndsWith('|'))
+                    {
+                        valor = valor.Substring(0, valor.Length - 1);
+                    }
+
+                    valor = IntentoObtenerElPais(valor);
+
+                    AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil datoExtraEcosistemaVirtuosoPerfil = new AD.EntityModel.Models.IdentidadDS.DatoExtraEcosistemaVirtuosoPerfil();
+                    datoExtraEcosistemaVirtuosoPerfil.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraEcosistemaVirtuoso.FirstOrDefault(dato => dato.Orden.Equals(orden)).DatoExtraID;
+                    datoExtraEcosistemaVirtuosoPerfil.PerfilID = pIdentidad.PerfilUsuario.FilaPerfil.PerfilID;
+                    datoExtraEcosistemaVirtuosoPerfil.Opcion = valor;
+                    dataWrapperIdentidad.ListaDatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
+                    mEntityContext.DatoExtraEcosistemaVirtuosoPerfil.Add(datoExtraEcosistemaVirtuosoPerfil);
+                }
+            }
+
+            foreach (Guid datoExtra in dicDatosExtraProyecto.Keys)
+            {
+                AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad datoExtraProyectoOpcionIdentidad = new AD.EntityModel.Models.ProyectoDS.DatoExtraProyectoOpcionIdentidad();
+                datoExtraProyectoOpcionIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
+                datoExtraProyectoOpcionIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
+                datoExtraProyectoOpcionIdentidad.DatoExtraID = datoExtra;
+                datoExtraProyectoOpcionIdentidad.OpcionID = dicDatosExtraProyecto[datoExtra];
+                datoExtraProyectoOpcionIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
+                mEntityContext.DatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
+                dataWrapperIdentidad.ListaDatoExtraProyectoOpcionIdentidad.Add(datoExtraProyectoOpcionIdentidad);
+            }
+
+            foreach (int orden in pDicDatosExtraProyectoVirtuoso.Keys)
+            {
+                if (!string.IsNullOrEmpty(pDicDatosExtraProyectoVirtuoso[orden].Trim()) && pDicDatosExtraProyectoVirtuoso[orden].Trim() != "|")
+                {
+                    string valor = pDicDatosExtraProyectoVirtuoso[orden].Trim();
+                    if (valor.EndsWith('|'))
+                    {
+                        valor = valor.Substring(0, valor.Length - 1);
+                    }
+
+                    valor = IntentoObtenerElPais(valor);
+
+                    AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad datoExtraProyectoVirtuosoIdentidad = new AD.EntityModel.Models.IdentidadDS.DatoExtraProyectoVirtuosoIdentidad();
+                    datoExtraProyectoVirtuosoIdentidad.OrganizacionID = pIdentidad.FilaIdentidad.OrganizacionID;
+                    datoExtraProyectoVirtuosoIdentidad.ProyectoID = pIdentidad.FilaIdentidad.ProyectoID;
+                    datoExtraProyectoVirtuosoIdentidad.DatoExtraID = datosExtraProyectoDWP.ListaDatoExtraProyectoVirtuoso.FirstOrDefault(dato => dato.Orden == orden).DatoExtraID;
+                    datoExtraProyectoVirtuosoIdentidad.Opcion = valor;
+                    datoExtraProyectoVirtuosoIdentidad.IdentidadID = pIdentidad.FilaIdentidad.IdentidadID;
+                    mEntityContext.DatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
+                    dataWrapperIdentidad.ListaDatoExtraProyectoVirtuosoIdentidad.Add(datoExtraProyectoVirtuosoIdentidad);
+                }
+            }
+        }
+
+        [NonAction]
+        private void EditarSuscripciones(List<Guid> pListacategorias, Identidad pIdentidad)
+        {
+            SuscripcionCN suscCN = new SuscripcionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<SuscripcionCN>(), mLoggerFactory);
+            DataWrapperSuscripcion suscDS = suscCN.ObtenerSuscripcionesDePerfil(pIdentidad.FilaIdentidad.PerfilID, false);
+            GestionSuscripcion gestorSuscripciones = new GestionSuscripcion(suscDS, mLoggingService, mEntityContext);
+            Suscripcion suscripcion = gestorSuscripciones.ObtenerSuscripcionAProyecto(pIdentidad.FilaIdentidad.ProyectoID);
+
+            TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCL>(), mLoggerFactory);
+            GestionTesauro gestorTesauro = new GestionTesauro(tesauroCL.ObtenerTesauroDeProyecto(pIdentidad.FilaIdentidad.ProyectoID), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionTesauro>(), mLoggerFactory);
+            gestorTesauro.CargarCategorias();
+            tesauroCL.Dispose();
+
+            if (suscripcion == null)
+            {
+                Guid suscripcionid = gestorSuscripciones.AgregarNuevaSuscripcion(pIdentidad, 1);
+                gestorSuscripciones.CrearSuscripcionTesauroProyecto(suscripcionid, pIdentidad.FilaIdentidad.OrganizacionID, pIdentidad.FilaIdentidad.ProyectoID, gestorTesauro.TesauroActualID);
+
+                suscripcion = gestorSuscripciones.ObtenerSuscripcionAProyecto(pIdentidad.FilaIdentidad.ProyectoID);
+            }
+
+            if (suscripcion != null)
+            {
+                if (suscripcion.FilasCategoriasVinculadas != null)
+                {
+                    foreach (AD.EntityModel.Models.Suscripcion.CategoriaTesVinSuscrip filaCat in suscripcion.FilasCategoriasVinculadas.ToList())
+                    {
+                        if (!pListacategorias.Contains(filaCat.CategoriaTesauroID))
+                        {
+                            //Si tengo una categoría que no está en el selector la quito del DataWrapper
+                            suscripcion.FilasCategoriasVinculadas.Remove(filaCat);
+                            mEntityContext.CategoriaTesVinSuscrip.Remove(filaCat);
+                        }
+                        else
+                        {
+                            if (!pListacategorias.Contains(filaCat.CategoriaTesauroID))
+                            {
+                                //Si la categoría está en el selector, en el DataWrapper y no está seleccionada, la elimino de la lista para dejar sólo las añadidas
+                                pListacategorias.Remove(filaCat.CategoriaTesauroID);
+                            }
+                        }
+                    }
+                }
+                foreach (Guid catID in pListacategorias)
+                {
+                    //Ya sólo quedan categorías añadidas, así que añado las filas
+                    suscripcion.GestorSuscripcion.VincularCategoria(suscripcion, gestorTesauro.ListaCategoriasTesauro[catID]);
+                }
+
+                suscripcion.FilaSuscripcion.Periodicidad = (short)PeriodicidadSuscripcion.NoEnviar;
+                suscCN.ActualizarSuscripcion();
+            }
+            suscCN.Dispose();
+        }
+
+        [NonAction]
+        private string IntentoObtenerElPais(string pValor)
+        {
+            PaisCL paisCL = new PaisCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PaisCL>(), mLoggerFactory);
+            DataWrapperPais paisDW = paisCL.ObtenerPaisesProvincias();
+
+            foreach (Pais fila in paisDW.ListaPais)
+            {
+                if (fila.PaisID.ToString() == pValor)
+                {
+                    pValor = fila.Nombre;
+                }
+            }
+
+            paisCL.Dispose();
+
+            return pValor;
+        }
+        [NonAction]
+        private void EliminarCaches(Identidad pIdentidad)
+        {
+            //TODO : Si se cambia la foto de una organización, hay que pedirle al servicio de refresco de cache que borre las caches de los miembros de la organización
+            //TODO : Si se cambia algun dato de la organizacion, hay que pedirle al servicio de refresco de cache que borre las caches de los miembros de la organización
+
+            List<string> listaClavesInvalidar = new List<string>();
+
+            IdentidadCL identidadCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCL>(), mLoggerFactory);
+
+            foreach (Guid perfilID in pIdentidad.GestorIdentidades.ListaPerfiles.Keys)
+            {
+                string claveIdentidadActual = $"{NombresCL.IdentidadActual}_{pIdentidad.PersonaID}_{perfilID}";
+                string clavePerfil = $"{NombresCL.PerfilMVC}_{perfilID}";
+                listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(claveIdentidadActual).ToLower());
+                listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(clavePerfil).ToLower());
+            }
+
+            foreach (Guid identidadID in pIdentidad.GestorIdentidades.ListaIdentidades.Keys)
+            {
+                string claveFichaIdentidad = $"{NombresCL.FichaIdentidadMVC}_{identidadID}";
+                string claveInfoExtraFichaIdentidad = $"{NombresCL.InfoExtraFichaIdentidadMVC}_{identidadID}";
+                listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(claveFichaIdentidad).ToLower());
+                listaClavesInvalidar.Add(identidadCL.ObtenerClaveCache(claveInfoExtraFichaIdentidad).ToLower());
+            }
+
+            identidadCL.InvalidarCachesMultiples(listaClavesInvalidar);
+            identidadCL.Dispose();
+        }
+
+        [NonAction]
+        private string GenerarLoginUsuario(string pNombre, string pApellidos, ref int pHashNumUsu)
+        {
+            string loginUsuario = $"{UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pNombre)}-{UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pApellidos)}";
+            if (loginUsuario.Length > 12)
+            {
+                loginUsuario = loginUsuario.Substring(0, 12);
+            }
+
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            if (usuarioCN.ExisteUsuarioEnBD(loginUsuario))
+            {
+                loginUsuario = usuarioCN.ObtenerLoginLibre(loginUsuario);
+            }
+
+            usuarioCN.Dispose();
+
+            return loginUsuario;
+        }
+
+        [NonAction]
+        public string GenerarNombreCortoUsuario(ref string pLoginUsuario, string pNombre, string pApellidos, DataWrapperUsuario pDataWrapperUsuario, int pIntentos = 0)
+        {
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            string nombreCortoUsuario = pLoginUsuario;
+            int hashNumUsu = 1;
+            if (usuarioCN.ExisteNombreCortoEnBD(nombreCortoUsuario))
+            {
+                // El login está siendo usado como nombrecorto, le busco uno a partir del nombre y apellidos 
+                string loginUsuario = UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pNombre) + '-' + UtilCadenas.LimpiarCaracteresNombreCortoRegistro(pApellidos);
+                if (loginUsuario.Length > 12)
+                {
+                    loginUsuario = loginUsuario.Substring(0, 12);
+                }
+
+                nombreCortoUsuario = usuarioCN.ObtenerNombreCortoLibre(loginUsuario);
+                // Establezco el mismo login que nombre corto. Se ya existía el nombre corto, lo más probable es que también exista el login
+                pLoginUsuario = nombreCortoUsuario;
+            }
+            AD.EntityModel.Models.UsuarioDS.Usuario filaUsuario = new AD.EntityModel.Models.UsuarioDS.Usuario();
+            filaUsuario.UsuarioID = Guid.NewGuid();
+            filaUsuario.Login = pLoginUsuario;
+            filaUsuario.Password = " ";
+            filaUsuario.EstaBloqueado = true;
+            filaUsuario.NombreCorto = nombreCortoUsuario;
+            filaUsuario.Version = 1;
+            filaUsuario.FechaCambioPassword = DateTime.Now;
+            filaUsuario.Validado = (short)ValidacionUsuario.Verificado;
+            mEntityContext.Usuario.Add(filaUsuario);
+            try
+            {
+                //Reservo el nombrecorto del usuario
+                usuarioCN.GuardarActualizaciones(pDataWrapperUsuario);
+
+                // Marco la fila como eliminada para que al crear el usuario de verdad, primero elimine la fila de reserva del nombrecorto
+                mEntityContext.Entry(filaUsuario).State = EntityState.Deleted;
+            }
+            catch (Exception ex)
+            {
+                if (pIntentos < 10)
+                {
+                    if (pIntentos > 2)
+                    {
+                        // Hay más de un proceso intentando registrar al mismo usuario, espero un número aleatorio de segundos para desbloquear la situación
+                        Random rnd = new Random();
+                        int sleepTime = rnd.Next(1, 10);
+                        Thread.Sleep(sleepTime * 1000);
+                    }
+                    mLoggingService.GuardarLogError(ex, $"Ha fallado la creación del usuario {pLoginUsuario} con nombre corto {nombreCortoUsuario}. Le buscamos otro nombre",mlogger);
+
+                    pLoginUsuario = GenerarLoginUsuario(pNombre, pApellidos, ref hashNumUsu);
+                    mEntityContext.Entry(filaUsuario).State = EntityState.Deleted;
+                    nombreCortoUsuario = GenerarNombreCortoUsuario(ref pLoginUsuario, pNombre, pApellidos, pDataWrapperUsuario, pIntentos + 1);
+                }
+                else
+                {
+                    // Si en 10 intentos no hemos sido capaces de crear el usuario, lo dejamos por imposible y devolvemos error.
+                    throw;
+                }
+            }
+            usuarioCN.Dispose();
+            return nombreCortoUsuario;
+        }
+
+        [NonAction]
+        private string ObtenerClausulasAdicionales(Guid pProyectoID, List<ExtraUserData> pDatosExtraUsuario)
+        {
+            StringBuilder calusulasAdicionales = new StringBuilder();
+            ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
+            DataWrapperUsuario usuClauProyDW = proyCL.ObtenerClausulasRegitroProyecto(pProyectoID);
+            proyCL.Dispose();
+
+            foreach (ExtraUserData datoextra in pDatosExtraUsuario)
+            {
+                foreach (ClausulaRegistro filaClausula in usuClauProyDW.ListaClausulaRegistro.Where(item => item.Tipo.Equals((short)TipoClausulaAdicional.Opcional) && item.ClausulaID.Equals(datoextra.name_id)))
+                {
+                    calusulasAdicionales.Append($"{filaClausula.ClausulaID}, ");
+                }
+            }
+            return calusulasAdicionales.ToString();
+        }
+
+        [NonAction]
+        private void ValidarNombresProyectosYOrganizacion(Guid pOrganizacionID, List<string> pNombresCortosProyectos, out List<Guid> pListaProyectosID)
+        {
+            pListaProyectosID = new List<Guid>();
+            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            OrganizacionCN orgCN = new OrganizacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<OrganizacionCN>(), mLoggerFactory);
+
+            foreach (string proyecto in pNombresCortosProyectos)
+            {
+                Guid proyectoID = proyCN.ObtenerProyectoIDPorNombre(proyecto);
+                if (!proyectoID.Equals(Guid.Empty))
+                {
+                    bool participacion = orgCN.ParticipaOrganizacionEnProyecto(proyectoID, pOrganizacionID);
+                    if (participacion && !pListaProyectosID.Contains(proyectoID))
+                    {
+                        if (!pListaProyectosID.Contains(proyectoID))
+                        {
+                            pListaProyectosID.Add(proyectoID);
+                        }
+                    }
+                    else
+                    {
+                        throw new GnossException("La organización no participa en el proyecto", HttpStatusCode.BadRequest);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("La comunidad no existe", HttpStatusCode.BadRequest);
+                }
+            }
+        }
+
+        [NonAction]
+        private string ValidacionNombresGruposYOrganizacion(Guid pOrganizacionID, List<string> pNombresCortosGrupos, Dictionary<string, Guid> dicGrupos)
+        {
+            StringBuilder error = new StringBuilder();
+            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+
+            foreach (string grupo in pNombresCortosGrupos)
+            {
+                List<string> listaGrupos = new List<string>();
+                listaGrupos.Add(grupo);
+                List<Guid> gruposID = identCN.ObtenerGruposIDPorNombreCortoYOrganizacion(listaGrupos, pOrganizacionID);
+
+                if (gruposID.Count > 0)
+                {
+                    if (!dicGrupos.ContainsKey(grupo))
+                    {
+                        dicGrupos.Add(grupo, gruposID[0]);
+                    }
+                }
+                else
+                {
+                    error.AppendLine("ERROR: El grupo " + grupo + " pasado como parámetro en NombresCortosGrupos no pertenece a la organización.");
+                }
+            }
+
+            return error.ToString();
+        }
+
+        [NonAction]
+        private void AgregarParticipantesGrupoOrganizacion(Guid pOrganizacionID, List<Guid> pListaParticipantes, GrupoIdentidades pGrupo)
+        {
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+
+            List<Guid> listaNuevasIdentidades = new List<Guid>();
+
+            StringBuilder sb = new StringBuilder();
+
+            foreach (Guid identidad in pListaParticipantes)
+            {
+                if (!pGrupo.Participantes.ContainsKey(identidad))
+                {
+                    AD.EntityModel.Models.IdentidadDS.GrupoIdentidadesParticipacion filaGrupoIdentidadesParticipacion = new AD.EntityModel.Models.IdentidadDS.GrupoIdentidadesParticipacion();
+
+                    filaGrupoIdentidadesParticipacion.GrupoID = pGrupo.Clave;
+                    filaGrupoIdentidadesParticipacion.IdentidadID = identidad;
+                    filaGrupoIdentidadesParticipacion.FechaAlta = DateTime.Now;
+
+                    pGrupo.GestorIdentidades.DataWrapperIdentidad.ListaGrupoIdentidadesParticipacion.Add(filaGrupoIdentidadesParticipacion);
+                    mEntityContext.GrupoIdentidadesParticipacion.Add(filaGrupoIdentidadesParticipacion);
+
+                    sb.Append(FacetadoAD.GenerarTripleta("<http://gnoss/" + pGrupo.Clave.ToString().ToUpper() + ">", "<http://gnoss/hasparticipanteID>", "<http://gnoss/" + identidad.ToString().ToUpper() + ">"));
+
+                    listaNuevasIdentidades.Add(identidad);
+                }
+            }
+
+            identidadCN.ActualizaIdentidades();
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
+            facetadoCN.InsertaTripletas(ProyectoAD.MyGnoss.ToString(), sb.ToString(), 0, false);
+            facetadoCN.Dispose();
+
+            List<Guid> perfilesDeIdentidadesNuevas = identidadCN.ObtenerPerfilesDeIdentidades(listaNuevasIdentidades);
+
+            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
+            foreach (Guid perfilID in perfilesDeIdentidadesNuevas)
+            {
+                facetadoCL.InvalidarCacheQueContengaCadena(NombresCL.PRIMEROSRECURSOS + "_" + ProyectoAD.MyGnoss.ToString() + "_" + perfilID);
+            }
+
+            facetadoCL.Dispose();
+            identidadCN.Dispose();
+
+            IdentidadCL identidadCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCL>(), mLoggerFactory);
+            identidadCL.InvalidarCacheMiembrosOrganizacionParaFiltroGrupos(pOrganizacionID);
+            identidadCL.InvalidarCacheGrupoPorNombreCortoYOrganizacion(pGrupo.NombreCorto, pOrganizacionID);
+            identidadCL.Dispose();
+        }
+
+        /// <summary>
+        /// Eliminamos a un usuario de un grupo de organizacion
+        /// </summary>
+        /// <param name="pOrganizacionID">Identidad de la organizacion</param>
+        /// <param name="pIdentidadID">Identidad del usuario</param>
+        /// <param name="pGrupoID">Identidad del grupo</param>
+        /// <param name="pNombreCortoGrupo">Nombre corto del grupo</param>
+        [NonAction]
+        private void EliminarParticipanteGrupoOrganizacion(Guid pOrganizacionID, Guid pIdentidadID, Guid pGrupoID, string pNombreCortoGrupo)
+        {
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+
+            AD.EntityModel.Models.IdentidadDS.GrupoIdentidadesParticipacion grupoIdentidadesParticipacion = identidadCN.ObtenerGrupoIdentidadesParticipacion(pGrupoID, pIdentidadID);
+
+            mEntityContext.GrupoIdentidadesParticipacion.Remove(grupoIdentidadesParticipacion);
+
+            identidadCN.ActualizaIdentidades();
+
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
+            facetadoCN.BorrarTripleta(ProyectoAD.MyGnoss.ToString(), $"<http://gnoss/{pGrupoID.ToString().ToUpper()}>", "<http://gnoss/hasparticipanteID>", $"<http://gnoss/{pIdentidadID.ToString().ToUpper()}>");
+            facetadoCN.Dispose();
+
+            Guid perfilID = identidadCN.ObtenerPerfilIDDeIdentidadID(pIdentidadID);
+
+            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
+            IdentidadCL identidadCL = new IdentidadCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCL>(), mLoggerFactory);
+
+            facetadoCL.InvalidarCacheQueContengaCadena($"{NombresCL.PRIMEROSRECURSOS}_{ProyectoAD.MyGnoss}_{perfilID}");
+            identidadCL.InvalidarCacheMiembrosOrganizacionParaFiltroGrupos(pOrganizacionID);
+            identidadCL.InvalidarCacheGrupoPorNombreCortoYOrganizacion(pNombreCortoGrupo, pOrganizacionID);
+
+            identidadCL.Dispose();
+            facetadoCL.Dispose();
+            identidadCN.Dispose();
+        }
+
+
+        [NonAction]
+        private void AgregarParticipanteComunidadesParticipaGrupo(Guid pGrupoID, Guid pUsuarioID, GestionIdentidades pGestorIdentidades, Identidad pIdentidad, string pNombreCortoOrg)
+        {
+            //damos de alta al usuario en las comunidades en las que participan los grupos de organización en los que se va a añadir
+            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+
+            List<GrupoOrgParticipaProy> listaProysParticipaGr = proyCN.ObtenerProyectosParticipaGrupoOrganizacion(pGrupoID);
+
+            if (listaProysParticipaGr != null && listaProysParticipaGr.Count > 0)
+            {
+                Dictionary<Guid, bool> recibirNewsletterDefectoProyectos = proyCN.ObtenerProyectosConConfiguracionNewsletterPorDefecto();
+                List<Guid> idsProyectosGrupo = listaProysParticipaGr.Select(fila => fila.ProyectoID).ToList();
+                GestionProyecto gestorProyecto = new GestionProyecto(proyCN.ObtenerProyectosPorID(idsProyectosGrupo), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionProyecto>(), mLoggerFactory);
+                gestorProyecto.CargarGestor();
+
+                foreach (GrupoOrgParticipaProy fila in listaProysParticipaGr)
+                {
+                    if (!usuCN.EstaUsuarioEnProyecto(pUsuarioID, fila.ProyectoID))
+                    {
+                        Elementos.ServiciosGenerales.Proyecto proyecto = gestorProyecto.ListaProyectos[fila.ProyectoID];
+                        RegistrarUsuarioEnComunidad(UsuarioOAuth, pGestorIdentidades, pIdentidad, proyecto, pUsuarioID, pNombreCortoOrg, (TiposIdentidad)fila.TipoPerfil, false, recibirNewsletterDefectoProyectos);
+
+                        try
+                        {
+                            DataWrapperProyecto dataWrapperProyecto = proyCN.ObtenerAccionesExternasProyectoPorProyectoID(fila.ProyectoID);
+                            ControladorIdentidades.AccionEnServicioExternoProyecto(TipoAccionExterna.Registro, pGestorIdentidades.GestorPersonas.ListaPersonas[pIdentidad.PersonaID.Value], fila.ProyectoID, pIdentidad.Clave, "", "", pIdentidad.FilaIdentidad.FechaAlta, dataWrapperProyecto);
+                        }
+                        catch (Exception ex)
+                        {
+                            mLoggingService.GuardarLogError(ex, "\r\n ERROR: AltaUsuarioGrupoOrganizacion. Error en llamada a acciones externas", mlogger);
+                        }
+                    }
+                }
+            }
+
+            usuCN.Dispose();
+            proyCN.Dispose();
+        }
+
+        /// <summary>
+        /// Change email a user
+        /// </summary>
+        /// <param name="user_id">User's identificator</param>
+        /// <param name="email">Email to change</param>
+        /// <example>POST community/block-member</example>
+        private void CambiarEmailUser(Guid user_id, string email)
+        {
+            try
+            {
+                if (!user_id.Equals(Guid.Empty))
+                {
+                    //es administrador quien realiza la petición
+                    if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
+                    {
+                        PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                        DataWrapperPersona dataWrapperPersona = personaCN.ObtenerPersonaPorUsuario(user_id);
+
+                        AD.EntityModel.Models.PersonaDS.Persona filaPersona = dataWrapperPersona?.ListaPersona.Find(persona => persona.UsuarioID.Equals(user_id));
+
+                        if (filaPersona != null)
+                        {
+                            if (UtilCadenas.ValidarEmail(email))
+                            {
+                                filaPersona.Email = email.ToLower();
+                                personaCN.ActualizarPersonas(dataWrapperPersona);
+                            }
+                            else
+                            {
+                                throw new GnossException("The email doesn't valid", HttpStatusCode.BadRequest);
+                            }
+                        }
+                        else
+                        {
+                            throw new GnossException("The user doesn't exists", HttpStatusCode.BadRequest);
+                        }
+
+                        personaCN.Dispose();
+                    }
+                    else
+                    {
+                        throw new GnossException("The oauth user does not have permission in the community", HttpStatusCode.Unauthorized);
+                    }
+                }
+                else
+                {
+                    throw new GnossException("The user ID can not be empty", HttpStatusCode.BadRequest);
+                }
+            }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex, mlogger);
+                throw new GnossException("Unexpected error. Try it again later. ", HttpStatusCode.InternalServerError);
+            }
+        }
+
+        private User ObtenerUserModelPorPersonaID(Guid pPersonaID, Guid pProyectoID, string pNombreCortoComunidad)
+        {
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            Guid identidadID = mEntityContext.Perfil.JoinIdentidad().Where(item => item.Perfil.PersonaID.Equals(pPersonaID) && item.Identidad.ProyectoID.Equals(pProyectoID)).Select(item => item.Identidad.IdentidadID).FirstOrDefault();
 
-			usuCN.Dispose();
-			proyCN.Dispose();
-		}
-
-		[NonAction]
-		private void EliminarParticipanteComunidadesParticipaGrupo(Guid pGrupoID, Guid pUsuarioID, GestionIdentidades pGestorIdentidades, Identidad pIdentidad, string pNombreCortoOrg)
-		{
-			//damos de alta al usuario en las comunidades en las que participan los grupos de organización en los que se va a añadir
-			ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-			List<GrupoOrgParticipaProy> listaProysParticipaGr = proyCN.ObtenerProyectosParticipaGrupoOrganizacion(pGrupoID);
-
-			if (listaProysParticipaGr != null && listaProysParticipaGr.Count > 0)
-			{
-				Dictionary<Guid, bool> recibirNewsletterDefectoProyectos = proyCN.ObtenerProyectosConConfiguracionNewsletterPorDefecto();
-				List<Guid> idsProyectosGrupo = listaProysParticipaGr.Select(fila => fila.ProyectoID).ToList();
-				GestionProyecto gestorProyecto = new GestionProyecto(proyCN.ObtenerProyectosPorID(idsProyectosGrupo), mLoggingService, mEntityContext);
-				gestorProyecto.CargarGestor();
-
-				foreach (GrupoOrgParticipaProy fila in listaProysParticipaGr)
-				{
-					if (!usuCN.EstaUsuarioEnProyecto(pUsuarioID, fila.ProyectoID))
-					{
-						Proyecto proyecto = gestorProyecto.ListaProyectos[fila.ProyectoID];
-						RegistrarUsuarioEnComunidad(UsuarioOAuth, pGestorIdentidades, pIdentidad, proyecto, pUsuarioID, pNombreCortoOrg, (TiposIdentidad)fila.TipoPerfil, false, recibirNewsletterDefectoProyectos);
-						
-						try
-						{
-							DataWrapperProyecto dataWrapperProyecto = proyCN.ObtenerAccionesExternasProyectoPorProyectoID(fila.ProyectoID);
-							ControladorIdentidades.AccionEnServicioExternoProyecto(TipoAccionExterna.Registro, pGestorIdentidades.GestorPersonas.ListaPersonas[pIdentidad.PersonaID.Value], fila.ProyectoID, pIdentidad.Clave, "", "", pIdentidad.FilaIdentidad.FechaAlta, dataWrapperProyecto);
-						}
-						catch (Exception ex)
-						{
-							mLoggingService.GuardarLogError(ex, "\r\n ERROR: AltaUsuarioGrupoOrganizacion. Error en llamada a acciones externas");
-						}
-					}
-				}
-			}
-
-			usuCN.Dispose();
-			proyCN.Dispose();
-		}
-
-		/// <summary>
-		/// Change email a user
-		/// </summary>
-		/// <param name="user_id">User's identificator</param>
-		/// <param name="email">Email to change</param>
-		/// <example>POST community/block-member</example>
-		private void CambiarEmailUser(Guid user_id, string email)
-		{
-			try
-			{
-				if (!user_id.Equals(Guid.Empty))
-				{
-					//es administrador quien realiza la petición
-					if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
-					{
-						DataWrapperPersona dataWrapperPersona = new DataWrapperPersona();
-						PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-						dataWrapperPersona = personaCN.ObtenerPersonaPorUsuario(user_id);
-
-
-						AD.EntityModel.Models.PersonaDS.Persona filaPersona = dataWrapperPersona?.ListaPersona.Find(persona => persona.UsuarioID.Equals(user_id));
-
-						if (filaPersona != null)
-						{
-							if (UtilCadenas.ValidarEmail(email))
-							{
-								filaPersona.Email = email;
-								personaCN.ActualizarPersonas(dataWrapperPersona);
-							}
-							else
-							{
-								throw new GnossException("The email doesn't valid", HttpStatusCode.BadRequest);
-							}
-						}
-						else
-						{
-							throw new GnossException("The user doesn't exists", HttpStatusCode.BadRequest);
-						}
-
-						personaCN.Dispose();
-					}
-					else
-					{
-						throw new GnossException("The oauth user does not have permission in the community", HttpStatusCode.Unauthorized);
-					}
-				}
-				else
-				{
-					throw new GnossException("The user ID can not be empty", HttpStatusCode.BadRequest);
-				}
-			}
-			catch (Exception ex)
-			{
-				mLoggingService.GuardarLogError(ex);
-				throw new GnossException("Unexpected error. Try it again later. ", HttpStatusCode.InternalServerError);
-			}
-		}
-
-		private User ObtenerUserModelPorPersonaID(Guid pPersonaID, Guid pProyectoID, string pNombreCortoComunidad)
-		{
-            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			Guid identidadID = mEntityContext.Perfil.JoinIdentidad().Where(item => item.Perfil.PersonaID.Equals(pPersonaID) && item.Identidad.ProyectoID.Equals(pProyectoID)).Select(item => item.Identidad.IdentidadID).FirstOrDefault();
-            
             if (identidadID != Guid.Empty)
             {
                 GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
                 if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
                 {
-					PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-					ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                    PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+                    ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
 
                     Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
                     gestorIdentidades.DataWrapperIdentidad.Merge(identidadCN.ObtenerDatosExtraProyectoOpcionIdentidadPorIdentidadID(identidadID));
@@ -3810,66 +4014,66 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
-		[NonAction]
-		private PermisosPaginasUsuarios CrearFilaPermisosPaginasUsuarios(TipoPaginaAdministracion pPagina, Guid pUsuarioID, Guid pOrganizacionID, Guid pProyectoID)
-		{
-			PermisosPaginasUsuarios filaUsuario = new PermisosPaginasUsuarios();
-			filaUsuario.Pagina = (short)pPagina;
-			filaUsuario.UsuarioID = pUsuarioID;
-			filaUsuario.OrganizacionID = pOrganizacionID;
-			filaUsuario.ProyectoID = pProyectoID;
-			return filaUsuario;
-		}
-		[NonAction]
-		private bool CambiarRolUsuarioEnProyecto(Guid pUsuarioId, Guid pProyectoId, TipoRolUsuario pRol)
-		{
-			bool cambiadoRol = false;
-			IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-			UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+        [NonAction]
+        private PermisosPaginasUsuarios CrearFilaPermisosPaginasUsuarios(TipoPaginaAdministracion pPagina, Guid pUsuarioID, Guid pOrganizacionID, Guid pProyectoID)
+        {
+            PermisosPaginasUsuarios filaUsuario = new PermisosPaginasUsuarios();
+            filaUsuario.Pagina = (short)pPagina;
+            filaUsuario.UsuarioID = pUsuarioID;
+            filaUsuario.OrganizacionID = pOrganizacionID;
+            filaUsuario.ProyectoID = pProyectoID;
+            return filaUsuario;
+        }
+        [NonAction]
+        private bool CambiarRolUsuarioEnProyecto(Guid pUsuarioId, Guid pProyectoId, TipoRolUsuario pRol)
+        {
+            bool cambiadoRol = false;
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
+            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
 
-			Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(pUsuarioId, pProyectoId);
-			List<Guid> listaIdentidades = new List<Guid>();
-			listaIdentidades.Add(identidadID);
-			GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, true), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+            Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(pUsuarioId, pProyectoId);
+            List<Guid> listaIdentidades = new List<Guid>();
+            listaIdentidades.Add(identidadID);
+            GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, true), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
 
-			if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
-			{
-				Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
-				gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
-				DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
-				dataWrapperUsuario.ListaUsuario = usuarioCN.ObtenerUsuariosPorIdentidadesCargaLigera(listaIdentidades);
-				gestorIdentidades.GestorUsuarios = new GestionUsuarios(dataWrapperUsuario, mLoggingService, mEntityContext, mConfigService);
-				gestorIdentidades.GestorPersonas.CargarGestor();
-				gestorIdentidades.GestorUsuarios.CargarGestor();
+            if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+            {
+                Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
+                DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
+                dataWrapperUsuario.ListaUsuario = usuarioCN.ObtenerUsuariosPorIdentidadesCargaLigera(listaIdentidades);
+                gestorIdentidades.GestorUsuarios = new GestionUsuarios(dataWrapperUsuario, mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
+                gestorIdentidades.GestorPersonas.CargarGestor();
+                gestorIdentidades.GestorUsuarios.CargarGestor();
 
-				cambiadoRol = ControladorIdentidades.CambiarRolUsuarioEnProyecto(identidad, (short)pRol);
-			}
-			else
-			{
-				mLoggingService.GuardarLogError("The user isn't a community member");
-			}
+                cambiadoRol = ControladorIdentidades.CambiarRolUsuarioEnProyecto(identidad, (short)pRol);
+            }
+            else
+            {
+                mLoggingService.GuardarLogError("The user isn't a community member", mlogger);
+            }
 
-			usuarioCN.Dispose();
-			personaCN.Dispose();
-			identidadCN.Dispose();
-			return cambiadoRol;
-		}
-		[NonAction]
-		private string ObtenerUsuarioLoginRedSocial(Guid pUsuarioId, string pTipoRedSocial)
-		{
-			UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            usuarioCN.Dispose();
+            personaCN.Dispose();
+            identidadCN.Dispose();
+            return cambiadoRol;
+        }
+        [NonAction]
+        private string ObtenerUsuarioLoginRedSocial(Guid pUsuarioId, string pTipoRedSocial)
+        {
+            UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
 
-			TipoRedSocialLogin tipoRedSocial;
-			if (!Enum.TryParse(pTipoRedSocial, true, out tipoRedSocial))
-			{
-				tipoRedSocial = TipoRedSocialLogin.Otros;
-			}
+            TipoRedSocialLogin tipoRedSocial;
+            if (!Enum.TryParse(pTipoRedSocial, true, out tipoRedSocial))
+            {
+                tipoRedSocial = TipoRedSocialLogin.Otros;
+            }
 
-			return usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, pUsuarioId);
-		}
+            return usuCN.ObtenerLoginEnRedSocialPorUsuarioId(tipoRedSocial, pUsuarioId);
+        }
 
-		#endregion
+        #endregion
 
-	}
+    }
 }

@@ -623,6 +623,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Email of the publisher
         /// </summary>
         public string publisher_email { get; set; }
+
+        public Guid usuarioID { get; set; }
+
+        public string login { get; set; }
     }
 
     /// <summary>
@@ -729,7 +733,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// User short name
         /// </summary>
-        [Required]
         public string user_short_name { get; set; }
 
         /// <summary>
@@ -753,6 +756,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// True if the comment must be pusblished in the community home
         /// </summary>
         public bool publish_home { get; set; }
+        public Guid UserId { get; set; }
+
+        public string login { get; set; }
 
     }
 
@@ -968,6 +974,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// aumented reading
         /// </summary>
         public AumentedReading aumented_reading { get; set; }
+
+        public bool? permitir_compartido { get; set; }
 
     }
 

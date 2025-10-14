@@ -8,6 +8,7 @@ using Es.Riam.Gnoss.AD.Virtuoso;
 using Es.Riam.Gnoss.CL;
 using Es.Riam.Gnoss.CL.ServiciosGenerales;
 using Es.Riam.Gnoss.Elementos.ParametroAplicacion;
+using Es.Riam.Gnoss.Elementos.Suscripcion;
 using Es.Riam.Gnoss.Logica.Documentacion;
 using Es.Riam.Gnoss.Logica.Facetado;
 using Es.Riam.Gnoss.Logica.RDF;
@@ -18,8 +19,11 @@ using Es.Riam.Gnoss.Web.Controles.Documentacion;
 using Es.Riam.Gnoss.Web.Controles.ParametroAplicacionGBD;
 using Es.Riam.Gnoss.Web.Controles.ServicioImagenesWrapper;
 using Es.Riam.Gnoss.Web.MVC.Models;
+using Es.Riam.Interfaces.InterfacesOpen;
 using Es.Riam.Util;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Serilog.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -67,17 +71,19 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
 
         #region Constructores
 
-        private IHttpContextAccessor mHttpContextAccessor;
-        private LoggingService mLoggingService;
-        private EntityContext mEntityContext;
-        private ConfigService mConfigService;
-        private VirtuosoAD mVirtuosoAD;
-        private RedisCacheWrapper mRedisCacheWrapper;
-        private GnossCache mGnossCache;
-        private EntityContextBASE mEntityContextBASE;
-        private IServicesUtilVirtuosoAndReplication mServicesUtilVirtuosoAndReplication;
-
-        public ControladorApiRecursos(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
+        private readonly IHttpContextAccessor mHttpContextAccessor;
+        private readonly LoggingService mLoggingService;
+        private readonly EntityContext mEntityContext;
+        private readonly ConfigService mConfigService;
+        private readonly VirtuosoAD mVirtuosoAD;
+        private readonly RedisCacheWrapper mRedisCacheWrapper;
+        private readonly GnossCache mGnossCache;
+        private readonly EntityContextBASE mEntityContextBASE;
+        private readonly IServicesUtilVirtuosoAndReplication mServicesUtilVirtuosoAndReplication;
+        private readonly IAvailableServices mAvailableServices;
+        private ILogger mlogger;
+        private ILoggerFactory mLoggerFactory;
+        public ControladorApiRecursos(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<ControladorApiRecursos> logger, ILoggerFactory loggerFactory)
         {
             mHttpContextAccessor = httpContextAccessor;
             mLoggingService = loggingService;
@@ -88,6 +94,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             mGnossCache = gnossCache;
             mEntityContextBASE = entityContextBASE;
             mServicesUtilVirtuosoAndReplication = servicesUtilVirtuosoAndReplication;
+            mAvailableServices = availableServices;
+            mlogger = logger;
+            mLoggerFactory = loggerFactory;
         }
 
         #endregion
@@ -106,25 +115,24 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pUrlServicioWebDocumentacion">Url del servicio web de documentación</param>
         public void EliminarMasivoRecursosComunidad(Guid pOrganizacionID, Guid pProyectoID, string pUrlIntragnoss, string pUrlServicioWebDocumentacion)
         {
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            FacetaCN facetaCN = new FacetaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
+            FacetaCN facetaCN = new FacetaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetaCN>(), mLoggerFactory);
             List<AD.EntityModel.Models.Faceta.OntologiaProyecto> listaOntologias = facetaCN.ObtenerOntologias(pProyectoID, false);
             Dictionary<Guid, List<Guid>> dicOntologiaDocumentosVinculados = new Dictionary<Guid, List<Guid>>();
             Dictionary<Guid, string> dicOntologiaEnlace = new Dictionary<Guid, string>();
 
             mProyectoID = pProyectoID;
 
-            foreach (AD.EntityModel.Models.Faceta.OntologiaProyecto onto in listaOntologias)
+            foreach (string ontologia in listaOntologias.Select(item => item.OntologiaProyecto1))
             {
-                string ontologia = onto.OntologiaProyecto1;
-
+                string nombreOntologia = ontologia;
                 if (!ontologia.Contains(".owl"))
                 {
-                    ontologia += ".owl";
+                    nombreOntologia += ".owl";
                 }
 
                 Guid proyOntoID = pProyectoID;
-                ProyectoCL proyectoCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                ProyectoCL proyectoCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
                 Dictionary<string, string> parametroProyecto = proyectoCL.ObtenerParametrosProyecto(pProyectoID);
                 proyectoCL.Dispose();
 
@@ -133,7 +141,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                     proyOntoID = new Guid(parametroProyecto[ParametroAD.ProyectoIDPatronOntologias]);
                 }
 
-                Guid ontologiaID = docCN.ObtenerOntologiaAPartirNombre(proyOntoID, ontologia);
+                Guid ontologiaID = docCN.ObtenerOntologiaAPartirNombre(proyOntoID, nombreOntologia);
 
                 if (!ontologiaID.Equals(Guid.Empty))
                 {
@@ -180,7 +188,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pUrlServicioWebDocumentacion">Url del servicio web de documentación</param>
         public string EliminarMasivoRecursosOntologia(string pOntologiaProyecto, Guid pOrganizacionID, Guid pProyectoID, string pUrlIntragnoss, string pUrlServicioWebDocumentacion)
         {
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             string mensaje = string.Empty;
 
             if (!pOntologiaProyecto.Contains(".owl"))
@@ -190,7 +198,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
 
             mProyectoID = pProyectoID;
             Guid proyOntoID = pProyectoID;
-            ProyectoCL proyectoCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            ProyectoCL proyectoCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
             Dictionary<string,string> parametroProyecto = proyectoCL.ObtenerParametrosProyecto(pProyectoID);
             proyectoCL.Dispose();
 
@@ -226,12 +234,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                     //Borrar los documentos vinculados de la base ácida
                     BorrarDocumentos(idsDocumento);
 
-                    //this.lblmLoggingService.Text = "Ontología " + ddlOntologias.SelectedItem.Text + " borrada";
-                    mensaje = "Ontología " + pOntologiaProyecto + " borrada";
+                    mensaje = $"Ontología {pOntologiaProyecto} borrada";
                 }
                 else
-                {
-                    //this.lblmLoggingService.Text = "No se han encontrado documentos vinculados a la ontologia";
+                {                    
                     mensaje = "No se han encontrado documentos vinculados a la ontologia";
                 }
             }
@@ -249,7 +255,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         public List<Guid> ObtenerDocumentosIDVinculadosAOntologiaProyecto(Guid pOntologiaID, Guid pProyectoID)
         {
             List<Guid> lista = new List<Guid>();
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
 
             try
             {
@@ -257,8 +263,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError("Error ObtenerDocumentosIDVinculadosAOntologiaProyecto al obtener documentos vinculados a la ontologia:" + pOntologiaID + " del proyecto: " + pProyectoID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                //this.lblmLoggingService.Text = "Error al obtener documentos vinculados a la ontologia";
+                GuardarLogError($"Error ObtenerDocumentosIDVinculadosAOntologiaProyecto al obtener documentos vinculados a la ontologia: {pOntologiaID} del proyecto: {pProyectoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
             }
 
             docCN.Dispose();
@@ -286,8 +291,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                     }
                     catch (Exception ex)
                     {
-                        GuardarLogError("Error BorradoGrafoOntologia al borrar el documento:" + documentoID + " del grafo de la ontologia: " + ontologiaID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                        //this.lblmLoggingService.Text = "Error al borrar el grafo de la ontologia";
+                        GuardarLogError($"Error BorradoGrafoOntologia al borrar el documento: {documentoID} del grafo de la ontologia: {ontologiaID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
                     }
                 }
             }
@@ -301,7 +305,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             {
                 if(mControladorDocumentacion == null)
                 {
-                    mControladorDocumentacion = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication);
+                    mControladorDocumentacion = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDocumentacion>(), mLoggerFactory);
                 }
                 return mControladorDocumentacion;
             }
@@ -316,21 +320,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pUrlIntragnoss">UrlIntragnoss de la aplicación</param>
         public void BorradoGrafoOntologia(List<Guid> pDocumentosID, Guid pOntologiaID, Guid pProyectoID, string pUrlIntragnoss)
         {
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             string enlace = docCN.ObtenerEnlaceDocumentoPorDocumentoID(pOntologiaID);
 
             foreach (Guid documentoID in pDocumentosID)
             {
                 try
                 {
-                    //ControladorDocumentacion.BorrarRDFDeDocumentoEliminado(documentoID, pOntologiaID, pUrlIntragnoss);
-
                     ControladorDocumentacion.BorrarRDFDeVirtuoso(documentoID.ToString(), enlace, pUrlIntragnoss, "", pProyectoID, null, false);
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError("Error BorradoGrafoOntologia al borrar el documento:" + documentoID + " del grafo de la ontologia: " + pOntologiaID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                    //this.lblmLoggingService.Text = "Error al borrar el grafo de la ontologia";
+                    GuardarLogError("Error BorradoGrafoOntologia al borrar el documento:" + documentoID + " del grafo de la ontologia: " + pOntologiaID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");                    
                 }
             }
 
@@ -349,14 +350,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             foreach (Guid documentoID in pDocumentosID)
             {
                 try
-                {
-                    //ControladorDocumentacion.BorrarRDFDeDocumentoEliminado(documentoID, pOntologiaID, pUrlIntragnoss);
+                {                    
                     ControladorDocumentacion.BorrarRDFDeVirtuosoPorGrafo(documentoID.ToString(), pUrlIntragnoss, "", pProyectoID, null, false);
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError("Error BorradoGrafoOntologia al borrar el documento:" + documentoID + " \n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                    //this.lblmLoggingService.Text = "Error al borrar el grafo de la ontologia";
+                    GuardarLogError($"Error BorradoGrafoOntologia al borrar el documento: {documentoID} \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
                 }
             }
         }
@@ -367,9 +366,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pDocumentosID"></param>
         public void BorradoGrafoBusqueda(List<Guid> pDocumentosID, Guid pProyectoActualID)
         {
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
-            string urlIntragnoss = (string)ParametrosAplicacionDS.ParametroAplicacion.Find(parametroApp => parametroApp.Parametro.Equals("UrlIntragnoss")).Valor;
-            FacetadoCN facetadoCN = new FacetadoCN(urlIntragnoss, pProyectoActualID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
+            string urlIntragnoss = ParametrosAplicacionDS.ParametroAplicacion.Find(parametroApp => parametroApp.Parametro.Equals("UrlIntragnoss")).Valor;
+            FacetadoCN facetadoCN = new FacetadoCN(urlIntragnoss, pProyectoActualID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
             
             foreach(Guid documentoID in pDocumentosID)
             {
@@ -386,7 +385,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pProyectoID">Identificador de la comunidad</param>
         public void BorradoRDF(List<Guid> pDocumentosID)
         {
-            RdfCN rdfCN = new RdfCN("rdf", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            RdfCN rdfCN = new RdfCN("rdf", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<RdfCN>(), mLoggerFactory);
             foreach (Guid documentoID in pDocumentosID)
             {
                 try
@@ -395,8 +394,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError("Error BorradoRDF al borrar el documento:" + documentoID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                    //this.lblmLoggingService.Text = "Error al borrar un documento de la BD rdf";
+                    GuardarLogError($"Error BorradoRDF al borrar el documento: {documentoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
                 }
             }
             rdfCN.Dispose();
@@ -409,7 +407,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pProyectoID">Identificador del proyecto</param>
         public void BorradoRDFTodaComunidad(List<Guid> pDocumentosID, Guid pProyectoID)
         {
-            RdfCN rdfCN = new RdfCN("rdf", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            RdfCN rdfCN = new RdfCN("rdf", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<RdfCN>(), mLoggerFactory);
             Dictionary<string, List<Guid>> documentosOrdenados = new Dictionary<string, List<Guid>>();
             try
             {
@@ -432,8 +430,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError("Error BorradoRDF al borrar los documentos del proyecto: " + pProyectoID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                //this.lblmLoggingService.Text = "Error al borrar un documento de la BD rdf";
+                GuardarLogError($"Error BorradoRDF al borrar los documentos del proyecto: {pProyectoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
             }
 
             rdfCN.Dispose();
@@ -445,12 +442,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pDocumentosID"></param>
         public void BorrarGrafoBusqueda(List<Guid> pDocumentosID, Guid pProyectoActualID)
         {
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             //obtener los ids de los proyectos donde está compartido cada documento
             Dictionary<Guid, List<Guid>> documentosCompartidosEn = docCN.ObtenerProyectosEstanCompartidosDocsPorID(pDocumentosID);
             Dictionary<Guid, TiposDocumentacion> documentosTipo = docCN.ObtenerTiposDocumentosPorDocumentosID(pDocumentosID);
-            string urlIntragnoss = (string)ParametrosAplicacionDS.ParametroAplicacion.Find(parametroApp => parametroApp.Parametro.Equals("UrlIntragnoss")).Valor;
-            FacetadoCN facetadoCN = new FacetadoCN(urlIntragnoss, pProyectoActualID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            string urlIntragnoss = ParametrosAplicacionDS.ParametroAplicacion.Find(parametroApp => parametroApp.Parametro.Equals("UrlIntragnoss")).Valor;
+            FacetadoCN facetadoCN = new FacetadoCN(urlIntragnoss, pProyectoActualID.ToString(), mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
             //Insertar las filas en colatagscomunidades por cada proyecto en el que está compartido el documento
             foreach (Guid documentoID in documentosCompartidosEn.Keys)
@@ -464,12 +461,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                         {
                             facetadoCN.BorrarRecurso(proyectoID.ToString(), documentoID, 0, "", false, true, true);
                         }
-                        ControladorDocumentacion.EliminarRecursoModeloBaseSimple(documentoID, proyectoID, tipo, null, string.Empty, 0, (short)PrioridadBase.ApiRecursos);
+                        ControladorDocumentacion.EliminarRecursoModeloBaseSimple(documentoID, proyectoID, tipo, null, string.Empty, 0, (short)PrioridadBase.ApiRecursos, mAvailableServices);
                     }
                     catch (Exception ex)
                     {
-                        GuardarLogError("Error al borrar autocompletar:" + documentoID + " del proyecto: " + proyectoID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                        //this.lblmLoggingService.Text = "Error al borrar el grafo de la ontologia";
+                        GuardarLogError($"Error al borrar autocompletar: {documentoID} del proyecto: {proyectoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
                     }
                 }
 
@@ -483,7 +479,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pDocumentosID">Lista de identificadores de los recursos cuyas imágenes se van a borrar</param>
         public void BorrarImagenRecursos(List<Guid> pDocumentosID)
         {
-            ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService);
+            ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService, mLoggerFactory.CreateLogger<ServicioImagenes>(), mLoggerFactory);
             servicioImagenes.Url = UrlServicioImagenes;
             string docFallidos = string.Empty;
 
@@ -493,8 +489,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 {
                     foreach (Guid docID in pDocumentosID)
                     {
-                        string directorioViejo = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticasAntiguo + "\\" + docID.ToString();
-                        string directorio = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticas + "\\" + UtilArchivos.DirectorioDocumento(docID);
+                        string directorioViejo = Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticasAntiguo, docID.ToString());
+                        string directorio = Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticas, UtilArchivos.DirectorioDocumento(docID));
 
                         if (!servicioImagenes.BorrarImagenesDeRecurso(directorioViejo) && !servicioImagenes.BorrarImagenesDeRecurso(directorio))
                         {
@@ -509,11 +505,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError("Error BorrarImagenRecursos al borrar imágenes de los recursos de la comunidad: " + docFallidos + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                //this.lblmLoggingService.Text = "Error al borrar archivos de todas las ontologías de la comunidad";
+                GuardarLogError($"Error BorrarImagenRecursos al borrar imágenes de los recursos de la comunidad: {docFallidos}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
             }
 
-            //servicioImagenes.Dispose();
         }
 
         /// <summary>
@@ -531,8 +525,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError("Error BorrarArchivosDocumentosTodasOntologiasComunidad al borrar archivos de todas las ontologías de la comunidad: \n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                //this.lblmLoggingService.Text = "Error al borrar archivos de todas las ontologías de la comunidad";
+                GuardarLogError($"Error BorrarArchivosDocumentosTodasOntologiasComunidad al borrar archivos de todas las ontologías de la comunidad: \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
             }
         }
 
@@ -542,7 +535,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pOntologiaID">Identificador de la ontologia</param>
         public void BorrarArchivosDocumentosOntologia(List<Guid> pDocumentosID, Guid pOntologiaID)
         {
-            GestionDocumental gestionDoc = new GestionDocumental(mLoggingService, mConfigService);
+            GestionDocumental gestionDoc = new GestionDocumental(mLoggingService, mConfigService, mLoggerFactory.CreateLogger<GestionDocumental>(), mLoggerFactory);
             gestionDoc.Url = UrlServicioWebDocumentacion;
 
             try
@@ -554,8 +547,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError("Error BorrarArchivosDocumentosOntologia al borrar archivos de la ontología:" + pOntologiaID + " \n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                //this.lblmLoggingService.Text = "Error al borrar archivos de la ontología";
+                GuardarLogError($"Error BorrarArchivosDocumentosOntologia al borrar archivos de la ontología:{pOntologiaID} \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
             }
 
             foreach (Guid docID in pDocumentosID)
@@ -563,12 +555,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 try
                 {
                     //borra el directorio del documentoID y todos los archivos contenidos en él
-                    string directorio = UtilArchivos.ContentDocumentosSem + "\\" + UtilArchivos.DirectorioDocumento(docID);
+                    string directorio = Path.Combine(UtilArchivos.ContentDocumentosSem, UtilArchivos.DirectorioDocumento(docID));
                     gestionDoc.BorrarDocumentosDeDirectorio(directorio);
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError("Error BorrarArchivosDocumentosOntologia al borrar el directorio del documento:" + docID + " \n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
+                    GuardarLogError($"Error BorrarArchivosDocumentosOntologia al borrar el directorio del documento:{docID} \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
                 }
 
                 try
@@ -581,41 +573,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError("Error BorrarArchivosDocumentosOntologia al borrar el directorio de archivosLink del documento:" + docID + " \n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
+                    GuardarLogError($"Error BorrarArchivosDocumentosOntologia al borrar el directorio de archivosLink del documento:{docID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
                 }
             }
-
-            //gestionDoc.Dispose();
         }
-
-        ///// <summary>
-        ///// Borra, por cada ontología que tenga el proyecto, los archivos de los documentos vinculados a esas ontologías
-        ///// </summary>
-        ///// <param name="pOrganizacionID">Identificador de la organización</param>
-        ///// <param name="pProyectoID">Identificador de la comunidad</param>
-        //public void BorrarArchivosDocumentosOntologiasProyecto(Guid pOrganizacionID, Guid pProyectoID)
-        //{
-        //    if (!pOrganizacionID.Equals(Guid.Empty) && !pProyectoID.Equals(Guid.Empty))
-        //    {
-        //        DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService);
-        //        FacetaCN facetaCN = new FacetaCN();
-        //        List<FacetaDS.OntologiaProyectoRow> listaOntologias = facetaCN.ObtenerOntologias(pProyectoID, false).OntologiaProyecto.ToList();
-
-        //        foreach (FacetaDS.OntologiaProyectoRow ontologia in listaOntologias)
-        //        {
-        //            if (!ontologia.OntologiaProyecto.Contains(".owl"))
-        //            {
-        //                ontologia.OntologiaProyecto += ".owl";
-        //            }
-
-        //            Guid ontologiaID = docCN.ObtenerDocumentoIDDeOntologia(ontologia.OntologiaProyecto, pOrganizacionID, pProyectoID);
-        //            BorrarArchivosDocumentosOntologia(ontologiaID);
-        //        }
-
-        //        facetaCN.Dispose();
-        //        docCN.Dispose();
-        //    }
-        //}
 
         /// <summary>
         /// Borra del ácido los documentos
@@ -623,15 +584,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <param name="pDocumentosID">Lista de identificadores de los documentos a borrar</param>
         public void BorrarDocumentos(List<Guid> pDocumentosID)
         {
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             try
             {
                 docCN.EliminarDocumentos(pDocumentosID);
             }
             catch (Exception ex)
             {
-                GuardarLogError("Error BorrarDocumentosVinculados al borrar documentos vinculados. \n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");
-                //this.lblmLoggingService.Text = "Error al borrar documentos vinculados";
+                GuardarLogError($"Error BorrarDocumentosVinculados al borrar documentos vinculados. \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
             }
             docCN.Dispose();
         }
@@ -639,11 +599,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         /// <summary>
         /// Guarda el log del error.
         /// </summary>
-        public void GuardarLogError(string pError, string pNombreLog)
+        public static void GuardarLogError(string pError, string pNombreLog)
         {
             string directorio = System.AppDomain.CurrentDomain.BaseDirectory + "logs";
             Directory.CreateDirectory(directorio);
-            string rutaFichero = directorio + "\\log_" + pNombreLog + "_" + DateTime.Now.ToString("yyyy-MM-dd") + ".log";
+            string rutaFichero = Path.Combine(directorio, $"log_{pNombreLog}_{DateTime.Now.ToString("yyyy-MM-dd")}.log");
 
             //Si el fichero supera el tamaño máximo lo elimino
             if (File.Exists(rutaFichero))
@@ -778,10 +738,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             {
                 if (mParametrosAplicacionDS == null)
                 {
-                    //ParametroAplicacionCN paramApliCN = new ParametroAplicacionCN("acid");
-                    //mParametrosAplicacionDS = paramApliCN.ObtenerConfiguracionGnoss();
-                    //paramApliCN.Dispose();
-
                     mParametrosAplicacionDS = new GestorParametroAplicacion();
                     ParametroAplicacionGBD parametroAplicacionGBD = new ParametroAplicacionGBD(mLoggingService, mEntityContext, mConfigService);
                     parametroAplicacionGBD.ObtenerConfiguracionGnoss(mParametrosAplicacionDS);
@@ -800,7 +756,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             {
                 if (mParametroProyecto == null)
                 {
-                    ProyectoCL proyectoCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                    ProyectoCL proyectoCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
                     mParametroProyecto = proyectoCL.ObtenerParametrosProyecto(mProyectoID);
                     proyectoCL.Dispose();
                 }

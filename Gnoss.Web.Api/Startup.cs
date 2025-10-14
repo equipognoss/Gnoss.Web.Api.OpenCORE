@@ -53,7 +53,6 @@ namespace Gnoss.Web.Api
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
             EscribirLogTiempos("Application_Start Inicio");
 			ILoggerFactory loggerFactory =
 			LoggerFactory.Create(builder =>
@@ -94,6 +93,7 @@ namespace Gnoss.Web.Api
             services.AddScoped<IUtilServicioIntegracionContinua, UtilServicioIntegracionContinuaOpen>();
             services.AddScoped<IServicesUtilVirtuosoAndReplication, ServicesVirtuosoAndBidirectionalReplicationOpen>();
             services.AddScoped(typeof(RelatedVirtuosoCL));
+            services.AddScoped<IAvailableServices, AvailableServicesOpen>();
             string bdType = "";
             IDictionary environmentVariables = Environment.GetEnvironmentVariables();
             if (environmentVariables.Contains("connectionType"))
@@ -133,11 +133,10 @@ namespace Gnoss.Web.Api
             if (bdType.Equals("0"))
             {
                 services.AddDbContext<EntityContext>(options =>
-                        options.UseSqlServer(acid)
+                        options.UseSqlServer(acid, o => o.UseCompatibilityLevel(110))
                         );
                 services.AddDbContext<EntityContextBASE>(options =>
-                        options.UseSqlServer(baseConnection)
-
+                        options.UseSqlServer(baseConnection, o => o.UseCompatibilityLevel(110))
                         );
             }
 			else if (bdType.Equals("1"))
@@ -168,9 +167,6 @@ namespace Gnoss.Web.Api
             }
             var sp = services.BuildServiceProvider();
 
-            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-
-
             // Resolve the services from the service provider
             var configService = sp.GetService<ConfigService>();
 			var servicesUtilVirtuosoAndReplication = sp.GetService<IServicesUtilVirtuosoAndReplication>();
@@ -199,9 +195,9 @@ namespace Gnoss.Web.Api
 
             EstablecerDominioCache(entity);
 
-			UtilServicios.CargarIdiomasPlataforma(entity, loggingService, configService, servicesUtilVirtuosoAndReplication, redisCacheWrapper);
+            UtilServicios.CargarIdiomasPlataforma(entity, loggingService, configService, servicesUtilVirtuosoAndReplication, redisCacheWrapper, loggerFactory);
 
-			ConfigurarApplicationInsights(configService);
+            ConfigurarApplicationInsights(configService);
 
             //Configuro la caché de lectura
             ConfigurarParametros(configService);
@@ -246,7 +242,7 @@ namespace Gnoss.Web.Api
             {
                 c.PreSerializeFilters.Add((swaggerDoc, httpReq) => swaggerDoc.Servers = new List<OpenApiServer>
                       {
-                        new OpenApiServer { Url = $"/apiv3"},
+                        new OpenApiServer { Url = $"/api"},
                         new OpenApiServer { Url = $"/" }
                       });
             });

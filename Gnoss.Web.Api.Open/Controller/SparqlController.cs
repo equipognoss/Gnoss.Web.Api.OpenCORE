@@ -13,10 +13,13 @@ using Es.Riam.Gnoss.Servicios;
 using Es.Riam.Gnoss.Util.Configuracion;
 using Es.Riam.Gnoss.Util.General;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
+using Es.Riam.Interfaces.InterfacesOpen;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
+using Serilog.Core;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -34,11 +37,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     [Route("sparql-endpoint")]
     public class SparqlController : ControlApiGnossBase
     {
-
-        public SparqlController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
-                : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
+        private ILogger mlogger;
+        private ILoggerFactory mLoggerFactory;
+        public SparqlController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<SparqlController> logger, ILoggerFactory loggerFactory)
+                : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices,logger,loggerFactory)
         {
-
+            mlogger = logger;
+            mLoggerFactory = loggerFactory;
         }
 
         #region Metodos Web
@@ -59,7 +64,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 try
                 {
-                    jsonResponse = EjecutarConsultaEnVirtuoso(query, sparql_query.ontology, sparql_query.ontology);
+                    jsonResponse = EjecutarConsultaEnVirtuoso(query, sparql_query.ontology, sparql_query.ontology, sparql_query.use_virtuoso_balancer);
                 }
                 catch
                 {
@@ -82,7 +87,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (TienePermisoAplicacionEnOntologia(sparql_query.ontology))
             {
-                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
                 Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(sparql_query.community_short_name);
 
                 string communityQuery = "";
@@ -118,7 +123,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (TienePermisoAplicacionEnOntologias(sparql_query.ontology_list))
             {
-                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
                 Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(sparql_query.community_short_name);
 
                 string communityQuery = "";
@@ -126,11 +131,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 try
                 {
-                    jsonResponse = EjecutarConsultaEnVirtuoso(query, sparql_query.ontology_list[0], sparql_query.ontology_list[0]);
+                    jsonResponse = EjecutarConsultaEnVirtuoso(query, sparql_query.ontology_list[0], sparql_query.ontology_list[0], sparql_query.use_virtuoso_balancer);
 
                     if (!string.IsNullOrEmpty(communityQuery) && !proyectoID.Equals(Guid.Empty))
                     {
-                        jsonResponse = EjecutarConsultaEnVirtuoso(communityQuery, proyectoID.ToString().ToLower(), sparql_query.ontology_list[0]);
+                        jsonResponse = EjecutarConsultaEnVirtuoso(communityQuery, proyectoID.ToString().ToLower(), sparql_query.ontology_list[0], sparql_query.use_virtuoso_balancer);
                     }
                 }
                 catch
@@ -158,7 +163,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             if (Guid.TryParse(pOntologia, out test))
             {
                 //Intenta acceder al grafo de una comunidad, compruebo que es administrador de ella
-                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
                 bool tienePermiso = proyCN.EsUsuarioAdministradorProyecto(UsuarioOAuth, test);
 
                 if (!tienePermiso)
@@ -169,7 +174,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             else
             {
                 //Intenta acceder al grafo de una ontología, compruebo que administra alguna comunidad en la que se está usando esta ontología
-                DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
                 bool tienePermiso = documentacionCN.ComprobarUsuarioAdministraOntologia(UsuarioOAuth, pOntologia + ".owl");
 
                 if (!tienePermiso)
@@ -205,7 +210,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <returns>Consulta SPARQL formada</returns>
         private string JuntarPartesConsultaSparql(List<string> pGrafos, string pSelect, string pWhere)
         {
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, pGrafos[0], mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, pGrafos[0], mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
             Dictionary<string, List<string>> conjuntoPrefijosGrafos = new Dictionary<string, List<string>>();
 
@@ -249,20 +254,19 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <summary>
         /// Lee de virtuosos a partir de una consulta SPARQL. Si hay errores por culpa de un checkpoint, la consulta se reintenta
         /// </summary>
-        /// <param name="pDataSet">DataSet a cargar (null si es una consulta de actualización)</param>
         /// <param name="pQuery">Query a ejecutar</param>
         /// <param name="pOntologia">Ontología en la que se va a realizar la consulta</param>
         /// <param name="pNombreTabla">Nombre de la tabla a cargar en el DataSet (null si es una consulta de actualización)</param>
-        /// <param name="pEsActualizacion">Verdad si es una consulta de actualización, falso si es una consulta de lectura</param>
-        private string EjecutarConsultaEnVirtuoso(string pQuery, string pOntologia, string pNombreTabla)
+        /// <param name="pUsarConexionMaster">True para utilizar la conexión master configurada y false para utilizar la conexión que nos de el servicio de afinidad</param>
+        private string EjecutarConsultaEnVirtuoso(string pQuery, string pOntologia, string pNombreTabla, bool pUsarConexionMaster)
         {
             FacetadoCN facetadoCN = null;
             string jsonResultado = string.Empty;
 
             try
             {
-                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pNombreTabla, pOntologia, true);
+                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
+                jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pNombreTabla, pOntologia, !pUsarConexionMaster);
 
             }
             catch (Exception)
@@ -270,9 +274,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 //Cerramos las conexiones
                 ControladorConexiones.CerrarConexiones();
 
-                if (mServicesUtilVirtuosoAndReplication.ControlarErrorVirtuosoConection(null, null))
+                if (mServicesUtilVirtuosoAndReplication.ControlarErrorVirtuosoConection())
                 {
-                    facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                    facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
                     jsonResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoJSON(pQuery, pOntologia, pOntologia, true);
                 }
@@ -305,7 +309,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             try
             {
-                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
                 csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pNombreTabla, pOntologia, true);
 
             }
@@ -315,9 +319,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 ControladorConexiones.CerrarConexiones();
 
 
-                if (mServicesUtilVirtuosoAndReplication.ControlarErrorVirtuosoConection(null, null))
+                if (mServicesUtilVirtuosoAndReplication.ControlarErrorVirtuosoConection())
                 {
-                    facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                    facetadoCN = new FacetadoCN(UrlIntragnoss, pOntologia, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
                     csvResultado = facetadoCN.FacetadoAD.LeerDeVirtuosoCSV(pQuery, pOntologia, pOntologia, true);
                 }
@@ -342,7 +346,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             Dictionary<string, List<string>> informacionOntologias = new Dictionary<string, List<string>>();
 
             //ObtenerOntologias
-            FacetaCL facetaCL = new FacetaCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+            FacetaCL facetaCL = new FacetaCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetaCL>(), mLoggerFactory);
 
             if (pEsGrafoComunidad)
             {

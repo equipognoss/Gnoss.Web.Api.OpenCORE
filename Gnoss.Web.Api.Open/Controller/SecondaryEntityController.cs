@@ -24,6 +24,10 @@ using Es.Riam.AbstractsOpen;
 using BeetleX.Redis.Commands;
 using Es.Riam.Gnoss.Logica.MVC;
 using Microsoft.Azure.Amqp.Framing;
+using Es.Riam.Interfaces.InterfacesOpen;
+using Es.Riam.Gnoss.Logica.ServiciosGenerales;
+using Microsoft.Extensions.Logging;
+using Serilog.Core;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
@@ -34,11 +38,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     [Route("secondary-entity")]
     public class SecondaryEntityController : ControlApiGnossBase
     {
-
-        public SecondaryEntityController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
-            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
+        private ILogger mlogger;
+        private ILoggerFactory mLoggerFactory;
+        public SecondaryEntityController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<SecondaryEntityController> logger, ILoggerFactory loggerFactory)
+            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices,logger,loggerFactory)
         {
-
+            mlogger = logger;
+            mLoggerFactory = loggerFactory;
         }
 
         #region Metodos web
@@ -110,7 +116,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 List<TripleWrapper> triplesComBorrarDef = new List<TripleWrapper>();
                 List<string> listaAux = new List<string>();
 
-                FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoAD>(), mLoggerFactory);
                 foreach (TripleWrapper triple in triplesComInsertar)
                 {
                     triplesComInsertarDef += facetadoAD.GenerarTripletaSinConversionesAbsurdas(triple.Subject.ToLowerSearchGraph(), triple.Predicate, triple.Object.ToLowerSearchGraph(), triple.ObjectLanguage, triple.ObjectType);
@@ -121,7 +127,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     triplesComBorrarDef.Add(new TripleWrapper { Subject = triple.Subject.ToLowerSearchGraph(), Predicate = triple.Predicate, Object = triple.Object.ToLowerSearchGraph(), ObjectLanguage = triple.ObjectLanguage, ObjectType = triple.ObjectType });
                 }
 
-                FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
                 //Guardo triples grafo:
                 facCN.BorrarGrupoTripletasEnLista(nombreOntologia, triplesComBorrar, true);
@@ -144,7 +150,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex);
+                mLoggingService.GuardarLogError(ex, mlogger);
                 throw;
             }
         }
@@ -195,7 +201,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             string nombreOntologia = docOnto.FilaDocumento.Enlace;
 
             string idHasEntidadPrincipal = parameters.entity_id;
-            FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
             if (!idHasEntidadPrincipal.Contains("/entidadsecun_"))
             {
@@ -236,7 +242,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             facCN.Dispose();
 
             //Invalidar Cache del tesauro.
-            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
             facetadoCL.InvalidarCacheTesauroFaceta(ProyectoTraerOntosID);
             facetadoCL.Dispose();
         }
@@ -279,7 +285,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 ControladorDocumentacion.GuardarRDFEntidadSecundaria(instanciasPrincipales, UrlIntragnoss, nombreOntologia, FilaProy.OrganizacionID, FilaProy.ProyectoID, docOnto, pEliminarRdfViejo);
                 //Invalidar cache del tesauro
-                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
                 facetadoCL.InvalidarCacheTesauroFaceta(ProyectoTraerOntosID);
                 facetadoCL.Dispose();
             }
@@ -316,7 +322,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             List<string> propiedades = new List<string>();
             propiedades.Add("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
             propiedades.Add(pPredicado);
-            FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
             string grafoOnto = "";
             if (!string.IsNullOrEmpty(pUrlOntologiaSecundaria))
@@ -443,7 +449,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 List<string> listaPredicados = new List<string>() { pred[0] };
                 List<string> listaEntidades = new List<string>() { pEntidadSecundariaID };
-                FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
                 FacetadoDS dataSetEnt = facCN.ObtenerValoresPropiedadesEntidades(pGrafoOnto, listaEntidades, listaPredicados, true);
 
                 List<string> objetos = FacetadoCN.ObtenerObjetosDataSetSegunPropiedad(dataSetEnt, pEntidadSecundariaID, listaPredicados.First());

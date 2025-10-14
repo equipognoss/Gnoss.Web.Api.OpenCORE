@@ -7,6 +7,7 @@ using Es.Riam.Gnoss.CL.Documentacion;
 using Es.Riam.Gnoss.Elementos.Documentacion;
 using Es.Riam.Gnoss.Elementos.Identidad;
 using Es.Riam.Gnoss.Elementos.ServiciosGenerales;
+using Es.Riam.Gnoss.Elementos.Suscripcion;
 using Es.Riam.Gnoss.Logica.Documentacion;
 using Es.Riam.Gnoss.Logica.ServiciosGenerales;
 using Es.Riam.Gnoss.Util.Configuracion;
@@ -14,8 +15,11 @@ using Es.Riam.Gnoss.Util.General;
 using Es.Riam.Gnoss.Util.Seguridad;
 using Es.Riam.Gnoss.UtilServiciosWeb;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
+using Es.Riam.Interfaces.InterfacesOpen;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Serilog.Core;
 using System;
 using System.Net;
 
@@ -30,12 +34,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     public class OntologyController : ControlApiGnossBase
     {
         private TokenBearer mToken;
-
-        public OntologyController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
-            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
+        private ILogger mlogger;
+        private ILoggerFactory mLoggerFactory;
+        public OntologyController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<OntologyController> logger, ILoggerFactory loggerFactory)
+            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices,logger,loggerFactory)
         {
             CallTokenService callTokenService = new CallTokenService(configService);
             mToken = callTokenService.CallTokenApi();
+            mlogger = logger;
+            mLoggerFactory = loggerFactory;
         }
 
         /// <summary>
@@ -59,9 +66,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             if (!string.IsNullOrEmpty(parameters.community_short_name) && !string.IsNullOrEmpty(parameters.ontology_name) && !string.IsNullOrEmpty(parameters.file_name) && parameters.file != null && parameters.file.Length > 0)
             {
-                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
                 Guid proyectoID = proyCN.ObtenerProyectoIDPorNombre(parameters.community_short_name);
-                GestionProyecto gestorProy = new GestionProyecto(proyCN.ObtenerProyectoPorID(proyectoID), mLoggingService, mEntityContext);
+                GestionProyecto gestorProy = new GestionProyecto(proyCN.ObtenerProyectoPorID(proyectoID), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionProyecto>(), mLoggerFactory);
                 Proyecto proyecto = gestorProy.ListaProyectos[proyectoID];
                 proyCN.Dispose();
 
@@ -75,7 +82,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
                         Identidad identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, true);
                         
-                        DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                        DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
                         Guid ontologiaID = docCN.ObtenerOntologiaAPartirNombre(FilaProy.ProyectoID, parameters.ontology_name);
 
                         if (!ontologiaID.Equals(Guid.Empty))
@@ -92,7 +99,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             CallWebMethods.CallPostApiToken(servArchivosUrl, "GuardarOntologiaFraccionada", item,false, "file", token);
 
                             //borra la caché del xml de la ontología
-                            DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+                            DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
                             docCL.GuardarIDXmlOntologia(ontologiaID, Guid.NewGuid());
                             docCL.Dispose();
                         }
@@ -127,9 +134,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             if (!string.IsNullOrEmpty(parameters.community_short_name) && !string.IsNullOrEmpty(parameters.ontology_name) && !string.IsNullOrEmpty(parameters.file_name) && parameters.file != null && parameters.file.Length > 0)
             {
-                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
                 Guid proyectoID = proyCN.ObtenerProyectoIDPorNombre(parameters.community_short_name);
-                GestionProyecto gestorProy = new GestionProyecto(proyCN.ObtenerProyectoPorID(proyectoID), mLoggingService, mEntityContext);
+                GestionProyecto gestorProy = new GestionProyecto(proyCN.ObtenerProyectoPorID(proyectoID), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionProyecto>(), mLoggerFactory);
                 Proyecto proyecto = gestorProy.ListaProyectos[proyectoID];
                 proyCN.Dispose();
 
@@ -143,7 +150,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
                         Identidad identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, true);
 
-                        DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                        DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
                         Guid ontologiaID = docCN.ObtenerOntologiaAPartirNombre(FilaProy.ProyectoID, parameters.ontology_name);
 
                         if (!ontologiaID.Equals(Guid.Empty))
@@ -160,7 +167,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             CallWebMethods.CallPostApiToken(servArchivosUrl, "GuardarXmlOntologiaFraccionado", item, false, "file", token);
 
                             //borra la caché del xml de la ontología
-                            DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+                            DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
                             docCL.GuardarIDXmlOntologia(ontologiaID, Guid.NewGuid());
                             docCL.Dispose();
                         }

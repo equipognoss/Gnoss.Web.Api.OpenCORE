@@ -66,6 +66,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         [Required]
         public string query_where { get; set; }
+
+        /// <summary>
+        /// Use the balancer of virtuoso if it is true or the afinity connection if it's false
+        /// </summary>
+        public bool use_virtuoso_balancer { get; set; } = true;
     }
 
     /// <summary>
@@ -96,5 +101,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         [Required]
         public string query_where { get; set; }
+
+        /// <summary>
+        /// Use virtuoso master connection if true and the afinity connection if false
+        /// </summary>
+        public bool use_virtuoso_balancer { get; set; } = true;
     }
 }

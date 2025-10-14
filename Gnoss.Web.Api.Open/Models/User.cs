@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
@@ -12,7 +13,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// User short name
         /// </summary>
-        [Required]
         public string user_short_name { get; set; }
 
         /// <summary>
@@ -20,6 +20,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         [Required]
         public string community_short_name { get; set; }
+
+        /// <summary>
+        /// User identifier
+        /// </summary>
+        public Guid user_id { get; set; }
     }
 
     /// <summary>
@@ -48,7 +53,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// User identificator
         /// </summary>
-        [Required]
         public Guid user_id { get; set; }
 
         /// <summary>
@@ -67,6 +71,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Communities short names where the user is going to be added (The organization must be member of all of them)
         /// </summary>
         public List<string> communities_short_names { get; set; }
+
+        /// <summary>
+        /// User short name or email
+        /// </summary>
+        public string login { get; set; }
     }
 
     /// <summary>
@@ -77,7 +86,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// User identificator
         /// </summary>
-        [Required]
         public Guid user_id { get; set; }
 
         /// <summary>
@@ -91,36 +99,42 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         [Required]
         public List<string> groups_short_names { get; set; }
+
+        /// <summary>
+        /// User short name or email
+        /// </summary>
+        public string login { get; set; }
     }
 
-	/// <summary>
-	/// Parameters for delete a user from a organization group
-	/// </summary>
-	public class ParamsDeleteUserOrgGroup
-	{
-		/// <summary>
-		/// User identificator
-		/// </summary>
-		[Required]
-		public Guid user_id { get; set; }
+    /// <summary>
+    /// Parameters for delete a user from a organization group
+    /// </summary>
+    public class ParamsDeleteUserOrgGroup
+    {
+        /// <summary>
+        /// User identificator
+        /// </summary>
+        public Guid user_id { get; set; }
 
-		/// <summary>
-		/// Organization short name
-		/// </summary>
-		[Required]
-		public string organization_short_name { get; set; }
+        /// <summary>
+        /// Organization short name
+        /// </summary>
+        [Required]
+        public string organization_short_name { get; set; }
 
-		/// <summary>
-		/// Group where the user is going to be added
-		/// </summary>
-		[Required]
-		public string group_short_name { get; set; }
-	}
+        /// <summary>
+        /// Group where the user is going to be added
+        /// </summary>
+        [Required]
+        public string group_short_name { get; set; }
 
-	/// <summary>
-	/// Represents a user
-	/// </summary>
-	public class UserCommunity
+        public string login { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a user
+    /// </summary>
+    public class UserCommunity
     {
         /// <summary>
         /// Name
@@ -145,7 +159,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// <summary>
         /// Number of resources
         /// </summary>
-        public string num_resources{ get; set; }
+        public string num_resources { get; set; }
 
         /// <summary>
         /// Number of comments
@@ -334,6 +348,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Date of last login
         /// </summary>
         public DateTime? last_login { get; set; }
+
+        /// <summary>
+        /// Mark email as validate or not
+        /// </summary>
+        [DefaultValue(true)]
+        public bool validate_email { get; set; }
     }
 
     /// <summary>

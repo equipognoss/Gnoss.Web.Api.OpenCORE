@@ -250,6 +250,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// Parent category identificator
         /// </summary>
         public Guid parent_category_id { get; set; }
+
+        /// <summary>
+        /// List of category image in different sizes 120px, 240px, 420px, 2400px 
+        /// </summary>
+        public Dictionary<int, string> category_images { get; set; }
     }
 
     

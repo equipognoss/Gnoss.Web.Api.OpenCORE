@@ -34,6 +34,8 @@ using System.Data;
 using static Es.Riam.Gnoss.Web.MVC.Models.Tesauro.TesauroModels;
 using Es.Riam.Gnoss.AD.EntityModel.Models.ProyectoDS;
 using Microsoft.Azure.Amqp.Framing;
+using Es.Riam.Interfaces.InterfacesOpen;
+using Microsoft.Extensions.Logging;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
@@ -44,9 +46,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     [Route("[controller]")]
     public class ThesaurusController : ControlApiGnossBase
     {
-        public ThesaurusController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication)
-            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication)
+        private ILogger mlogger;
+        private ILoggerFactory mLoggerFactory;
+        public ThesaurusController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<ThesaurusController> logger, ILoggerFactory loggerFactory)
+            : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices,logger,loggerFactory)
         {
+            mlogger = logger;
+            mLoggerFactory = loggerFactory;
         }
 
         #region Public
@@ -64,7 +70,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             mNombreCortoComunidad = community_short_name;
 
-            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = pry.ObtenerProyectoIDPorNombre(community_short_name);
             pry.Dispose();
             if (!proyectoID.Equals(Guid.Empty))
@@ -80,7 +86,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     throw new GnossException("There is no ontology thesaurus with the specified URL", HttpStatusCode.BadRequest);
                 }
 
-                DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
 
                 Guid ontologiaID = docCN.ObtenerOntologiaAPartirNombre(ProyectoTraerOntosID, thesaurus_ontology_url);
                 if (ontologiaID == Guid.Empty)
@@ -133,10 +139,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("There is no ontology thesaurus with the specified URL", HttpStatusCode.BadRequest);
             }
 
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
 
             Guid elementoVinculadoID = docCN.ObtenerOntologiaAPartirNombre(ProyectoTraerOntosID, parameters.resources_ontology_url);
-            GestorDocumental gestorDoc = new GestorDocumental(docCN.ObtenerDocumentoPorID(elementoVinculadoID), mLoggingService, mEntityContext);
+            GestorDocumental gestorDoc = new GestorDocumental(docCN.ObtenerDocumentoPorID(elementoVinculadoID), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestorDocumental>(), mLoggerFactory);
             docCN.Dispose();
 
             if (elementoVinculadoID == Guid.Empty || !gestorDoc.ListaDocumentos.ContainsKey(elementoVinculadoID))
@@ -144,8 +150,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("There is no ontology resource with the specified URL", HttpStatusCode.BadRequest);
             }
 
-            ControladorDocumentacion.MoverCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, parameters.resources_ontology_url, UrlIntragnoss, parameters.category_id, parameters.path, docOnto, gestorDoc.ListaDocumentos[elementoVinculadoID], true, ProyectoTraerOntosID);
-            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            ControladorDocumentacion.MoverCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, parameters.resources_ontology_url, UrlIntragnoss, parameters.category_id, parameters.path, docOnto, gestorDoc.ListaDocumentos[elementoVinculadoID], true, ProyectoTraerOntosID, mAvailableServices);
+            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
             facetadoCL.InvalidarCacheTesauroFaceta(ProyectoTraerOntosID);
             facetadoCL.Dispose();
         }
@@ -160,12 +166,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             mNombreCortoComunidad = parameters.community_short_name;
 
             ComprobarUsuTienePermisoSobreEntSecundaria(UsuarioOAuth);
-            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = pry.ObtenerProyectoIDPorNombre(parameters.community_short_name);
 
             if (!proyectoID.Equals(Guid.Empty))
             {
-                TesauroCN tesauroCN = new TesauroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                TesauroCN tesauroCN = new TesauroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCN>(), mLoggerFactory);
                 DataWrapperTesauro dataWrapperTesauro = tesauroCN.ObtenerTesauroDeProyecto(proyectoID);
                 AD.EntityModel.Models.Tesauro.CategoriaTesauro categoriaTesauro = dataWrapperTesauro.ListaCategoriaTesauro.Where(item => item.CategoriaTesauroID.Equals(parameters.category_id)).FirstOrDefault();
 
@@ -177,9 +183,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 categoriaTesauro.Nombre = parameters.new_category_name;
                 tesauroCN.Actualizar();
 
-                TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+                TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCL>(), mLoggerFactory);
                 tesauroCL.InvalidarCacheDeTesauroDeProyecto(proyectoID);
-                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
                 facetadoCL.InvalidarCacheTesauroFaceta(proyectoID);
                 facetadoCL.Dispose();
             }
@@ -199,14 +205,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             mNombreCortoComunidad = parameters.community_short_name;
 
             ComprobarUsuTienePermisoSobreEntSecundaria(UsuarioOAuth);
-            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = pry.ObtenerProyectoIDPorNombre(parameters.community_short_name);
 
             if (!proyectoID.Equals(Guid.Empty))
             {
-                TesauroCN tesauroCN = new TesauroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                TesauroCN tesauroCN = new TesauroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCN>(), mLoggerFactory);
                 DataWrapperTesauro dataWrapperTesauro = tesauroCN.ObtenerTesauroDeProyecto(proyectoID);
-                GestionTesauro gestorTesauro = new GestionTesauro(dataWrapperTesauro, mLoggingService, mEntityContext);
+                GestionTesauro gestorTesauro = new GestionTesauro(dataWrapperTesauro, mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionTesauro>(), mLoggerFactory);
 
                 if (parameters.parent_catergory_id.HasValue && !parameters.parent_catergory_id.Value.Equals(Guid.Empty))
                 {
@@ -223,9 +229,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 tesauroCN.Actualizar();
 
-                TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+                TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCL>(), mLoggerFactory);
                 tesauroCL.InvalidarCacheDeTesauroDeProyecto(proyectoID);
-                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
                 facetadoCL.InvalidarCacheTesauroFaceta(proyectoID);
                 facetadoCL.Dispose();
             }
@@ -245,24 +251,24 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             mNombreCortoComunidad = parameters.community_short_name;
 
             ComprobarUsuTienePermisoSobreEntSecundaria(UsuarioOAuth);
-            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN pry = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = pry.ObtenerProyectoIDPorNombre(parameters.community_short_name);
 
             if (!proyectoID.Equals(Guid.Empty))
             {
-                TesauroCN tesauroCN = new TesauroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                TesauroCN tesauroCN = new TesauroCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCN>(), mLoggerFactory);
                 DataWrapperTesauro dataWrapperTesauro = tesauroCN.ObtenerTesauroDeProyecto(proyectoID);
-                GestionTesauro gestorTesauro = new GestionTesauro(dataWrapperTesauro, mLoggingService, mEntityContext);
+                GestionTesauro gestorTesauro = new GestionTesauro(dataWrapperTesauro, mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionTesauro>(), mLoggerFactory);
 
                 if (gestorTesauro.ListaCategoriasTesauro.ContainsKey(parameters.category_id))
                 {
                     var categoriaEliminar = gestorTesauro.ListaCategoriasTesauro[parameters.category_id];
 
-                    DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+                    DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
                     List<Guid> listaCategoriasEliminar = categoriaEliminar.ObtenerCategoriasHijosNietos();
                     listaCategoriasEliminar.Add(categoriaEliminar.Clave);
                     DataWrapperDocumentacion dataWrapperDocumentacion = documentacionCN.ObtenerDocWebAgCatTesauroPorCategoriasId(listaCategoriasEliminar);
-                    gestorTesauro.GestorDocumental = new GestorDocumental(dataWrapperDocumentacion, mLoggingService, mEntityContext);
+                    gestorTesauro.GestorDocumental = new GestorDocumental(dataWrapperDocumentacion, mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestorDocumental>(), mLoggerFactory);
 
                     gestorTesauro.EliminarCategoriaEHijos(categoriaEliminar);
                     documentacionCN.Actualizar();
@@ -274,9 +280,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 tesauroCN.Actualizar();
 
-                TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication);
+                TesauroCL tesauroCL = new TesauroCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<TesauroCL>(), mLoggerFactory);
                 tesauroCL.InvalidarCacheDeTesauroDeProyecto(proyectoID);
-                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
                 facetadoCL.InvalidarCacheTesauroFaceta(proyectoID);
                 facetadoCL.Dispose();
             }
@@ -307,10 +313,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("There is no ontology thesaurus with the specified URL", HttpStatusCode.BadRequest);
             }
 
-            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
 
             Guid elementoVinculadoID = docCN.ObtenerOntologiaAPartirNombre(ProyectoTraerOntosID, parameters.resources_ontology_url);
-            GestorDocumental gestorDoc = new GestorDocumental(docCN.ObtenerDocumentoPorID(elementoVinculadoID), mLoggingService, mEntityContext);
+            GestorDocumental gestorDoc = new GestorDocumental(docCN.ObtenerDocumentoPorID(elementoVinculadoID), mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestorDocumental>(), mLoggerFactory);
             docCN.Dispose();
 
             if (elementoVinculadoID == Guid.Empty || !gestorDoc.ListaDocumentos.ContainsKey(elementoVinculadoID))
@@ -318,8 +324,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("There is no ontology resource with the specified URL", HttpStatusCode.BadRequest);
             }
 
-            ControladorDocumentacion.EliminarCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, parameters.resources_ontology_url, UrlIntragnoss, BaseURLFormulariosSem, parameters.category_id, docOnto, gestorDoc.ListaDocumentos[elementoVinculadoID], true, ProyectoTraerOntosID);
-            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            ControladorDocumentacion.EliminarCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, parameters.resources_ontology_url, UrlIntragnoss, BaseURLFormulariosSem, parameters.category_id, docOnto, gestorDoc.ListaDocumentos[elementoVinculadoID], true, ProyectoTraerOntosID, mAvailableServices);
+            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
             facetadoCL.InvalidarCacheTesauroFaceta(ProyectoTraerOntosID);
             facetadoCL.Dispose();
         }
@@ -350,7 +356,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             List<string> propiedades = new List<string>() { arrayTesSem[4], arrayTesSem[7] };
 
-            FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
 
             //Obtengo categoría:
             FacetadoDS dataSetCategorias = facCN.ObtenerValoresPropiedadesEntidad(parameters.thesaurus_ontology_url, parameters.child_category_id, propiedades);
@@ -381,7 +387,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             string triplesComInsertarDef = "";
             List<string> listaAux = new List<string>();
 
-            FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoAD facetadoAD = new FacetadoAD(UrlIntragnoss, mLoggingService, mEntityContext, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoAD>(), mLoggerFactory);
             foreach (TripleWrapper triple in triplesComInsertar)
             {
                 triplesComInsertarDef += facetadoAD.GenerarTripletaSinConversionesAbsurdas(PasarObjetoALower(triple.Subject, listaAux), triple.Predicate, PasarObjetoALower(triple.Object, listaAux), null);
@@ -397,7 +403,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             foreach (Guid proyectoID in docOnto.ListaProyectos)
             {
                 facCN.InsertaTripletas(proyectoID.ToString().ToLower(), triplesComInsertarDef, (short)PrioridadBase.ApiRecursos, true);
-                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
                 facetadoCL.InvalidarCacheTesauroFaceta(proyectoID);
                 facetadoCL.Dispose();
             }
@@ -426,7 +432,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             ControladorDocumentacion.RenombrarCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, UrlIntragnoss, parameters.category_id, parameters.category_name, docOnto, true, ProyectoTraerOntosID);
-            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
             facetadoCL.InvalidarCacheTesauroFaceta(ProyectoTraerOntosID);
             facetadoCL.Dispose();
         }
@@ -496,7 +502,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 List<string> padres = new List<string>(instanciasPrincipales[0].ObtenerPropiedad(arrayTesSem[7]).ValoresUnificados.Keys);
 
                 ControladorDocumentacion.CrearCategoriaTesauroSemantico(parameters.thesaurus_ontology_url, UrlIntragnoss, instanciasPrincipales[0], padres, docOnto, true, null, FilaProy.ProyectoID);
-                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+                FacetadoCL facetadoCL = new FacetadoCL(UrlIntragnoss, mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCL>(), mLoggerFactory);
                 facetadoCL.InvalidarCacheTesauroFaceta(FilaProy.ProyectoID);
                 facetadoCL.Dispose();
             }
@@ -515,12 +521,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             mNombreCortoComunidad = thesaurus.CommunityShortName;
 
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
 
             thesaurus.Ontology = ParsearOntologia(thesaurus.Ontology);
 
-            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, thesaurus.Ontology))
             {
                 throw new Exception($"La ontología {thesaurus.Ontology} no existe en el proyecto {thesaurus.CommunityShortName} con id {proyectoID}");
@@ -532,7 +538,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 urlIntragnoss += $"{urlIntragnoss}/";
             }
 
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
             facetadoCN.IniciarTransaccion();
 
             try
@@ -557,12 +563,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             mNombreCortoComunidad = thesaurus.CommunityShortName;
 
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
 
             thesaurus.Ontology = ParsearOntologia(thesaurus.Ontology);
 
-            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, thesaurus.Ontology))
             {
                 throw new Exception($"La ontología {thesaurus.Ontology} no existe en el proyecto {thesaurus.CommunityShortName} con id {proyectoID}");
@@ -574,7 +580,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 urlIntragnoss += $"{urlIntragnoss}/";
             }
 
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
             facetadoCN.IniciarTransaccion();
 
             try
@@ -603,8 +609,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             mNombreCortoComunidad = conceptToAdd.CommunityShortName;
 
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
 
             StringBuilder triplesGrafoOntologia = new StringBuilder();
@@ -647,13 +653,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             mNombreCortoComunidad = conceptToModify.CommunityShortName;
 
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
 
             conceptToModify.Ontology = ParsearOntologia(conceptToModify.Ontology);
 
-            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, conceptToModify.Ontology))
             {
                 throw new Exception($"La ontología {conceptToModify.Ontology} no existe en el proyecto {conceptToModify.CommunityShortName} con id {proyectoID}");
@@ -706,18 +712,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             mNombreCortoComunidad = thesaurus.CommunityShortName;
 
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
 
             thesaurus.Ontology = ParsearOntologia(thesaurus.Ontology);
 
-            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            DocumentacionCN documentacionCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             if (!documentacionCN.ExisteOntologiaEnProyecto(proyectoID, thesaurus.Ontology))
             {
                 throw new Exception($"La ontología {thesaurus.Ontology} no existe en el proyecto {thesaurus.CommunityShortName} con id {proyectoID}");
             }
 
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
             facetadoCN.IniciarTransaccion();
 
             try
@@ -742,8 +748,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             mNombreCortoComunidad = pConceptToDelete.CommunityShortName;
 
-            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication);
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication);
+            FacetadoCN facetadoCN = new FacetadoCN(UrlIntragnoss, mEntityContext, mLoggingService, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<FacetadoCN>(), mLoggerFactory);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
             Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(mNombreCortoComunidad);
 
             pConceptToDelete.Ontology = ParsearOntologia(pConceptToDelete.Ontology);
