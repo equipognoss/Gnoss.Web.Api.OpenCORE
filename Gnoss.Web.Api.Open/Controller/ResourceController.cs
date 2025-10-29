@@ -10721,17 +10721,22 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// </summary>
         /// <param name="pValor">Objeto de un triple de una propiedad de tipo ArchivoLink</param>
         /// <returns>El objeto modificado</returns>
-        private string ModificarValorObjetoArchivoLink(string pValor)
+        private static string ModificarValorObjetoArchivoLink(string pValor)
         {
-            string ruta = pValor.Substring(0, pValor.LastIndexOf("/") + 1);
-            string archivo = pValor.Substring(pValor.LastIndexOf("/") + 1);
+            if (!string.IsNullOrEmpty(pValor))
+            {
+                string ruta = pValor.Substring(0, pValor.LastIndexOf("/") + 1);
+                string archivo = pValor.Substring(pValor.LastIndexOf("/") + 1);
 
-            string nombreArchivo = archivo.Substring(0, archivo.LastIndexOf("."));
-            string extension = archivo.Substring(archivo.LastIndexOf("."));
+                string nombreArchivo = archivo.Substring(0, archivo.LastIndexOf("."));
+                string extension = archivo.Substring(archivo.LastIndexOf("."));
 
-            nombreArchivo = UtilCadenas.EliminarCaracteresUrlSem(nombreArchivo);
+                nombreArchivo = UtilCadenas.EliminarCaracteresUrlSem(nombreArchivo);
 
-            return ruta.Replace('/', Path.DirectorySeparatorChar) + nombreArchivo + extension;
+                return ruta.Replace('/', Path.DirectorySeparatorChar) + nombreArchivo + extension;
+            }
+
+            return string.Empty;
         }
 
         #endregion
