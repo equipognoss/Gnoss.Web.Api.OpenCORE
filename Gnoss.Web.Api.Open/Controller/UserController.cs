@@ -8,6 +8,7 @@ using Es.Riam.Gnoss.AD.EntityModel.Models.Documentacion;
 using Es.Riam.Gnoss.AD.EntityModel.Models.Pais;
 using Es.Riam.Gnoss.AD.EntityModel.Models.ParametroGeneralDS;
 using Es.Riam.Gnoss.AD.EntityModel.Models.ProyectoDS;
+using Es.Riam.Gnoss.AD.EntityModel.Models.Roles;
 using Es.Riam.Gnoss.AD.EntityModel.Models.Solicitud;
 using Es.Riam.Gnoss.AD.EntityModel.Models.UsuarioDS;
 using Es.Riam.Gnoss.AD.EntityModelBASE;
@@ -42,6 +43,7 @@ using Es.Riam.Gnoss.Elementos.Suscripcion;
 using Es.Riam.Gnoss.Elementos.Tesauro;
 using Es.Riam.Gnoss.Logica;
 using Es.Riam.Gnoss.Logica.Amigos;
+using Es.Riam.Gnoss.Logica.Documentacion;
 using Es.Riam.Gnoss.Logica.Facetado;
 using Es.Riam.Gnoss.Logica.Identidad;
 using Es.Riam.Gnoss.Logica.Live;
@@ -61,6 +63,7 @@ using Es.Riam.Gnoss.Web.Controles.Documentacion;
 using Es.Riam.Gnoss.Web.Controles.Proyectos;
 using Es.Riam.Gnoss.Web.Controles.ServiciosGenerales;
 using Es.Riam.Gnoss.Web.Controles.Solicitudes;
+using Es.Riam.Gnoss.Web.MVC.Models.Administracion;
 using Es.Riam.Gnoss.Web.MVC.Models.ViewModels;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
 using Es.Riam.Interfaces.InterfacesOpen;
@@ -80,6 +83,7 @@ using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Web;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
@@ -2034,161 +2038,150 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Add CMS Admin rol privilege to a specific user.
+        ///Add the role pRolId of the user's identity with id user_id or of the user logged in, within the community with short name community_short_name
         /// </summary>
         /// <param name="user_id">User identifier</param>
         /// <param name="community_short_name">Community short name</param>
-        /// <param name="admin_page_type">Administation page type</param>
-        /// <example>POST user/add-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>  
+        /// <param name="pRolId">Role identifier</param>
+        /// <param name="login">Logged in user</param>
+        /// <example>POST user/remove-permission?user_id={user_id}&community_short_name={community_short_name}&pRolId={pRolId}</example>
+        /// <example>POST user/remove-permission?login={login}&community_short_name={community_short_name}&pRolId={pRolId}</example>  
         [HttpPost, Route("add-permission")]
-        public void AddPermissionToUser(Guid user_id, string community_short_name, string admin_page_type,string login)
+        public void AddPermissionToUser(Guid user_id, string community_short_name, Guid pRolID, string login)
         {
-            if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name))
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService,
+                mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService,
+                mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            try
             {
-                TipoPaginaAdministracion tipoPaginaAdministracion;
-                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
+                bool tieneUser_id = user_id != Guid.Empty;
+                bool tieneLogin = !string.IsNullOrEmpty(login);
+                if (!tieneUser_id && !tieneLogin)
                 {
-                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
+                    throw new GnossException("Debes proporcionar user_id o login", HttpStatusCode.BadRequest);
                 }
 
-                mNombreCortoComunidad = community_short_name;
-                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
-
-                if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
+                if (tieneUser_id && tieneLogin)
                 {
-                    ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
-                    IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
-
-                    Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(user_id, FilaProy.ProyectoID);
-                    List<Guid> identidadesSupervisores = proyCN.ObtenerListaIdentidadesSupervisoresPorProyecto(FilaProy.ProyectoID);
-
-                    //si el usuario no es supervisor se le cambia el rol
-                    if (!identidadesSupervisores.Contains(identidadID) && !CambiarRolUsuarioEnProyecto(user_id, FilaProy.ProyectoID, TipoRolUsuario.Supervisor))
-                    {
-                        throw new GnossException($"Could not assign the 'Supervisor' role to user {user_id}", HttpStatusCode.BadRequest);
-                    }
-
-                    List<PermisosPaginasUsuarios> filasPermisoProyectoUsuario = mEntityContext.PermisosPaginasUsuarios.Where(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(user_id)).ToList();
-                    List<Guid> idsUsuariosBD = filasPermisoProyectoUsuario.Select(fila => fila.UsuarioID).ToList();
-
-                    if (!idsUsuariosBD.Contains(user_id))
-                    {
-                        PermisosPaginasUsuarios filaNuevoUsuario = CrearFilaPermisosPaginasUsuarios(tipoPaginaAdministracion, user_id, FilaProy.OrganizacionID, FilaProy.ProyectoID);
-                        mEntityContext.PermisosPaginasUsuarios.Add(filaNuevoUsuario);
-                        mEntityContext.SaveChanges();
-                    }
+                    throw new GnossException("Debes proporcionar solo uno de los parámetros: user_id o login, no ambos", HttpStatusCode.BadRequest);
+                }
+                Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(community_short_name);
+                if (proyectoID == Guid.Empty)
+                {
+                    throw new GnossException("El nombre corto de la comunidad es incorrecto", HttpStatusCode.BadRequest);
+                }
+                Guid usuarioId;
+                if (tieneLogin)
+                {
+                    UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    usuarioId = usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
                 }
                 else
                 {
-                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
+                    usuarioId = user_id;
                 }
+                AgregarRolUsuarioEnProyecto(usuarioId, proyectoID,pRolID);
             }
-            else
+            catch (Exception ex)
             {
-                TipoPaginaAdministracion tipoPaginaAdministracion;
-                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
-                {
-                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
-                }
-
-                mNombreCortoComunidad = community_short_name;
-                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
-                Guid usuarioId = usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
-
-                if (usuarioCN.EstaUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID))
-                {
-                    ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
-                    IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
-
-                    Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID);
-                    List<Guid> identidadesSupervisores = proyCN.ObtenerListaIdentidadesSupervisoresPorProyecto(FilaProy.ProyectoID);
-
-                    //si el usuario no es supervisor se le cambia el rol
-                    if (!identidadesSupervisores.Contains(identidadID) && !CambiarRolUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID, TipoRolUsuario.Supervisor))
-                    {
-                        throw new GnossException($"Could not assign the 'Supervisor' role to user {usuarioId}", HttpStatusCode.BadRequest);
-                    }
-
-                    List<PermisosPaginasUsuarios> filasPermisoProyectoUsuario = mEntityContext.PermisosPaginasUsuarios.Where(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(usuarioId)).ToList();
-                    List<Guid> idsUsuariosBD = filasPermisoProyectoUsuario.Select(fila => fila.UsuarioID).ToList();
-
-                    if (!idsUsuariosBD.Contains(usuarioId))
-                    {
-                        PermisosPaginasUsuarios filaNuevoUsuario = CrearFilaPermisosPaginasUsuarios(tipoPaginaAdministracion, usuarioId, FilaProy.OrganizacionID, FilaProy.ProyectoID);
-                        mEntityContext.PermisosPaginasUsuarios.Add(filaNuevoUsuario);
-                        mEntityContext.SaveChanges();
-                    }
-                }
-                else
-                {
-                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
-                }
+                mLoggingService.GuardarLogError($"Error al agregar rol del usuario: {ex.Message}\n{ex.StackTrace}", mlogger);
+            }
+            finally
+            {
+                proyectoCN.Dispose();
+                identidadCN.Dispose();
             }
         }
 
         /// <summary>
-        /// Remove CMS Admin rol privilege to a specific user.
+        ///Eliminate the role pRolId of the user's identity with id user_id or of the user logged in, within the community with short name community_short_name
         /// </summary>
+        /// <param name="user_id">User identifier</param>
         /// <param name="community_short_name">Community short name</param>
-        /// <param name="admin_page_type">Administation page type</param>
-        /// <example>POST user/remove-permission?user_id={user_id}&community_short_name={community_short_name}&admin_page_type={admin_page_type}</example>
+        /// <param name="pRolId">Role identifier</param>
+        /// <param name="login">Logged in user</param>
+        /// <example>POST user/remove-permission?user_id={user_id}&community_short_name={community_short_name}&pRolId={pRolId}</example>
+        /// <example>POST user/remove-permission?login={login}&community_short_name={community_short_name}&pRolId={pRolId}</example>
         [HttpPost, Route("remove-permission")]
-        public void RemovePermissionToUser(Guid user_id, string community_short_name, string admin_page_type,string login)
+        public void RemovePermissionToUser(Guid user_id, string community_short_name, Guid pRolId,string login)
         {
-            if (!user_id.Equals(Guid.Empty) && !string.IsNullOrEmpty(community_short_name))
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService,
+                mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService,
+                mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+            try
             {
-                TipoPaginaAdministracion tipoPaginaAdministracion;
-                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
+                bool tieneUser_id = user_id!=Guid.Empty;
+                bool tieneLogin = !string.IsNullOrEmpty(login);
+                if (!tieneUser_id && !tieneLogin)
                 {
-                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
+                    throw new GnossException("Debes proporcionar user_id o login", HttpStatusCode.BadRequest);
                 }
 
-                mNombreCortoComunidad = community_short_name;
-                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
-
-                if (usuarioCN.EstaUsuarioEnProyecto(user_id, FilaProy.ProyectoID))
+                if (tieneUser_id && tieneLogin)
                 {
-                    PermisosPaginasUsuarios filaUsuarioEliminar = mEntityContext.PermisosPaginasUsuarios.FirstOrDefault(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(user_id));
-
-                    if (filaUsuarioEliminar != null)
-                    {
-                        mEntityContext.PermisosPaginasUsuarios.Remove(filaUsuarioEliminar);
-                        mEntityContext.SaveChanges();
-                    }
+                    throw new GnossException("Debes proporcionar solo uno de los parámetros: user_id o login, no ambos", HttpStatusCode.BadRequest);
+                }
+                Guid proyectoID = proyectoCN.ObtenerProyectoIDPorNombreCorto(community_short_name);
+                if (proyectoID == Guid.Empty)
+                {
+                    throw new GnossException("El nombre corto de la comunidad es incorrecto", HttpStatusCode.BadRequest);
+                }
+                Guid usuarioId;
+                if (tieneLogin)
+                {
+                    UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+                    usuarioId = usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
                 }
                 else
                 {
-                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
-                }
-            }
-            else
-            {
-
-                TipoPaginaAdministracion tipoPaginaAdministracion;
-                if (!Enum.TryParse(admin_page_type, out tipoPaginaAdministracion))
-                {
-                    throw new GnossException($"The required parameter 'admin_page_type' its not a valid administation page type", HttpStatusCode.BadRequest);
+                    usuarioId = user_id;
                 }
 
-                mNombreCortoComunidad = community_short_name;
-                UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
-                Guid usuarioId = usuarioCN.ObtenerFilaUsuarioPorLoginOEmail(login).UsuarioID;
+                Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(usuarioId, proyectoID);
 
-                if (usuarioCN.EstaUsuarioEnProyecto(usuarioId, FilaProy.ProyectoID))
+                if (identidadID == Guid.Empty)
                 {
-                    PermisosPaginasUsuarios filaUsuarioEliminar = mEntityContext.PermisosPaginasUsuarios.FirstOrDefault(fila => fila.ProyectoID.Equals(FilaProy.ProyectoID) && fila.Pagina.Equals((short)tipoPaginaAdministracion) && fila.UsuarioID.Equals(usuarioId));
+                    mLoggingService.GuardarLogError($"No se ha encontrado la identidad del usuario {usuarioId} en el proyecto {proyectoID}", mlogger);
+                }
+                // Verificamos que el rol existe en el proyecto
+                List<Rol> rolesProyecto = proyectoCN.ObtenerRolesDeProyecto(proyectoID);
+                Rol rolAsignar = rolesProyecto.FirstOrDefault(r => r.RolID == pRolId);
 
-                    if (filaUsuarioEliminar != null)
-                    {
-                        mEntityContext.PermisosPaginasUsuarios.Remove(filaUsuarioEliminar);
-                        mEntityContext.SaveChanges();
-                    }
+                if (rolAsignar == null)
+                {
+                    mLoggingService.GuardarLogError($"El rol {pRolId} no existe en el proyecto {proyectoID}", mlogger);
                 }
                 else
                 {
-                    throw new GnossException($"The user does not exist in the community {community_short_name}", HttpStatusCode.BadRequest);
+                    List<Rol> rolesIdentidad = identidadCN.ObtenerRolesDeIdentidad(identidadID);
+
+                    //Verificamos que efectivamente tiene el rol asignado en el proyecto y lo eliminamos
+                    if (rolesIdentidad.Any(r => r.RolID == pRolId && r.ProyectoID == proyectoID))
+                    {
+                        identidadCN.EliminarRolAIdentidad(identidadID, pRolId);
+                    }
+                    else
+                    {
+                        mLoggingService.GuardarLogError($"La identidad {identidadID} no tiene el rol {pRolId} en el proyecto {proyectoID}", mlogger);
+                    }
                 }
+                
+
+
             }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError($"Error al eliminar rol del usuario: {ex.Message}\n{ex.StackTrace}", mlogger);
+            }
+            finally
+            {
+                proyectoCN.Dispose();
+                identidadCN.Dispose();
+            }
+
+
         }
 
         #endregion
@@ -4025,38 +4018,65 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             return filaUsuario;
         }
         [NonAction]
-        private bool CambiarRolUsuarioEnProyecto(Guid pUsuarioId, Guid pProyectoId, TipoRolUsuario pRol)
+        /// <summary>
+        /// Añade un nuevo rol a un usuario dentro de un proyecto
+        /// </summary>
+        /// <param name="pUsuarioId">ID del usuario</param>
+        /// <param name="pProyectoId">ID del proyecto/comunidad</param>
+        /// <param name="pRolId">ID del rol a asignar</param>
+        /// <returns>True si se ha añadido correctamente, false en caso contrario</returns>
+        private bool AgregarRolUsuarioEnProyecto(Guid pUsuarioId, Guid pProyectoId, Guid pRolId)
         {
             bool cambiadoRol = false;
-            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
-            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
-            UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
+            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService,
+                mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+            IdentidadCN identidadCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService,
+                mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
 
-            Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(pUsuarioId, pProyectoId);
-            List<Guid> listaIdentidades = new List<Guid>();
-            listaIdentidades.Add(identidadID);
-            GestionIdentidades gestorIdentidades = new GestionIdentidades(identidadCN.ObtenerIdentidadPorID(identidadID, true), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
-
-            if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+            try
             {
-                Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
-                gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
-                DataWrapperUsuario dataWrapperUsuario = new DataWrapperUsuario();
-                dataWrapperUsuario.ListaUsuario = usuarioCN.ObtenerUsuariosPorIdentidadesCargaLigera(listaIdentidades);
-                gestorIdentidades.GestorUsuarios = new GestionUsuarios(dataWrapperUsuario, mLoggingService, mEntityContext, mConfigService, mLoggerFactory.CreateLogger<GestionUsuarios>(), mLoggerFactory);
-                gestorIdentidades.GestorPersonas.CargarGestor();
-                gestorIdentidades.GestorUsuarios.CargarGestor();
+                Guid identidadID = identidadCN.ObtenerIdentidadUsuarioEnProyecto(pUsuarioId, pProyectoId);
 
-                cambiadoRol = ControladorIdentidades.CambiarRolUsuarioEnProyecto(identidad, (short)pRol);
+                if (identidadID == Guid.Empty)
+                {
+                    mLoggingService.GuardarLogError($"No se ha encontrado la identidad del usuario {pUsuarioId} en el proyecto {pProyectoId}", mlogger);
+                    return false;
+                }
+
+                // Verificamos que el rol existe en el proyecto
+                List<Rol> rolesProyecto = proyectoCN.ObtenerRolesDeProyecto(pProyectoId);
+                Rol rolAsignar = rolesProyecto.FirstOrDefault(r => r.RolID == pRolId);
+
+                if (rolAsignar == null)
+                {
+                    mLoggingService.GuardarLogError($"El rol {pRolId} no existe en el proyecto {pProyectoId}", mlogger);
+                    return false;
+                }
+
+                List<Rol> rolesIdentidad = identidadCN.ObtenerRolesDeIdentidad(identidadID);
+
+                // Verificar si ya tiene el rol asignado en el proyecto
+
+                if (rolesIdentidad.Any(r => r.RolID == pRolId && r.ProyectoID == pProyectoId))
+                {
+                    return false; // No se ha cambiado el rol porque ya lo tenía asignado
+                }
+
+                // Asignar el nuevo rol
+                identidadCN.AsignarRolAIdentidad(identidadID, pRolId);
+                cambiadoRol = true;
             }
-            else
+            catch (Exception ex)
             {
-                mLoggingService.GuardarLogError("The user isn't a community member", mlogger);
+                mLoggingService.GuardarLogError($"Error al cambiar rol del usuario: {ex.Message}\n{ex.StackTrace}", mlogger);
+                cambiadoRol = false;
+            }
+            finally
+            {
+                proyectoCN.Dispose();
+                identidadCN.Dispose();
             }
 
-            usuarioCN.Dispose();
-            personaCN.Dispose();
-            identidadCN.Dispose();
             return cambiadoRol;
         }
         [NonAction]
