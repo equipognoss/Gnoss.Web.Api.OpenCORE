@@ -4513,7 +4513,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         string queryCommunity = $"SPARQL {sbDeleteCommunity} {sbInsertCommunity}";
                         facetadoAD.ActualizarVirtuoso(queryCommunity, proyectoID.ToString().ToLower());
 
-                        RdfCN rdfCN = new RdfCN("rdf", mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<RdfCN>(), mLoggerFactory);
+						RdfCN rdfCN = new RdfCN("rdf", mEntityContext, mEntityContextBASE, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<RdfCN>(), mLoggerFactory);
                         rdfCN.EliminarDocumentosDeRDF(listaProyectosPorDocumento.Keys.ToList());
 
                         mEntityContext.TerminarTransaccionesPendientes(true);
@@ -10723,6 +10723,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <returns>El objeto modificado</returns>
         private static string ModificarValorObjetoArchivoLink(string pValor)
         {
+            Regex regexIdArchivo = new Regex("_([A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12})$");
             if (!string.IsNullOrEmpty(pValor))
             {
                 string ruta = pValor.Substring(0, pValor.LastIndexOf("/") + 1);
@@ -10731,7 +10732,21 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 string nombreArchivo = archivo.Substring(0, archivo.LastIndexOf("."));
                 string extension = archivo.Substring(archivo.LastIndexOf("."));
 
+                string idArchivo = string.Empty;
+                //comprobamos si el nombre trae el id al final para no recortarlo
+                if (regexIdArchivo.IsMatch(nombreArchivo))
+                {
+                    idArchivo = regexIdArchivo.Match(nombreArchivo).Groups[1].Value;
+                    nombreArchivo = nombreArchivo.Replace($"_{idArchivo}", string.Empty);
+                }
+
                 nombreArchivo = UtilCadenas.EliminarCaracteresUrlSem(nombreArchivo);
+
+                //Volvemos a poner el id en el nombre
+                if (!string.IsNullOrEmpty(idArchivo))
+                {
+                    nombreArchivo += $"_{idArchivo}";
+                }
 
                 return ruta.Replace('/', Path.DirectorySeparatorChar) + nombreArchivo + extension;
             }
