@@ -132,12 +132,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <returns>Returns the text in a specific language</returns>
         /// <example>GET get-text-by-language</example>
         [HttpGet, Route("get-text-by-language")]
-        public string GetTextByLanguage(GetTextByLanguageModel parameters)
+        public string GetTextByLanguage(string community_short_name, string language, string texto_id)
         {
             try
             {
                 ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
-                string textoTraducido = proyectoCN.ObtenerValorTraduccionDeTexto(parameters.community_short_name, parameters.language, parameters.texto_id);
+                string textoTraducido = proyectoCN.ObtenerValorTraduccionDeTexto(community_short_name, language, texto_id);
                 
                 if(!string.IsNullOrEmpty(textoTraducido))
                 {
@@ -145,7 +145,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 else
                 {
-                    return parameters.texto_id.ToString();
+                    return texto_id.ToString();
                 }
             }
             catch(Exception exception)
