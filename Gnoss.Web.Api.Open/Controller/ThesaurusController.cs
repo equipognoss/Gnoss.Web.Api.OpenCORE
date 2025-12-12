@@ -214,11 +214,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 DataWrapperTesauro dataWrapperTesauro = tesauroCN.ObtenerTesauroDeProyecto(proyectoID);
                 GestionTesauro gestorTesauro = new GestionTesauro(dataWrapperTesauro, mLoggingService, mEntityContext, mLoggerFactory.CreateLogger<GestionTesauro>(), mLoggerFactory);
 
-                if (parameters.parent_catergory_id.HasValue && !parameters.parent_catergory_id.Value.Equals(Guid.Empty))
+                if (parameters.parent_category_id.HasValue && !parameters.parent_category_id.Value.Equals(Guid.Empty))
                 {
-                    if (gestorTesauro.ListaCategoriasTesauro.ContainsKey(parameters.parent_catergory_id.Value))
+                    if (gestorTesauro.ListaCategoriasTesauro.ContainsKey(parameters.parent_category_id.Value))
                     {
-                        var categoriaSuperior = gestorTesauro.ListaCategoriasTesauro[parameters.parent_catergory_id.Value];
+                        var categoriaSuperior = gestorTesauro.ListaCategoriasTesauro[parameters.parent_category_id.Value];
                         gestorTesauro.AgregarSubcategoria(categoriaSuperior, parameters.category_name);
                     }
                 }
@@ -373,15 +373,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("You can not put as a child of another a root category", HttpStatusCode.BadRequest);
             }
 
-            FacetadoDS dataSetCategoriasPadre = facCN.ObtenerValoresPropiedadesEntidad(parameters.thesaurus_ontology_url, parameters.parent_catergory_id, false);
+            FacetadoDS dataSetCategoriasPadre = facCN.ObtenerValoresPropiedadesEntidad(parameters.thesaurus_ontology_url, parameters.parent_category_id, false);
             if (dataSetCategoriasPadre.Tables[0].Rows.Count == 0)
             {
                 facCN.Dispose();
-                throw new GnossException("There is no category with this URI '" + parameters.parent_catergory_id + "'", HttpStatusCode.BadRequest);
+                throw new GnossException("There is no category with this URI '" + parameters.parent_category_id + "'", HttpStatusCode.BadRequest);
             }
 
-            ControladorDocumentacion.EscribirTripletaEntidad(parameters.child_category_id, arrayTesSem[7], parameters.parent_catergory_id, ref triplesInsertar, triplesComInsertar, false, null);
-            ControladorDocumentacion.EscribirTripletaEntidad(parameters.parent_catergory_id, arrayTesSem[4], parameters.child_category_id, ref triplesInsertar, triplesComInsertar, false, null);
+            ControladorDocumentacion.EscribirTripletaEntidad(parameters.child_category_id, arrayTesSem[7], parameters.parent_category_id, ref triplesInsertar, triplesComInsertar, false, null);
+            ControladorDocumentacion.EscribirTripletaEntidad(parameters.parent_category_id, arrayTesSem[4], parameters.child_category_id, ref triplesInsertar, triplesComInsertar, false, null);
 
             //Genero las triples de la comunidad:
             string triplesComInsertarDef = "";
@@ -585,7 +585,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             try
             {
-                EliminarTesauroOntologiaBusqueda(thesaurus.Ontology, thesaurus.Source, proyectoID, facetadoCN);
+                ControladorDocumentacion.EliminarTesauroOntologiaBusqueda(thesaurus.Ontology, thesaurus.Source, proyectoID, facetadoCN);
                 if (thesaurus.Collection != null)
                 {
                     CrearTesauro(thesaurus, urlIntragnoss, proyectoID, facetadoCN);
@@ -728,7 +728,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             try
             {
-                EliminarTesauroOntologiaBusqueda(thesaurus.Ontology, thesaurus.Source, proyectoID, facetadoCN);
+                ControladorDocumentacion.EliminarTesauroOntologiaBusqueda(thesaurus.Ontology, thesaurus.Source, proyectoID, facetadoCN);
+                DataWrapperProyecto dwProyecto = proyectoCN.ObtenerTesaurosSemanticosConfigEdicionDeProyecto(proyectoID);
+                ProyectoConfigExtraSem filaConfig = dwProyecto.ListaProyectoConfigExtraSem.FirstOrDefault(config => config.ProyectoID.Equals(proyectoID) && config.UrlOntologia.Equals(thesaurus.Ontology) && config.SourceTesSem.Equals(thesaurus.Source));
+                dwProyecto.ListaProyectoConfigExtraSem.Remove(filaConfig);
+                mEntityContext.Remove(filaConfig);
+                mEntityContext.SaveChanges();
             }
             catch (Exception ex)
             {
@@ -739,7 +744,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Delete the concept indicated and they childrens
+        /// Delete the concept indicated and it's childrens
         /// </summary>
         /// <param name="pConceptToDelete">Model with the subject of the concept to delete</param>
         /// <exception cref="Exception"></exception>
@@ -831,23 +836,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         /// <summary>
-        /// Delete current data of the Thesaurus indicated in the Ontology param from ontology and searhc graph
-        /// </summary>
-        /// <param name="pOntologia">Ontology of the thesaurus to remove</param>
-        /// <param name="pProyectoID">Identifier of the project</param>
-        /// <param name="pFacetadoCN">FacetadoCN initialized</param>
-        private void EliminarTesauroOntologiaBusqueda(string pOntologia, string pSource, Guid pProyectoID, FacetadoCN pFacetadoCN)
-        {
-            List<string> listaSujetos = pFacetadoCN.ObtenerListaSujetosTesauroDeGrafoPorSource(pOntologia, pSource);
-
-            //Eliminamos los triples del grafo de búsqueda
-            EliminarTriplesDeSujeto(pProyectoID.ToString(), listaSujetos, pFacetadoCN);
-
-            //Eliminamos los triples del grafo de ontología
-            EliminarTriplesDeSujeto(pOntologia, listaSujetos, pFacetadoCN);
-        }
-
-        /// <summary>
         /// Delete current data of the Concept indicated in the param from ontology and search graph
         /// </summary>
         /// <param name="pOntologia">Ontology of the thesaurus to remove</param> 
@@ -896,36 +884,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     string sujetoConceptHijo = tripleConcept.Split(" ")[2];
                     ObtenerTriplesConceptBorrarGrafo(pGrafo, pFacetadoCN, sujetoConceptHijo, pConjuntoTriples);
                 }
-            }
-        }
-
-        /// <summary>
-        /// Delete the triples with the given Subjects in the graph of the parameters
-        /// </summary>
-        /// <param name="pGrafo">Graph where the triples will be deleted</param>
-        /// <param name="pListaSujetos">List with the Subject of the triples to delete</param>
-        /// <param name="pFacetadoCN">FacetadoCN initialized</param>
-        /// <exception cref="Exception"></exception>
-        private void EliminarTriplesDeSujeto(string pGrafo, List<string> pListaSujetos, FacetadoCN pFacetadoCN)
-        {
-            int numCiclos = pListaSujetos.Count / 500;
-            if (pListaSujetos.Count % 500 != 0)
-            {
-                numCiclos++;
-            }
-
-            try
-            {
-                for (int i = 0; i < numCiclos; i++)
-                {
-                    List<string> listaSujetosAuxiliar = pListaSujetos.Skip(500 * i).Take(500).ToList();
-
-                    pFacetadoCN.BorrarListaTriplesDeSujeto(pGrafo, listaSujetosAuxiliar);
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"An error has ocurred while deleting the triples in the graph <{UrlIntragnoss}{pGrafo}>", ex);
             }
         }
 

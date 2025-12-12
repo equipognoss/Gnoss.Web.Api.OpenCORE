@@ -293,7 +293,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             ProyectoCL proyCL = new ProyectoCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mVirtuosoAD, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCL>(), mLoggerFactory);
             Guid proyectoID = proyCL.ObtenerProyectoIDPorNombreCorto(community_short_name);
 
-            if (!proyectoID.Equals(Guid.Empty))
+            if (!user_id.Equals(Guid.Empty))
             {
                 try
                 {
