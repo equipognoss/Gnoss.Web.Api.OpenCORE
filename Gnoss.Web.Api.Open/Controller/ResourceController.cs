@@ -902,12 +902,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             ControladorDocumentacion.EstablecePrivacidadRecursoEnMetaBuscador(documento, identidad, true);
 
                             if (documento.TipoDocumentacion == TiposDocumentacion.Semantico && documento.FilaDocumento.Eliminado && documento.FilaDocumento.ElementoVinculadoID.HasValue)
-                            {
+                            {                                
                                 ControladorDocumentacion.BorrarRDFDeDocumentoEliminado(parameters.resource_id, documento.FilaDocumento.ElementoVinculadoID.Value, UrlIntragnoss, false, FilaProy.ProyectoID);
                             }
 
-                            //meterlo en el base
-                            ControladorDocumentacion.AgregarRecursoModeloBaseSimple(parameters.resource_id, proyectoID, (short)documento.TipoDocumentacion, PrioridadBase.ApiRecursos, mAvailableServices);
+                            //Enviamos al base para eliminar la búsqueda
+                            ControladorDocumentacion.EliminarRecursoModeloBaseSimple(parameters.resource_id, proyectoID, (short)documento.TipoDocumentacion, mAvailableServices);
+
                             try
                             {
                                 //anular cache del documento
@@ -7633,105 +7634,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             }
 
                             throw new GnossException(mensaje, HttpStatusCode.BadRequest);
-                        }
-                        else
-                        {
-                            ValidarRdfRecurso(bytesRDF);
-                            ValidarURIsRdfRecurso(instanciasPrincipales);
-                        }
+                        }                        
 
                         break;
                 }
             }
-        }
-
-        private void ValidarRdfRecurso(byte[] pBytesRDF)
-        {
-            XmlDocument xmlRDF = new XmlDocument();
-            MemoryStream ms = new MemoryStream(pBytesRDF);
-
-            try
-            {
-                xmlRDF.Load(ms);
-            }
-            catch (XmlException ex)
-            {
-                throw new GnossException("Invalid RDF xml description.", HttpStatusCode.BadRequest);
-            }
-
-            RecorrerNodos(xmlRDF.ChildNodes);
-            ms.Close();
-        }
-
-        private void ValidarURIsRdfRecurso(List<ElementoOntologia> pInstanciasPrincipales)
-        {
-            foreach (ElementoOntologia eo in pInstanciasPrincipales)
-            {
-                Uri uriAux = null;
-
-                if (string.IsNullOrEmpty(eo.Uri))
-                {
-                    throw new GnossException("The RDF contains an empty URI.", HttpStatusCode.BadRequest);
-                }
-                else if (!Uri.TryCreate(eo.Uri, UriKind.Absolute, out uriAux))
-                {
-                    throw new GnossException("The RDF contains an invalid URI: " + eo.Uri, HttpStatusCode.BadRequest);
-                }
-
-                foreach (Propiedad propiedad in eo.Propiedades)
-                {
-                    if (propiedad.Tipo == TipoPropiedad.ObjectProperty)
-                    {
-                        foreach (string key in propiedad.ValoresUnificados.Keys)
-                        {
-                            if (string.IsNullOrEmpty(key))
-                            {
-                                throw new GnossException("The RDF contains an empty URI at property: " + propiedad.Nombre, HttpStatusCode.BadRequest);
-                            }
-                            else if (!string.IsNullOrEmpty(propiedad.Rango) && eo.Ontologia.TiposEntidades.Contains(propiedad.Rango))
-                            {
-                                if (propiedad.ValoresUnificados[key] == null)
-                                {
-                                    throw new GnossException("The property: " + propiedad.Nombre + " contains a reference to an auxiliary entity that is not defined in the RDF ", HttpStatusCode.BadRequest);
-                                }
-                            }
-                            else if (!Uri.TryCreate(key, UriKind.Absolute, out uriAux))
-                            {
-                                throw new GnossException("Invalid URI, the property: " + propiedad.Nombre + " contains: " + key, HttpStatusCode.BadRequest);
-                            }
-                        }
-                    }
-                }
-
-                ValidarURIsRdfRecurso(eo.EntidadesRelacionadas);
-            }
-        }
-
-        private void RecorrerNodos(XmlNodeList pNodos)
-        {
-            foreach (XmlNode nodo in pNodos)
-            {
-                if (nodo.NodeType != XmlNodeType.XmlDeclaration)
-                {
-                    //compruebo vacios
-                    //si no es nodo tipo texto, comprobar innertext e innerxml. Si lo es, comprobar el valor
-                    if ((nodo.NodeType != XmlNodeType.Text && string.IsNullOrEmpty(nodo.InnerXml) && string.IsNullOrEmpty(nodo.InnerText) && (nodo.Attributes["rdf:resource"] == null || string.IsNullOrEmpty(nodo.Attributes["rdf:resource"].Value))) || (nodo.NodeType == XmlNodeType.Text && string.IsNullOrEmpty(nodo.Value)))
-                    {
-                        throw new Exception("El RDF contiene un nodo vacio: " + nodo.Name);
-                    }
-                    //comentado porque ahora se van a escapar las \ no lo borro por si hay que recuperar la validación
-                    //compruebo saltos de linea
-                    //else if ((nodo.NodeType == XmlNodeType.Text) && (nodo.Value.Contains("\n") || nodo.Value.Contains("\n\t") || nodo.Value.Contains("\t\n")))
-                    //{
-                    //    throw new GnossException("The node: " + nodo.ParentNode.Name + " contains line breaks", HttpStatusCode.BadRequest);
-                    //}
-                    else
-                    {
-                        RecorrerNodos(nodo.ChildNodes);
-                    }
-                }
-            }
-        }
+        }               
 
         private void ComprobacionCambiosCachesLocales(Guid pProyectoID)
         {
@@ -8246,7 +8154,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     foreach (string keysListaValores in prop.ListaValores.Keys)
                     {
-                        if (prop.ListaValores[keysListaValores] != null)
+                        if (prop.ListaValores[keysListaValores] != null && !prop.TieneSelectorEntidad)
                         {
                             ModificarInstanciasIdioma(prop.ListaValores[keysListaValores], pIdiomasDisponibles);
                         }
@@ -8417,92 +8325,110 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
         [NonAction]
-        private void CambiarIDsElementoOngologia(List<ElementoOntologia> pListaEntidades, Guid pNuevoID)
+        private void CambiarIDsElementoOngologia(List<ElementoOntologia> pListaEntidades, Guid pNuevoID, List<string> pListaEntidadesProcesadas = null)
         {
+            if(pListaEntidadesProcesadas == null)
+            {
+                pListaEntidadesProcesadas = new List<string>();
+            }
+
             foreach (ElementoOntologia elemento in pListaEntidades)
             {
-                if (elemento.ID != null)
+                if (!pListaEntidadesProcesadas.Contains(elemento.ID))
                 {
-                    string antiguoID = elemento.ID.Substring(0, elemento.ID.LastIndexOf("_"));
-                    antiguoID = antiguoID.Substring(antiguoID.LastIndexOf("_") + 1);
-                    elemento.ID = elemento.ID.Replace(antiguoID, pNuevoID.ToString());
-
-                    string antiguoDirectorioImg = UtilArchivos.DirectorioDocumento(new Guid(antiguoID));
-                    string nuevoDirectorioImg = UtilArchivos.DirectorioDocumento(pNuevoID);
-
-                    foreach (Propiedad propiedad in elemento.Propiedades)
+                    pListaEntidadesProcesadas.Add(elemento.ID);
+                    if (elemento.ID != null)
                     {
-                        if (propiedad.UnicoValor.Key != null)
-                        {
-                            propiedad.UnicoValor = new KeyValuePair<string, ElementoOntologia>(propiedad.UnicoValor.Key.Replace(antiguoDirectorioImg, nuevoDirectorioImg).Replace(antiguoID, pNuevoID.ToString()), propiedad.UnicoValor.Value);
-                        }
-                        else
-                        {
-                            Dictionary<string, ElementoOntologia> listaValores = new Dictionary<string, ElementoOntologia>(propiedad.ListaValores);
+                        string antiguoID = elemento.ID.Substring(0, elemento.ID.LastIndexOf("_"));
+                        antiguoID = antiguoID.Substring(antiguoID.LastIndexOf("_") + 1);
+                        elemento.ID = elemento.ID.Replace(antiguoID, pNuevoID.ToString());
 
-                            propiedad.ListaValores.Clear();
+                        string antiguoDirectorioImg = UtilArchivos.DirectorioDocumento(new Guid(antiguoID));
+                        string nuevoDirectorioImg = UtilArchivos.DirectorioDocumento(pNuevoID);
 
-                            foreach (string valor in listaValores.Keys)
+                        foreach (Propiedad propiedad in elemento.Propiedades)
+                        {
+                            if (propiedad.UnicoValor.Key != null)
                             {
-                                propiedad.ListaValores.Add(valor.Replace(antiguoDirectorioImg, nuevoDirectorioImg).Replace(antiguoID, pNuevoID.ToString()), listaValores[valor]);
+                                propiedad.UnicoValor = new KeyValuePair<string, ElementoOntologia>(propiedad.UnicoValor.Key.Replace(antiguoDirectorioImg, nuevoDirectorioImg).Replace(antiguoID, pNuevoID.ToString()), propiedad.UnicoValor.Value);
+                            }
+                            else
+                            {
+                                Dictionary<string, ElementoOntologia> listaValores = new Dictionary<string, ElementoOntologia>(propiedad.ListaValores);
+
+                                propiedad.ListaValores.Clear();
+
+                                foreach (string valor in listaValores.Keys)
+                                {
+                                    propiedad.ListaValores.Add(valor.Replace(antiguoDirectorioImg, nuevoDirectorioImg).Replace(antiguoID, pNuevoID.ToString()), listaValores[valor]);
+                                }
                             }
                         }
-                    }
 
-                    if (elemento.EntidadesRelacionadas.Count > 0)
-                    {
-                        CambiarIDsElementoOngologia(elemento.EntidadesRelacionadas, pNuevoID);
+                        if (elemento.EntidadesRelacionadas.Count > 0)
+                        {
+                            CambiarIDsElementoOngologia(elemento.EntidadesRelacionadas, pNuevoID, pListaEntidadesProcesadas);
+                        }
                     }
                 }
             }
         }
 
         [NonAction]
-        private void CambiarSegundosIDsElementoOngologia(List<ElementoOntologia> pListaEntidades, Dictionary<string, string> pAntiguosNuevosIDs)
+        private void CambiarSegundosIDsElementoOngologia(List<ElementoOntologia> pListaEntidades, Dictionary<string, string> pAntiguosNuevosIDs, List<string> pListaEntidadesProcesadas = null)
         {
+            if(pListaEntidadesProcesadas == null)
+            {
+                pListaEntidadesProcesadas = new List<string>();
+            }
+
             foreach (ElementoOntologia elemento in pListaEntidades)
             {
-                foreach (Propiedad propiedad in elemento.Propiedades)
+                if (!pListaEntidadesProcesadas.Contains(elemento.ID))
                 {
-                    if (propiedad.Tipo == TipoPropiedad.ObjectProperty)
+                    pListaEntidadesProcesadas.Add(elemento.ID);
+                    foreach (Propiedad propiedad in elemento.Propiedades)
                     {
-                        if (propiedad.UnicoValor.Key != null)
+                        if (propiedad.Tipo == TipoPropiedad.ObjectProperty)
                         {
-                            if (pAntiguosNuevosIDs.Keys.Any())
+                            if (propiedad.UnicoValor.Key != null)
                             {
-                                propiedad.UnicoValor = new KeyValuePair<string, ElementoOntologia>(propiedad.UnicoValor.Key.Replace(pAntiguosNuevosIDs.Keys.FirstOrDefault(), pAntiguosNuevosIDs[pAntiguosNuevosIDs.Keys.FirstOrDefault()]), propiedad.UnicoValor.Value);
-                            }
-                        }
-                        else
-                        {
-                            var propiedadesExistentes = pAntiguosNuevosIDs.Keys.Where(idAntiguo => propiedad.ListaValores.ContainsKey(idAntiguo));
-
-                            if (propiedadesExistentes.Any())
-                            {
-                                Dictionary<string, ElementoOntologia> listaValores = new Dictionary<string, ElementoOntologia>(propiedad.ListaValores);
-
-                                propiedad.ListaValores.Clear();
-
-                                foreach (string antiguoID in propiedadesExistentes)
+                                if (pAntiguosNuevosIDs.Keys.Any())
                                 {
-                                    string keyElementoNuevo = listaValores.First(item => item.Key.Contains(pAntiguosNuevosIDs[antiguoID])).Key;
-                                    string key = keyElementoNuevo.Replace(antiguoID, pAntiguosNuevosIDs[antiguoID]);
-                                    propiedad.ListaValores.Add(key, listaValores[keyElementoNuevo]);
-                                    listaValores.Remove(keyElementoNuevo);
+                                    propiedad.UnicoValor = new KeyValuePair<string, ElementoOntologia>(propiedad.UnicoValor.Key.Replace(pAntiguosNuevosIDs.Keys.FirstOrDefault(), pAntiguosNuevosIDs[pAntiguosNuevosIDs.Keys.FirstOrDefault()]), propiedad.UnicoValor.Value);
                                 }
+                            }
+                            else
+                            {
+                                var propiedadesExistentes = pAntiguosNuevosIDs.Keys.Where(idAntiguo => propiedad.ListaValores.ContainsKey(idAntiguo));
 
-                                foreach (string key in listaValores.Keys)
+                                if (propiedadesExistentes.Any())
                                 {
-                                    propiedad.ListaValores.Add(key, listaValores[key]);
+                                    Dictionary<string, ElementoOntologia> listaValores = new Dictionary<string, ElementoOntologia>(propiedad.ListaValores);
+
+                                    propiedad.ListaValores.Clear();
+
+                                    foreach (string antiguoID in propiedadesExistentes)
+                                    {
+                                        string keyElementoNuevo = listaValores.First(item => item.Key.Contains(pAntiguosNuevosIDs[antiguoID])).Key;
+                                        string key = keyElementoNuevo.Replace(antiguoID, pAntiguosNuevosIDs[antiguoID]);
+                                        propiedad.ListaValores.Add(key, listaValores[keyElementoNuevo]);
+                                        listaValores.Remove(keyElementoNuevo);
+                                    }
+
+                                    foreach (string key in listaValores.Keys)
+                                    {
+                                        propiedad.ListaValores.Add(key, listaValores[key]);
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if (elemento.EntidadesRelacionadas.Count > 0)
-                {
-                    CambiarSegundosIDsElementoOngologia(elemento.EntidadesRelacionadas, pAntiguosNuevosIDs);
+                    if (elemento.EntidadesRelacionadas.Count > 0)
+                    {
+                        CambiarSegundosIDsElementoOngologia(elemento.EntidadesRelacionadas, pAntiguosNuevosIDs, pListaEntidadesProcesadas);
+                    }
                 }
             }
         }
@@ -8525,7 +8451,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     foreach (Propiedad propiedad in elemento.Propiedades)
                     {
-                        if (propiedad.Tipo == TipoPropiedad.ObjectProperty)
+                        if (propiedad.Tipo == TipoPropiedad.ObjectProperty && !propiedad.TieneSelectorEntidad)
                         {
                             RecuperarIDsElementoOngologia(new List<ElementoOntologia>(propiedad.ValoresUnificados.Values), propiedad, pEntidadesYaAgregadas, pCambioIDs, pEntidadesPrincAntiguas);
                         }

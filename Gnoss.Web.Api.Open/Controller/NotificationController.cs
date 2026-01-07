@@ -150,12 +150,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// </summary>
         /// <param name="mail_id">Mail sent identifier</param>
         /// <returns></returns>
-        [HttpGet, ActionName("mail-state")]
+        [HttpGet, Route("mail-state")]
         public MailStateModel ComprobarEstadoCorreo(int mail_id)
         {
             try
             {
-                NotificacionCN notificacionCN = new NotificacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<NotificacionCN>(), mLoggerFactory);
+                NotificacionCN notificacionCN = new NotificacionCN(mEntityContext, mLoggingService, mConfigService, mEntityContextBASE, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<NotificacionCN>(), mLoggerFactory);
 
                 MailStateModel mailStateModel = new MailStateModel();
                 List<string> listaEmailsPendientes = new List<string>();
