@@ -1,4 +1,6 @@
-﻿using Es.Riam.Gnoss.AD.BASE_BD;
+﻿using BeetleX.Redis.Commands;
+using Es.Riam.AbstractsOpen;
+using Es.Riam.Gnoss.AD.BASE_BD;
 using Es.Riam.Gnoss.AD.Documentacion;
 using Es.Riam.Gnoss.AD.EncapsuladoDatos;
 using Es.Riam.Gnoss.AD.EntityModel;
@@ -24,20 +26,24 @@ using Es.Riam.Gnoss.Elementos.Comentario;
 using Es.Riam.Gnoss.Elementos.Documentacion;
 using Es.Riam.Gnoss.Elementos.Identidad;
 using Es.Riam.Gnoss.Elementos.ServiciosGenerales;
+using Es.Riam.Gnoss.Elementos.Suscripcion;
 using Es.Riam.Gnoss.Elementos.Tesauro;
 using Es.Riam.Gnoss.Logica.BASE_BD;
 using Es.Riam.Gnoss.Logica.Comentario;
 using Es.Riam.Gnoss.Logica.Documentacion;
 using Es.Riam.Gnoss.Logica.Facetado;
 using Es.Riam.Gnoss.Logica.Identidad;
+using Es.Riam.Gnoss.Logica.MVC;
 using Es.Riam.Gnoss.Logica.Parametro;
 using Es.Riam.Gnoss.Logica.RDF;
 using Es.Riam.Gnoss.Logica.ServiciosGenerales;
 using Es.Riam.Gnoss.Logica.Usuarios;
 using Es.Riam.Gnoss.Logica.Voto;
 using Es.Riam.Gnoss.RabbitMQ;
+using Es.Riam.Gnoss.RabbitMQ.Models;
 using Es.Riam.Gnoss.Recursos;
 using Es.Riam.Gnoss.Servicios;
+using Es.Riam.Gnoss.Traducciones.TraduccionTextos;
 using Es.Riam.Gnoss.Util.Configuracion;
 using Es.Riam.Gnoss.Util.General;
 using Es.Riam.Gnoss.UtilServiciosWeb;
@@ -46,14 +52,21 @@ using Es.Riam.Gnoss.Web.Controles.GeneradorPlantillasOWL;
 using Es.Riam.Gnoss.Web.Controles.ServicioImagenesWrapper;
 using Es.Riam.Gnoss.Web.MVC.Models;
 using Es.Riam.Gnoss.Web.MVC.Models.CargaMasiva;
+using Es.Riam.Gnoss.Web.MVC.Models.FicherosRecursos;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
+using Es.Riam.Interfaces.InterfacesOpen;
 using Es.Riam.Semantica.OWL;
 using Es.Riam.Semantica.Plantillas;
 using Es.Riam.Util;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using Microsoft.Exchange.WebServices.Data;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using Serilog.Core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -63,20 +76,10 @@ using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web;
 using System.Xml;
-using System.Text.RegularExpressions;
-using Es.Riam.AbstractsOpen;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using BeetleX.Redis.Commands;
-using Microsoft.AspNetCore.Http.Metadata;
-using Es.Riam.Gnoss.Web.MVC.Models.FicherosRecursos;
-using Es.Riam.Interfaces.InterfacesOpen;
-using Microsoft.Exchange.WebServices.Data;
-using Microsoft.Extensions.Logging;
-using Serilog.Core;
-using Es.Riam.Gnoss.Elementos.Suscripcion;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
@@ -2166,6 +2169,101 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             facetadoCN.Dispose();
         }
 
+		/// <summary>
+		/// Gets the list of supported languages in the platform in BCP 47 format
+		/// </summary>
+		/// <returns>List of supported languages</returns>
+		[HttpGet, Route("get-translation-languages")]
+        public List<string> GetTranslationLanguages()
+        {
+            try
+            {
+				TranslationConfig config = UtilTraducciones.CrearTranslationConfig(mConfigService);
+                ITranslationStrategy strategy = new TranslationStrategyFactory().CreateTranslationStrategy(config, TranslationProvider.Scia);
+                TranslationService service = new TranslationService(strategy);
+                LanguagesResponse response = service.GetAvailableLanguages();
+
+                if (!response.Success)
+                {
+					mLoggingService.GuardarLogError(response.ErrorMessage, mlogger);
+                    throw new GnossException($"Error attempting to get the list of languages: {response.ErrorMessage}", HttpStatusCode.InternalServerError);
+                }
+
+				return response.AvailableLanguajes;
+            }
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex, mlogger);
+                throw new GnossException("There has been a problem with the translation service or it is not installed.", HttpStatusCode.ServiceUnavailable);
+            }
+        }
+
+		/// <summary>
+		/// Initiates an asynchronous translation process of the resource to the selected languages from the original language
+		/// </summary>
+		/// <param name="parameters">Resource identifier, Original language of the resource, List of language codes in BCP 47 format that the resource will be translated to, Community short name</param>
+		/// <returns>Identifier of the async translation progress</returns>
+		[HttpPost, Route("translate-resource")]
+        public Guid TranslateResource(TranslateResourceParams parameters)
+        {
+            if (parameters.resource_id.Equals(Guid.Empty) || string.IsNullOrEmpty(parameters.original_language) || parameters.target_languages == null || parameters.target_languages.Count == 0 || string.IsNullOrEmpty(parameters.community_short_name))
+            {
+                throw new GnossException("The required parameters can not be empty.", HttpStatusCode.BadRequest);
+            }
+
+            mNombreCortoComunidad = parameters.community_short_name;
+            if (!ComprobarTienePermisoEdicionRecurso(parameters.resource_id))
+            {
+                throw new GnossException("The OAuth user does not have edit permissions on the resource.", HttpStatusCode.Unauthorized);
+            }
+
+			List<string> supportedLanguages = null;
+			try
+			{
+				supportedLanguages = GetTranslationLanguages();
+			}
+			catch (Exception ex)
+			{
+				mLoggingService.GuardarLogError(ex, mlogger);
+				throw new GnossException("There has been a problem with the translation service or it is not installed.", HttpStatusCode.ServiceUnavailable);
+			}
+
+            string error = UtilTraducciones.ComprobarIdiomasDisponibles(parameters.target_languages, supportedLanguages, mLoggingService, mlogger);
+            if (!string.IsNullOrEmpty(error))
+            {
+				throw new GnossException($"Languages '{error}' are not supported. To check the list of supported languages use 'GetTranslationLanguages'", HttpStatusCode.BadRequest);
+			}
+
+			Guid translationID = Guid.NewGuid();
+            try
+            {
+				if (mAvailableServices.CheckIfServiceIsAvailable(mAvailableServices.GetBackServiceCode(BackgroundService.TranslateService), ServiceType.Background))
+				{
+					TranslationRabbitModel translationModel = new TranslationRabbitModel
+					{
+						TranslationID = translationID,
+						ResourceID = parameters.resource_id,
+						PublishDate = DateTime.Now,
+						OriginalLanguage = parameters.original_language,
+						TargetLanguages = parameters.target_languages,
+						UserID = UsuarioOAuth
+					};
+
+					using (RabbitMQClient rabbitMQ = new RabbitMQClient(RabbitMQClient.BD_SERVICIOS_WIN, "gnoss.translations.translation.exchange", mLoggingService, mConfigService, mLoggerFactory.CreateLogger<RabbitMQClient>(), mLoggerFactory, "gnoss.translations.translation.exchange", "topic"))
+					{
+						rabbitMQ.AgregarElementoAColaConReintentosExchange(JsonConvert.SerializeObject(translationModel));
+					}
+				}
+			}
+            catch (Exception ex)
+            {
+                mLoggingService.GuardarLogError(ex, mlogger);
+                throw new GnossException($"There has been a problem with the translation service", HttpStatusCode.InternalServerError);
+            }			
+			
+			return translationID;
+		}
+
         /// <summary>
         /// Link a resource list to other resource
         /// </summary>
@@ -3824,6 +3922,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             return objetoPeticion;
         }
+
+
 
         private string FormatearValor(string pValor)
         {
@@ -6001,6 +6101,20 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
+        private bool ComprobarTienePermisoEdicionRecurso(Guid pResourceID)
+        {
+			DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
+			DataWrapperDocumentacion dwDoc = docCN.ObtenerDocumentoPorID(pResourceID);
+			GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
+			Identidad identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, false);
+			docCN.ObtenerDocumentoPorIDCargarTotal(pResourceID, gestorDoc.DataWrapperDocumentacion, true, true, null);
+			gestorDoc.CargarDocumentos(false);
+			Elementos.Documentacion.Documento documento = gestorDoc.ListaDocumentos[pResourceID];	
+            
+            docCN.Dispose();
+
+            return documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false);
+		}
 
         /// <summary>
         /// Comprueba si la identidad puede editar el recurso
