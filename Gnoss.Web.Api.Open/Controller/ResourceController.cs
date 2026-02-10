@@ -2293,7 +2293,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             dataWrapperDocumentacion.Merge(docCN.ObtenerVinculacionesRecurso(parameters.resource_id));
             docCN.Dispose();
 
-            if (parameters.resoruce_list_to_link.Contains(parameters.resource_id))
+            if (parameters.resource_list_to_link.Contains(parameters.resource_id))
             {
                 throw new GnossException("The reource cannot be linked to itself.", HttpStatusCode.BadRequest);
             }
@@ -2303,7 +2303,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             else
             {
-                foreach (Guid documentoID in parameters.resoruce_list_to_link)
+                foreach (Guid documentoID in parameters.resource_list_to_link)
                 {
                     if (dataWrapperDocumentacion.ListaDocumentoVincDoc.Count(docVinDoc => docVinDoc.DocumentoID.Equals(documentoID) && docVinDoc.DocumentoVincID.Equals(parameters.resource_id)) > 0)
                     {
@@ -2873,7 +2873,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         [HttpPost, Route("share")]
         public void Share(ShareParams parameters)
         {
-            mNombreCortoComunidad = parameters.destination_communitiy_short_name;
+            mNombreCortoComunidad = parameters.destination_community_short_name;
             GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
             Identidad identidad = null;
 
@@ -2927,7 +2927,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (documentoEdicion.ListaProyectos.Contains(FilaProy.ProyectoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " is already shared in the community " + parameters.destination_communitiy_short_name + ".", HttpStatusCode.BadRequest);
+                throw new GnossException("The resource " + parameters.resource_id + " is already shared in the community " + parameters.destination_community_short_name + ".", HttpStatusCode.BadRequest);
             }
 
             //Comprobar si la comunidad permite el tipo de recurso:
@@ -3068,8 +3068,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     if (documentoEdicion.ListaProyectos.Contains(FilaProy.ProyectoID))
                     {
-                        mLoggingService.GuardarLogError("The resource " + param.resource_id + " is already shared in the community " + param.destination_communitiy_short_name + ".", mlogger);
-                        //throw new GnossException("The resource " + param.resource_id + " is already shared in the community " + param.destination_communitiy_short_name + ".", HttpStatusCode.BadRequest);
+                        mLoggingService.GuardarLogError("The resource " + param.resource_id + " is already shared in the community " + param.destination_community_short_name + ".", mlogger);
+                        //throw new GnossException("The resource " + param.resource_id + " is already shared in the community " + param.destination_community_short_name + ".", HttpStatusCode.BadRequest);
                     }
 
                     //Comprobar si la comunidad permite el tipo de recurso:
@@ -3113,9 +3113,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     listaIds.Add(shareParams.resource_id);
                 }
-                if (!comunidades.Contains(shareParams.destination_communitiy_short_name))
+                if (!comunidades.Contains(shareParams.destination_community_short_name))
                 {
-                    comunidades.Add(shareParams.destination_communitiy_short_name);
+                    comunidades.Add(shareParams.destination_community_short_name);
                 }
                 if (pPublisherEmail == null)
                 {
@@ -3535,7 +3535,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new Exception("El documento con ID '" + parameters.resource_id + "' no se encuentra en la comunidad '" + parameters.community_short_name + "'");
             }
             UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
-            if (parameters.UserId.Equals(Guid.Empty))
+            if (!parameters.UserId.Equals(Guid.Empty))
             {
                 parameters.user_short_name = usuarioCN.ObtenerNombreCortoUsuarioPorID(parameters.UserId);
             }
@@ -3766,321 +3766,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             ControladorDocumentacion.InsertarEnColaProcesarFicherosRecursosModificadosOEliminados(parameters.resource_id, TipoEventoProcesarFicherosRecursos.Modificado, mAvailableServices);
 
             return true;
-        }
-
-        /// <summary>
-        /// Creates a new massive data load
-        /// </summary>
-        /// <param name="parameters">Parameters of the load</param>
-        /// <returns>True if the load is added to the sql table</returns>
-        [HttpPost, Route("create-massive-load")]
-        public bool CreateMassiveDataLoad(MassiveDataLoadResource parameters)
-        {
-            bool load = false;
-            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
-            //UsuarioOAuth
-            parameters.project_id = proyCN.ObtenerProyectoIDPorNombreCorto(parameters.community_name);
-            parameters.state = 0;
-            parameters.date_create = DateTime.Now;
-
-            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
-            PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
-            List<Guid> listaUsuario = new List<Guid>();
-
-            listaUsuario.Add(UsuarioOAuth);
-            Dictionary<Guid, Guid> dic = personaCN.ObtenerPersonasIDDeUsuariosID(listaUsuario);
-            DataWrapperIdentidad identidades = identCN.ObtenerIdentidadDePersonaEnProyecto(parameters.project_id, dic[UsuarioOAuth]);
-            if (identidades?.ListaIdentidad != null && identidades?.ListaIdentidad.Count > 0)
-            {
-                parameters.identity_id = identidades.ListaIdentidad.FirstOrDefault().IdentidadID;
-                if (proyCN.EsIdentidadAdministradorProyecto(parameters.identity_id, parameters.project_id, TipoRolUsuario.Administrador))
-                {
-                    load = proyCN.CrearNuevaCargaMasiva(parameters.load_id, parameters.state, parameters.date_create, parameters.project_id, parameters.identity_id, parameters.ontology, parameters.name, ProyectoAD.MetaOrganizacion);
-                }
-                else
-                {
-                    throw new GnossException("Invalid Oauth. Insufficient permissions.", HttpStatusCode.Forbidden);
-                }
-            }
-            else
-            {
-                throw new GnossException("The user doesn't participate in the community", HttpStatusCode.BadRequest);
-            }
-
-            return load;
-        }
-
-        /// <summary>
-        /// Creates a new massive data load package
-        /// </summary>
-        /// <param name="parameters">Parameters of the package</param>
-        /// <returns>True if the package is load to the sql table</returns>
-        [HttpPost, Route("create-massive-load-package")]
-        public bool CreateMassiveDataLoadPackage(MassiveDataLoadPackageResource parameters)
-        {
-            if (parameters == null)
-            {
-                parameters = (MassiveDataLoadPackageResource)ObtenerVariablesDePeticion(typeof(MassiveDataLoadPackageResource).FullName);
-            }
-
-            ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
-
-            parameters.state = (short)EstadoPaquete.Pendiente;
-            parameters.error = "";
-            parameters.date_creation = DateTime.Now;
-            parameters.date_processing = null;
-            parameters.comprimido = false;
-
-            List<Guid> listaUsuario = new List<Guid>();
-
-            Carga carga = mEntityContext.Carga.Where(item => item.CargaID.Equals(parameters.load_id)).FirstOrDefault();
-
-            if (carga != null && carga.Estado == 0)
-            {
-                if (proyCN.EsIdentidadAdministradorProyecto(carga.IdentidadID.Value, carga.ProyectoID.Value, TipoRolUsuario.Administrador))
-                {
-                    DatosRabbitCarga datos = new DatosRabbitCarga();
-                    datos.CargaID = parameters.load_id;
-                    datos.PaqueteID = parameters.package_id;
-                    datos.UrlTriplesOntologia = parameters.ontology_rute;
-                    datos.UrlTriplesBusqueda = parameters.search_rute;
-                    datos.UrlDatosAcido = parameters.sql_rute;
-                    datos.BytesDatosAcido = parameters.sql_bytes;
-                    datos.BytesTriplesBusqueda = parameters.search_bytes;
-                    datos.BytesTriplesOntologia = parameters.ontology_bytes;
-
-                    if (parameters.isLast)
-                    {
-                        carga.Estado = 1;
-                        mEntityContext.SaveChanges();
-                    }
-
-					if (mAvailableServices.CheckIfServiceIsAvailable(mAvailableServices.GetBackServiceCode(BackgroundService.MassiveDataLoader), ServiceType.Background))
-                    {
-						using (RabbitMQClient rabbitMq = new RabbitMQClient(RabbitMQClient.BD_SERVICIOS_WIN, "ColaDescargaMasiva", mLoggingService, mConfigService, mLoggerFactory.CreateLogger<RabbitMQClient>(), mLoggerFactory))
-						{
-							rabbitMq.AgregarElementoACola(JsonConvert.SerializeObject(datos));
-						}
-					}
-
-                    return true;
-                }
-                else
-                {
-                    throw new GnossException("Invalid Oauth. Insufficient permissions.", HttpStatusCode.Forbidden);
-                }
-            }
-            else
-            {
-                throw new GnossException("The load doesn't exit or is closed.", HttpStatusCode.BadRequest);
-            }
-        }
-
-        [NonAction]
-        public object ObtenerVariablesDePeticion(string pNombreClase)
-        {
-            HttpContext.Request.Body.Position = 0;
-            string parametrosPeticion = new StreamReader(HttpContext.Request.Body).ReadToEnd();
-            object objetoPeticion = System.Reflection.Assembly.GetExecutingAssembly().CreateInstance(pNombreClase);
-
-            string[] listaParametros = parametrosPeticion.Split(",\"".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
-
-            List<string> listaVariables = System.Reflection.Assembly.GetExecutingAssembly().CreateInstance(pNombreClase).GetType().GetProperties().Select(item => item.Name).ToList();
-            int contador = 0;
-            foreach (string nombreVariable in listaVariables)
-            {
-                if (parametrosPeticion.Contains($"{nombreVariable}\":"))
-                {
-                    Type tipoVariable = objetoPeticion.GetType().GetProperty(nombreVariable).PropertyType;
-                    string caracteresInicioVariable = "\":";
-                    string caracteresFinalVariable = "\",\"";
-
-                    int inicioValorVariable = parametrosPeticion.IndexOf(caracteresInicioVariable);
-
-                    if (!parametrosPeticion[inicioValorVariable + 2].Equals('\"'))
-                    {
-                        caracteresFinalVariable = ",\"";
-                    }
-                    if (contador + 1 == listaVariables.Count)
-                    {
-                        caracteresFinalVariable = "}";
-                    }
-
-                    int finValorVariable = parametrosPeticion.IndexOf(caracteresFinalVariable) - inicioValorVariable;
-                    string valor = FormatearValor(parametrosPeticion.Substring(inicioValorVariable, finValorVariable));
-                    objetoPeticion.GetType().GetProperty(nombreVariable).SetValue(objetoPeticion, TransformarValor(valor, tipoVariable), null);
-
-                    if (contador + 1 != listaVariables.Count)
-                    {
-                        int inicioSubstring = inicioValorVariable + finValorVariable + 2;
-                        parametrosPeticion = parametrosPeticion.Substring(inicioSubstring, parametrosPeticion.Count() - inicioSubstring);
-                    }
-                }
-
-                contador++;
-            }
-
-            return objetoPeticion;
-        }
-
-
-
-        private string FormatearValor(string pValor)
-        {
-            if (pValor.StartsWith("\":\""))
-            {
-                return pValor.Replace("\":\"", "");
-            }
-            else
-            {
-                return pValor.Replace("\":", "");
-            }
-        }
-
-        private object TransformarValor(string pValor, Type pTipoVariable)
-        {
-            if (!string.IsNullOrEmpty(pValor))
-            {
-                if (pTipoVariable.Equals(typeof(Guid)))
-                {
-                    return new Guid(pValor);
-                }
-                else if (pTipoVariable.Equals(typeof(char[])))
-                {
-                    return pValor.ToCharArray();
-                }
-                else if (pTipoVariable.Equals(typeof(byte[])))
-                {
-                    pValor = pValor.Replace("[", "");
-                    pValor = pValor.Replace("]", "");
-                    string[] bytes = pValor.Split(',');
-                    byte[] byteArray = new byte[bytes.Length];
-                    for (int i = 0; i < bytes.Length; i++)
-                    {
-                        if (bytes[i].Contains("-"))
-                        {
-                            int valorNegativo = int.Parse(bytes[i]);
-                            bytes[i] = (256 + valorNegativo).ToString();
-                        }
-                        byteArray[i] = Convert.ToByte(bytes[i]);
-                    }
-
-                    return byteArray;
-                }
-                else if (pTipoVariable.Equals(typeof(DateTime)))
-                {
-                    return Convert.ToDateTime(pValor);
-                }
-                else if (pTipoVariable.Equals(typeof(int)))
-                {
-                    return int.Parse(pValor);
-                }
-                else if (pTipoVariable.Equals(typeof(bool)))
-                {
-                    return bool.Parse(pValor);
-                }
-                else
-                {
-                    return pValor;
-                }
-            }
-
-            return pValor;
-        }
-
-        /// <summary>
-        /// Return load state
-        /// </summary>
-        /// <param name="pLoadId">Load id</param>
-        /// <returns>Load state</returns>
-        [HttpPost, Route("load-state")]
-        public EstadoCargaModel LoadState([FromBody] Guid pLoadId)
-        {
-            ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
-            EstadoCargaModel estadoCarga = new EstadoCargaModel();
-
-            List<CargaPaquete> listaPaquetes = proyectoCN.ObtenerPaquetesPorIDCarga(pLoadId);
-            estadoCarga.NumPaquetesCorrectos = listaPaquetes.Count(item => item.Estado.Equals((short)EstadoPaquete.Correcto));
-            estadoCarga.NumPaquetesErroneos = listaPaquetes.Count(item => item.Estado.Equals((short)EstadoPaquete.Erroneo));
-            estadoCarga.NumPaquetesPendientes = listaPaquetes.Count(item => item.Estado.Equals((short)EstadoPaquete.Pendiente));
-
-            estadoCarga.EstadoCarga = EstadoCarga.Pendiente;
-
-            if (estadoCarga.NumPaquetesErroneos > 0 && estadoCarga.NumPaquetesPendientes == 0)
-            {
-                estadoCarga.EstadoCarga = EstadoCarga.FinalizadaConErrores;
-            }
-            else if (estadoCarga.NumPaquetesPendientes > 0)
-            {
-                if (estadoCarga.NumPaquetesCorrectos > 0)
-                {
-                    estadoCarga.EstadoCarga = EstadoCarga.EnProceso;
-                    estadoCarga.Cerrado = false;
-                }
-            }
-            else if (estadoCarga.NumPaquetesCorrectos > 0 && estadoCarga.NumPaquetesErroneos == 0)
-            {
-                estadoCarga.EstadoCarga = EstadoCarga.Finalizada;
-            }
-
-            if (proyectoCN.ObtenerDatosCargaPorID(pLoadId).Estado == 1)
-            {
-                estadoCarga.Cerrado = true;
-            }
-            else
-            {
-                estadoCarga.Cerrado = false;
-            }
-
-            return estadoCarga;
-        }
-
-        /// <summary>
-        /// Test a massive data load
-        /// </summary>
-        /// <param name="resource">Massive data load test resource</param>
-        [HttpPost, Route("test-massive-load")]
-        public bool TestMassiveDataLoad(MassiveDataLoadTestResource resource)
-        {
-            try
-            {
-                //download nq file
-                WebClient client = new WebClient();
-                byte[] downloadedData = client.DownloadData(resource.url);
-
-                //summarie of downloaded nq file
-                byte[] downloadedFileHash = new MD5CryptoServiceProvider().ComputeHash(downloadedData);
-
-                //if the summaries are different, something is wrong
-                if (!resource.fileHash.SequenceEqual(downloadedFileHash))
-                {
-                    Console.Error.Write("The connection to the server could not be established or nq files are not supported.");
-                    throw new WebException("The connection to the server could not be established or nq files are not supported.");
-                }
-                return true;
-            }
-            catch (Exception)
-            {
-                throw new WebException($"The connection to the server could not be established or nq files are not supported. {resource.url}");
-            }
-        }
-
-        /// <summary>
-        /// Close a massive data load
-        /// </summary>
-        /// <param name="resource">Massive data load identifier</param>
-        /// <returns>True if the load is closed</returns>
-        [HttpPost, Route("close-massive-load")]
-        public bool CloseMassiveDataLoad(CloseMassiveDataLoadResource resource)
-        {
-            Carga carga = mEntityContext.Carga.Where(x => x.CargaID.Equals(resource.DataLoadIdentifier)).FirstOrDefault();
-            if (carga != null)
-            {
-                carga.Estado = 1;
-                mEntityContext.SaveChanges();
-                return true;
-            }
-            return false;
         }
 
         /// <summary>
