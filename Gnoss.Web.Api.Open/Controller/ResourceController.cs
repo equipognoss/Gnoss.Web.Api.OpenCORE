@@ -5231,7 +5231,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <param name="community_short_name">Community short name</param>
         /// <param name="resource_id">Resource identifier</param>
         /// <param name="lock_seconds_duration">Seconds that the resource will be locked</param>
-        /// <param name="timeout_seconds">Timeout. The default timeout is 60 seconds.</param>"
+        /// <param name="timeout_seconds">Timeout. The default timeout is 30 seconds.</param>"
         [HttpPost, Route("lock-document")]
         public string LockDocument(string community_short_name, Guid resource_id, int lock_seconds_duration, int timeout_seconds)
         {
@@ -5239,14 +5239,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (lock_seconds_duration < 1)
             {
-                // El tiempo por defecto de bloqueo es 60 segundos
-                lock_seconds_duration = 60;
+                // El tiempo por defecto de bloqueo es 30 segundos
+                lock_seconds_duration = 30;
             }
 
             if (timeout_seconds < 1)
             {
-                // El tiempo por defecto de espera es 60 segundos
-                timeout_seconds = 60;
+                // El tiempo por defecto de espera es 30 segundos
+                timeout_seconds = 30;
             }
             else if (timeout_seconds > 600)
             {
@@ -5277,7 +5277,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     if (docCN.ComprobarDocumentoEnEdicion(resource_id, identidad.Clave, lock_seconds_duration, timeout_seconds) != null)
                     {
-                        throw new GnossException($"The resource {resource_id} has been blocked by other updates for more than 60 seconds. Try again later ", HttpStatusCode.Conflict);
+                        throw new GnossException($"The resource {resource_id} has been blocked by other updates less than 30 seconds. Try again later ", HttpStatusCode.Conflict);
                     }
                     else
                     {
@@ -5294,8 +5294,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, $"Error al bloquear el recurso {resource_id}",mlogger);
-                    throw new GnossException($"The resource {resource_id} has been blocked by other updates for more than 60 seconds. Try again later ", HttpStatusCode.Conflict);
+                    mLoggingService.GuardarLogError(ex, $"Error al bloquear el recurso {resource_id}", mlogger);
+                    throw new GnossException($"The resource {resource_id} has been blocked by other updates for less than 30 seconds. Try again later ", HttpStatusCode.Conflict);
                 }
             }
         }
@@ -5423,7 +5423,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 else
                 {
-                    throw new GnossException($"The resource {pDocumentoID} has been blocked by other updates for more than 60 seconds. Try again later ", HttpStatusCode.Conflict);
+                    throw new GnossException($"The resource {pDocumentoID} has been blocked by other updates less than 30 seconds. Try again later ", HttpStatusCode.Conflict);
                 }
             }
 
@@ -5433,7 +5433,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 
                 if (filaEdicion != null)
                 {
-                    throw new GnossException($"The resource {pDocumentoID} has been blocked by other updates for more than 60 seconds. Try again later ", HttpStatusCode.Conflict);
+                    throw new GnossException($"The resource {pDocumentoID} has been blocked by other updates less than 30 seconds. Try again later ", HttpStatusCode.Conflict);
                 }
                 documentoBloqueado = true;
             }
