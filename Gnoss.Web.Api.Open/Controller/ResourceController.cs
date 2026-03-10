@@ -2219,16 +2219,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("The OAuth user does not have edit permissions on the resource.", HttpStatusCode.Unauthorized);
             }
 
-            List<string> supportedLanguages = null;
-            try
-            {
-                supportedLanguages = GetTranslationLanguages();
-            }
-            catch (Exception ex)
-            {
-                mLoggingService.GuardarLogError(ex, mlogger);
-                throw new GnossException("There has been a problem with the translation service or it is not installed.", HttpStatusCode.ServiceUnavailable);
-            }
+			ComprobarDocumentoTraduccion(parameters.resource_id, out Guid documentoUltimaVersionID, out Guid documentoOriginalID);
+
+			List<string> supportedLanguages = null;
+			try
+			{
+				supportedLanguages = GetTranslationLanguages();
+			}
+			catch (Exception ex)
+			{
+				mLoggingService.GuardarLogError(ex, mlogger);
+				throw new GnossException("There has been a problem with the translation service or it is not installed.", HttpStatusCode.ServiceUnavailable);
+			}
 
             string error = UtilTraducciones.ComprobarIdiomasDisponibles(parameters.target_languages, supportedLanguages, mLoggingService, mlogger);
             if (!string.IsNullOrEmpty(error))
@@ -2239,17 +2241,19 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             Guid translationID = Guid.NewGuid();
             try
             {
-                if (mAvailableServices.CheckIfServiceIsAvailable(mAvailableServices.GetBackServiceCode(BackgroundService.TranslateService), ServiceType.Background))
-                {
-                    TranslationRabbitModel translationModel = new TranslationRabbitModel
-                    {
-                        TranslationID = translationID,
-                        ResourceID = parameters.resource_id,
-                        PublishDate = DateTime.Now,
-                        OriginalLanguage = parameters.original_language,
-                        TargetLanguages = parameters.target_languages,
-                        UserID = UsuarioOAuth
-                    };
+				if (mAvailableServices.CheckIfServiceIsAvailable(mAvailableServices.GetBackServiceCode(BackgroundService.TranslateService), ServiceType.Background))
+				{
+					TranslationRabbitModel translationModel = new TranslationRabbitModel
+					{
+						TranslationID = translationID,
+						ResourceID = documentoUltimaVersionID,
+						OriginalResourceID = documentoOriginalID,
+						ProjectID = Proyecto.Clave,
+						PublishDate = DateTime.Now,
+						OriginalLanguage = parameters.original_language,
+						TargetLanguages = parameters.target_languages,
+						UserID = UsuarioOAuth
+					};
 
                     using (RabbitMQClient rabbitMQ = new RabbitMQClient(RabbitMQClient.BD_SERVICIOS_WIN, "gnoss.translations.translation.exchange", mLoggingService, mConfigService, mLoggerFactory.CreateLogger<RabbitMQClient>(), mLoggerFactory, "gnoss.translations.translation.exchange", "topic"))
                     {
@@ -5811,6 +5815,27 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             return documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false);
         }
+
+		private void ComprobarDocumentoTraduccion(Guid pDocumentoID, out Guid pDocumentoUltimaVersionID, out Guid pDocumentoOriginalID)
+		{
+			DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
+			
+			if(!docCN.ExisteDocumentoEnProyecto(Proyecto.Clave, pDocumentoID))
+			{
+				throw new GnossException($"The resource {pDocumentoID} does not exist in the community {Proyecto.NombreCorto}", HttpStatusCode.BadRequest);
+			}
+
+			pDocumentoOriginalID = docCN.ObtenerDocumentoOriginalIDPorID(pDocumentoID);
+			bool esUltimaVersion = docCN.ComprobarSiEsUltimaVersionDocumento(pDocumentoID);
+			bool esDocumentoOriginal = pDocumentoID == pDocumentoOriginalID;
+
+			if (!esUltimaVersion && !esDocumentoOriginal)
+			{
+				throw new GnossException($"You must provide the original resource ID or the ID of its latest version", HttpStatusCode.BadRequest);
+			}
+
+			pDocumentoUltimaVersionID = pDocumentoID;
+		}
 
         /// <summary>
         /// Comprueba si la identidad puede editar el recurso
