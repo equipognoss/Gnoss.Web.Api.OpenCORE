@@ -7051,11 +7051,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                         string imgRepreDoc = AgregarArchivoSemantico(parameters.resource_file, documentoEdicion.ElementoVinculadoID, ontologia, documentoEdicion.Clave, gestorDoc, parameters.resource_attached_files, !parameters.create_version, parameters.priority, parameters.categories, parameters.main_image, usarReplicacion, out listaTriplesSemanticos, false, "", "", null, entidadesPrincAntiguas);
 
-                        if (imgRepreDoc != null)
-                        {
-                            documentoEdicion.FilaDocumento.NombreCategoriaDoc = imgRepreDoc;
-                        }
-
+                        documentoEdicion.FilaDocumento.NombreCategoriaDoc = imgRepreDoc;
+                        
                         agregarCategoriasTesauro = !ontologia.ConfiguracionPlantilla.CategorizacionTesauroGnossNoObligatoria;
 
                         GuardarLogTiempos("Tras comprobar si categorias son obligatorias");
@@ -7683,7 +7680,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <returns></returns>
         private string AgregarArchivoSemantico(byte[] pFichero, Guid pOntologiaID, Ontologia pOntologia, Guid pDocumentoID, GestorDocumental pGestorDocumental, List<AttachedResource> pArchivosAdjuntos, bool pEliminarRdfViejo, int pPrioridad, List<Guid> pCategoriaIDs, string pImgPrincipal, bool pUsarColareplicacion, out List<TripleWrapper> pListaTriplesSemanticos, bool pCrearCaptura, string pUrlCaptura, string pPredCaptura, int[] pSize, List<ElementoOntologia> pEntidadesPrincAntiguas, StringBuilder pSbVirtuoso = null)
         {
-            string imagenRepresentanteDoc = null;
+            string imagenRepresentanteDoc = string.Empty;
             string nombreOntologia = pGestorDocumental.ListaDocumentos[pOntologiaID].FilaDocumento.Enlace;
             GestionOWL gestorOWL = new GestionOWL();
             gestorOWL.UrlOntologia = BaseURLFormulariosSem + "/Ontologia/" + nombreOntologia + "#";
@@ -7939,7 +7936,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 #region Imagen por defecto de la ontología
                 //La ontología tiene icono
-                if (imagenRepresentanteDoc == null && pGestorDocumental.ListaDocumentos[pOntologiaID].FilaDocumento.NombreCategoriaDoc != null)
+                if (string.IsNullOrEmpty(imagenRepresentanteDoc) && pGestorDocumental.ListaDocumentos[pOntologiaID].FilaDocumento.NombreCategoriaDoc != null)
                 {
                     imagenRepresentanteDoc = pGestorDocumental.ListaDocumentos[pOntologiaID].FilaDocumento.NombreCategoriaDoc;
                 }
@@ -8390,7 +8387,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         [NonAction]
         private string SubirArchivosDelRDF(Guid pDocumentoID, List<AttachedResource> pListaArchivosAdjuntos, List<ElementoOntologia> pInstanciasPrincipales, string pImgPrincipal)
         {
-            string imagenRepresentanteDoc = null;
+            string imagenRepresentanteDoc = string.Empty;
 
             if (pListaArchivosAdjuntos != null && pListaArchivosAdjuntos.Count > 0)
             {
