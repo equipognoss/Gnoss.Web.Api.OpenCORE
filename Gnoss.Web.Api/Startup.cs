@@ -53,22 +53,14 @@ namespace Gnoss.Web.Api
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            EscribirLogTiempos("Application_Start Inicio");
-			ILoggerFactory loggerFactory =
-			LoggerFactory.Create(builder =>
-			{
-				builder.AddConfiguration(Configuration.GetSection("Logging"));
-				builder.AddSimpleConsole(options =>
-				{
-					options.IncludeScopes = true;
-					options.SingleLine = true;
-					options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
-					options.UseUtcTimestamp = true;
-				});
-			});
+            LoggingService.ConfigurarLogging(services, Configuration);
 
-			services.AddSingleton(loggerFactory);
-			Conexion.ServicioWeb = true;
+            // Provider temporal solo para el logger de arranque
+            using var tempProvider = services.BuildServiceProvider();
+            var loggerFactory = tempProvider.GetRequiredService<ILoggerFactory>();
+
+            EscribirLogTiempos("Application_Start Inicio");
+            Conexion.ServicioWeb = true;
             services.AddControllers().AddNewtonsoftJson(options =>
             {
                 options.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
@@ -142,13 +134,6 @@ namespace Gnoss.Web.Api
                 System.Threading.ThreadPool.SetMinThreads(hilos, y);
             }
 
-            
-
-            string configLogStash = configService.ObtenerLogStashConnection();
-            if (!string.IsNullOrEmpty(configLogStash))
-            {
-                LoggingService.InicializarLogstash(configLogStash);
-            }
             var entity = sp.GetService<EntityContext>();
             LoggingService.RUTA_DIRECTORIO_ERROR = Path.Combine(mEnvironment.ContentRootPath, "logs");
 

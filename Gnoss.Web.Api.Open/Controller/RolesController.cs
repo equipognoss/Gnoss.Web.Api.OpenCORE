@@ -510,6 +510,10 @@ namespace Gnoss.Web.Api.Open.Controller
                     throw new GnossException("No se puede eliminar el rol de Administrador o Administrador de Ecosistema", HttpStatusCode.BadRequest);
                 }
 
+                UtilAsistentes utilAsistentes = new UtilAsistentes(mEntityContext, mLoggingService, mConfigService, mLoggerFactory.CreateLogger<UtilAsistentes>(), mLoggerFactory);
+
+                utilAsistentes.EliminarRolAsistente(rol_id);
+
                 proyectoCN.EliminarRolDeProyecto(rolEliminar.RolID);
                 proyectoCN.Dispose();
 

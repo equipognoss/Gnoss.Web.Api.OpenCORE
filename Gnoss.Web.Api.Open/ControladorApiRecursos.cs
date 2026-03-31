@@ -81,7 +81,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
         private readonly EntityContextBASE mEntityContextBASE;
         private readonly IServicesUtilVirtuosoAndReplication mServicesUtilVirtuosoAndReplication;
         private readonly IAvailableServices mAvailableServices;
-        private ILogger mlogger;
+        private ILogger mLogger;
         private ILoggerFactory mLoggerFactory;
         public ControladorApiRecursos(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<ControladorApiRecursos> logger, ILoggerFactory loggerFactory)
         {
@@ -95,7 +95,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             mEntityContextBASE = entityContextBASE;
             mServicesUtilVirtuosoAndReplication = servicesUtilVirtuosoAndReplication;
             mAvailableServices = availableServices;
-            mlogger = logger;
+            mLogger = logger;
             mLoggerFactory = loggerFactory;
         }
 
@@ -263,7 +263,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError($"Error ObtenerDocumentosIDVinculadosAOntologiaProyecto al obtener documentos vinculados a la ontologia: {pOntologiaID} del proyecto: {pProyectoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                mLoggingService.GuardarLogError(ex, $"Error ObtenerDocumentosIDVinculadosAOntologiaProyecto al obtener documentos vinculados a la ontologia: {pOntologiaID} del proyecto: {pProyectoID}", mLogger);
             }
 
             docCN.Dispose();
@@ -291,7 +291,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                     }
                     catch (Exception ex)
                     {
-                        GuardarLogError($"Error BorradoGrafoOntologia al borrar el documento: {documentoID} del grafo de la ontologia: {ontologiaID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                        mLoggingService.GuardarLogError(ex, $"Error BorradoGrafoOntologia al borrar el documento: {documentoID} del grafo de la ontologia: {ontologiaID}", mLogger);
                     }
                 }
             }
@@ -331,7 +331,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError("Error BorradoGrafoOntologia al borrar el documento:" + documentoID + " del grafo de la ontologia: " + pOntologiaID + "\n Traza: " + ex.StackTrace + "\n Mensaje error: " + ex.Message, "BorrarRecursos");                    
+                    mLoggingService.GuardarLogError(ex, "Error BorradoGrafoOntologia al borrar el documento:" + documentoID + " del grafo de la ontologia: " + pOntologiaID, mLogger);                    
                 }
             }
 
@@ -355,7 +355,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError($"Error BorradoGrafoOntologia al borrar el documento: {documentoID} \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                    mLoggingService.GuardarLogError(ex, $"Error BorradoGrafoOntologia al borrar el documento: {documentoID}", mLogger);
                 }
             }
         }
@@ -394,7 +394,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError($"Error BorradoRDF al borrar el documento: {documentoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                    mLoggingService.GuardarLogError(ex, $"Error BorradoRDF al borrar el documento: {documentoID}", mLogger);
                 }
             }
             rdfCN.Dispose();
@@ -430,7 +430,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError($"Error BorradoRDF al borrar los documentos del proyecto: {pProyectoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                mLoggingService.GuardarLogError(ex, "Error BorradoRDF al borrar los documentos del proyecto: {pProyectoID}", mLogger);
             }
 
             rdfCN.Dispose();
@@ -465,7 +465,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                     }
                     catch (Exception ex)
                     {
-                        GuardarLogError($"Error al borrar autocompletar: {documentoID} del proyecto: {proyectoID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                        mLoggingService.GuardarLogError(ex, $"Error al borrar autocompletar: {documentoID} del proyecto: {proyectoID}", mLogger);
                     }
                 }
 
@@ -505,7 +505,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError($"Error BorrarImagenRecursos al borrar imágenes de los recursos de la comunidad: {docFallidos}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                mLoggingService.GuardarLogError(ex, $"Error BorrarImagenRecursos al borrar imágenes de los recursos de la comunidad: {docFallidos}", mLogger);
             }
 
         }
@@ -525,7 +525,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError($"Error BorrarArchivosDocumentosTodasOntologiasComunidad al borrar archivos de todas las ontologías de la comunidad: \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                mLoggingService.GuardarLogError(ex ,"Error BorrarArchivosDocumentosTodasOntologiasComunidad al borrar archivos de todas las ontologías de la comunidad", mLogger);
             }
         }
 
@@ -547,7 +547,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError($"Error BorrarArchivosDocumentosOntologia al borrar archivos de la ontología:{pOntologiaID} \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                mLoggingService.GuardarLogError(ex, "Error BorrarArchivosDocumentosOntologia al borrar archivos de la ontología:{pOntologiaID}", mLogger);
             }
 
             foreach (Guid docID in pDocumentosID)
@@ -560,7 +560,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError($"Error BorrarArchivosDocumentosOntologia al borrar el directorio del documento:{docID} \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                    mLoggingService.GuardarLogError(ex, "Error BorrarArchivosDocumentosOntologia al borrar el directorio del documento:{docID}", mLogger);
                 }
 
                 try
@@ -573,7 +573,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
                 }
                 catch (Exception ex)
                 {
-                    GuardarLogError($"Error BorrarArchivosDocumentosOntologia al borrar el directorio de archivosLink del documento:{docID}\n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                    mLoggingService.GuardarLogError(ex, "Error BorrarArchivosDocumentosOntologia al borrar el directorio de archivosLink del documento:{docID}", mLogger);
                 }
             }
         }
@@ -591,40 +591,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC
             }
             catch (Exception ex)
             {
-                GuardarLogError($"Error BorrarDocumentosVinculados al borrar documentos vinculados. \n Traza: {ex.StackTrace}\n Mensaje error: {ex.Message}", "BorrarRecursos");
+                mLoggingService.GuardarLogError(ex, "Error BorrarDocumentosVinculados al borrar documentos vinculados.", mLogger);
             }
             docCN.Dispose();
         }
-
-        /// <summary>
-        /// Guarda el log del error.
-        /// </summary>
-        public static void GuardarLogError(string pError, string pNombreLog)
-        {
-            string directorio = System.AppDomain.CurrentDomain.BaseDirectory + "logs";
-            Directory.CreateDirectory(directorio);
-            string rutaFichero = Path.Combine(directorio, $"log_{pNombreLog}_{DateTime.Now.ToString("yyyy-MM-dd")}.log");
-
-            //Si el fichero supera el tamaño máximo lo elimino
-            if (File.Exists(rutaFichero))
-            {
-                FileInfo fichero = new FileInfo(rutaFichero);
-                if (fichero.Length > 1000000)
-                {
-                    fichero.Delete();
-                }
-            }
-
-            //Añado el error al fichero
-            using (StreamWriter sw = new StreamWriter(rutaFichero, true, System.Text.Encoding.Default))
-            {
-                sw.WriteLine(Environment.NewLine + "Fecha: " + DateTime.Now + Environment.NewLine + Environment.NewLine);
-                // Escribo el error
-                sw.Write(pError);
-                sw.WriteLine(Environment.NewLine + Environment.NewLine + "___________________________________________________________________________________________" + Environment.NewLine + Environment.NewLine + Environment.NewLine);
-            }
-        }
-
         #endregion
 
         #endregion

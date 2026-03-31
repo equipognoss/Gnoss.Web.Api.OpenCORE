@@ -115,7 +115,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             try
             {
-                GuardarLogDatosPeticion(await ObtenerDatosPeticionParaLog());
+                mLoggingService.GuardarLogDebug(await ObtenerDatosPeticionParaLog(), mlogger);
 
                 UsuarioOAuth = ComprobarPermisosOauth(mHttpContextAccessor.HttpContext.Request);
                 if (UsuarioOAuth.Equals(Guid.Empty))
@@ -861,51 +861,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 return pParametro.ToString();
             }
-        }
-
-        protected void GuardarLogTiempos(string pMensaje)
-        {
-            if (TomarTiempos)
-            {
-                mMensajeTiempos += $"{DateTime.Now.ToString()}:{DateTime.Now.Millisecond} {pMensaje}{Environment.NewLine}";
-                EscribirLogTiempos(Guid.Empty);
-                mMensajeTiempos = "";
-            }
-        }
-
-        protected void GuardarLogDatosPeticion(string pDatos)
-        {
-            try
-            {
-                if (GuardarDatosPeticion)
-                {
-                    string directorio = $"{AppDomain.CurrentDomain.SetupInformation.ApplicationBase}logs";
-                    Directory.CreateDirectory(directorio);
-                    string rutaFichero = $"{directorio}\\logDatosPeticion_apiRecursos_{DateTime.Now.ToString("yyyy-MM-dd")}.log";
-
-                    //Si el fichero supera el tamaño máximo lo renombro
-                    if (System.IO.File.Exists(rutaFichero))
-                    {
-
-                        FileInfo fichero = new FileInfo(rutaFichero);
-                        if (fichero.Length > 10000000)
-                        {
-                            fichero.CopyTo(rutaFichero.Replace(".log", $"_bk_{DateTime.Now.ToString("hh-mm-ss")}.log"));
-                            fichero.Delete();
-                        }
-                    }
-
-                    //Añado el error al fichero
-                    using (StreamWriter sw = new StreamWriter(rutaFichero, true, Encoding.Default))
-                    {
-                        sw.WriteLine("Fecha: " + DateTime.Now);
-                        // Escribo los datos
-                        sw.Write(pDatos);
-                        sw.WriteLine($"{Environment.NewLine}___________________________________________________________________________________________{Environment.NewLine}");
-                    }
-                }
-            }
-            catch (Exception) { }
         }
 
         /// <summary>

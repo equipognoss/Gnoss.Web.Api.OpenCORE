@@ -1,4 +1,5 @@
-﻿using BeetleX.Redis.Commands;
+﻿using Azure;
+using BeetleX.Redis.Commands;
 using DocumentFormat.OpenXml.Office2010.Word;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Es.Riam.AbstractsOpen;
@@ -8,6 +9,7 @@ using Es.Riam.Gnoss.AD.EncapsuladoDatos;
 using Es.Riam.Gnoss.AD.EntityModel;
 using Es.Riam.Gnoss.AD.EntityModel.Models.Carga;
 using Es.Riam.Gnoss.AD.EntityModel.Models.Documentacion;
+using Es.Riam.Gnoss.AD.EntityModel.Models.Traductor;
 using Es.Riam.Gnoss.AD.EntityModelBASE;
 using Es.Riam.Gnoss.AD.Facetado;
 using Es.Riam.Gnoss.AD.Facetado.Model;
@@ -92,12 +94,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     [Route("[controller]")]
     public class ResourceController : ControlApiGnossBase
     {
-        private ILogger mlogger;
+        private ILogger mLogger;
         private ILoggerFactory mLoggerFactory;
         public ResourceController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<ResourceController> logger, ILoggerFactory loggerFactory)
             : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices, logger, loggerFactory)
         {
-            mlogger = logger;
+            mLogger = logger;
             mLoggerFactory = loggerFactory;
         }
 
@@ -1305,7 +1307,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     if (AgregarColaLive || parameters.publish_home)
                     {
                         ControladorDocumentacion.ActualizarGnossLive(FilaProy.ProyectoID, documento.Clave, AccionLive.Editado, tipo, false, "base", PrioridadLive.Baja, Constantes.PRIVACIDAD_CAMBIADA, mAvailableServices);
-                        GuardarLogTiempos("Tras Actualizar Live");
+                        mLoggingService.GuardarLogTrace("Tras Actualizar Live", mLogger);
                     }
 
                     #endregion
@@ -1578,7 +1580,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 if (AgregarColaLive || parameters.publish_home)
                 {
                     ControladorDocumentacion.ActualizarGnossLive(FilaProy.ProyectoID, documento.Clave, AccionLive.Editado, tipo, "base", PrioridadLive.Baja, mAvailableServices);
-                    GuardarLogTiempos("Tras Actualizar Live");
+                    mLoggingService.GuardarLogDebug("Tras Actualizar Live", mLogger);
                 }
 
                 #endregion
@@ -2176,27 +2178,37 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// </summary>
         /// <returns>List of supported languages</returns>
         [HttpGet, Route("get-translation-languages")]
-        public List<string> GetTranslationLanguages()
+        public List<string> GetTranslationLanguages(string community_short_name)
         {
             try
             {
-                TranslationConfig config = UtilTraducciones.CrearTranslationConfig(mConfigService);
-                ITranslationStrategy strategy = new TranslationStrategyFactory().CreateTranslationStrategy(config, TranslationProvider.Scia);
-                TranslationService service = new TranslationService(strategy);
-                LanguagesResponse response = service.GetAvailableLanguages();
-
-                if (!response.Success)
+                mNombreCortoComunidad = community_short_name;
+                using ProyectoCN proyectoCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
+                TraductorProyecto traductorProyecto = proyectoCN.ObtenerTraductorDeProyecto(Proyecto.Clave);
+                if (traductorProyecto != null)
                 {
-                    mLoggingService.GuardarLogError(response.ErrorMessage, mlogger);
-                    throw new GnossException($"Error attempting to get the list of languages: {response.ErrorMessage}", HttpStatusCode.InternalServerError);
-                }
+                    TranslationConfig config = UtilTraducciones.CrearTranslationConfig(traductorProyecto.Endpoint, traductorProyecto.Token);
+                    ITranslationStrategy strategy = new TranslationStrategyFactory().CreateTranslationStrategy(config, TranslationProvider.Scia);
+                    TranslationService service = new TranslationService(strategy);
+                    LanguagesResponse response = service.GetAvailableLanguages();
 
-                return response.AvailableLanguajes;
+                    if (!response.Success)
+                    {
+                        mLoggingService.GuardarLogError(response.ErrorMessage, mLogger);
+                        throw new GnossException($"Error attempting to get the list of languages: {response.ErrorMessage}", HttpStatusCode.InternalServerError);
+                    }
+
+                    return response.AvailableLanguajes;
+                }
+                else
+                {
+                    throw new GnossException($"The translation service is not configured for this project.", HttpStatusCode.ServiceUnavailable);
+                }
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
-                throw new GnossException("There has been a problem with the translation service or it is not installed.", HttpStatusCode.ServiceUnavailable);
+                mLoggingService.GuardarLogError(ex, mLogger);
+                throw new GnossException(ex.Message, HttpStatusCode.ServiceUnavailable);
             }
         }
 
@@ -2224,15 +2236,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 			List<string> supportedLanguages = null;
 			try
 			{
-				supportedLanguages = GetTranslationLanguages();
+				supportedLanguages = GetTranslationLanguages(parameters.community_short_name);
 			}
 			catch (Exception ex)
 			{
-				mLoggingService.GuardarLogError(ex, mlogger);
-				throw new GnossException("There has been a problem with the translation service or it is not installed.", HttpStatusCode.ServiceUnavailable);
+				mLoggingService.GuardarLogError(ex, mLogger);
+				throw new GnossException(ex.Message, HttpStatusCode.ServiceUnavailable);
 			}
 
-            string error = UtilTraducciones.ComprobarIdiomasDisponibles(parameters.target_languages, supportedLanguages, mLoggingService, mlogger);
+            string error = UtilTraducciones.ComprobarIdiomasDisponibles(parameters.target_languages, supportedLanguages, mLoggingService, mLogger);
             if (!string.IsNullOrEmpty(error))
             {
                 throw new GnossException($"Languages '{error}' are not supported. To check the list of supported languages use 'GetTranslationLanguages'", HttpStatusCode.BadRequest);
@@ -2263,7 +2275,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
                 throw new GnossException($"There has been a problem with the translation service", HttpStatusCode.InternalServerError);
             }
 
@@ -2330,7 +2342,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         }
                         catch (Exception ex)
                         {
-                            mLoggingService.GuardarLog($"{ex.Message}\\n{ex.StackTrace}", mlogger);
+                            mLoggingService.GuardarLog($"{ex.Message}\\n{ex.StackTrace}", mLogger);
                             throw new GnossException($"{ex.Message}\\n{ex.StackTrace}", HttpStatusCode.InternalServerError);
                         }
                     }
@@ -2490,7 +2502,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, mlogger);
+                    mLoggingService.GuardarLogError(ex, mLogger);
                 }
 
                 #endregion
@@ -2652,7 +2664,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
                 documentacionCN.TerminarTransaccion(false);
                 facetadoCN.TerminarTransaccion(false);
 
@@ -3066,7 +3078,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 if (!gestorDoc.ListaDocumentos.ContainsKey(param.resource_id))
                 {
-                    mLoggingService.GuardarLogError("The resource " + param.resource_id + " does not exist.", mlogger);
+                    mLoggingService.GuardarLogError("The resource " + param.resource_id + " does not exist.", mLogger);
                 }
                 else
                 {
@@ -3074,7 +3086,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     if (documentoEdicion.ListaProyectos.Contains(FilaProy.ProyectoID))
                     {
-                        mLoggingService.GuardarLogError("The resource " + param.resource_id + " is already shared in the community " + param.destination_community_short_name + ".", mlogger);
+                        mLoggingService.GuardarLogError("The resource " + param.resource_id + " is already shared in the community " + param.destination_community_short_name + ".", mLogger);
                         //throw new GnossException("The resource " + param.resource_id + " is already shared in the community " + param.destination_community_short_name + ".", HttpStatusCode.BadRequest);
                     }
 
@@ -3734,7 +3746,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
                 throw;
             }
         }
@@ -3790,7 +3802,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
                 throw;
             }
         }
@@ -3878,7 +3890,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     {
                         mEntityContext.TerminarTransaccionesPendientes(false);
                         //hacer el rollback de virtuoso con el rdf viejo entidadesPrincAntiguas
-                        mLoggingService.GuardarLogError(ex, $"ModificarCategoriasRecursoInt: Error al guardar modificaciones en BD Ácida. Se han revertido los cambios en Virtuoso y BD RDF del recurso {parameters.resource_id}", mlogger);
+                        mLoggingService.GuardarLogError(ex, $"ModificarCategoriasRecursoInt: Error al guardar modificaciones en BD Ácida. Se han revertido los cambios en Virtuoso y BD RDF del recurso {parameters.resource_id}", mLogger);
                     }
                     throw;
                 }
@@ -3978,7 +3990,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
                 throw;
             }
         }
@@ -4325,7 +4337,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     catch (Exception ex)
                     {
                         mEntityContext.TerminarTransaccionesPendientes(false);
-                        mLoggingService.GuardarLogError(ex, mlogger);
+                        mLoggingService.GuardarLogError(ex, mLogger);
                         throw new GnossException("There was an error trying to modify triples. Please, try again later. ", HttpStatusCode.InternalServerError);
                     }
                     finally
@@ -4336,7 +4348,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 else
                 {
-                    mLoggingService.GuardarLogError($"The ontology {parameters.ontology} isn't defined in proyect ontologies. (Be carefull with lower and upper case)", mlogger);
+                    mLoggingService.GuardarLogError($"The ontology {parameters.ontology} isn't defined in proyect ontologies. (Be carefull with lower and upper case)", mLogger);
                 }
             }
             catch (GnossException)
@@ -4346,7 +4358,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             catch (Exception ex)
             {
                 mEntityContext.TerminarTransaccionesPendientes(false);
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
                 throw new GnossException("There was an error trying to modify triples. Please, try again later. ", HttpStatusCode.InternalServerError);
             }
         }
@@ -4428,7 +4440,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 else
                 {
-                    mLoggingService.GuardarLogError($"El servicios de etiquetas no está configurado correctamente.", mlogger);
+                    mLoggingService.GuardarLogError($"El servicios de etiquetas no está configurado correctamente.", mLogger);
                     throw new GnossException("Labeler service is not configured.", HttpStatusCode.BadRequest);
                 }
 
@@ -4436,7 +4448,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError($"Error al obtener las etiquetas. ERROR: {ex.Message}", mlogger);
+                mLoggingService.GuardarLogError($"Error al obtener las etiquetas. ERROR: {ex.Message}", mLogger);
                 throw new GnossException($"Error in labeler service: {ex.Message}", HttpStatusCode.BadRequest);
             }
         }
@@ -4761,14 +4773,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                                 }
                                                 catch (Exception ex)
                                                 {
-                                                    mLoggingService.GuardarLogError(ex, $"Error al descargar el recorte de una imagen: {urlRecorte}", mlogger);
+                                                    mLoggingService.GuardarLogError(ex, $"Error al descargar el recorte de una imagen: {urlRecorte}", mLogger);
                                                 }
                                             }
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        mLoggingService.GuardarLogError(ex, $"Error al descargar una imagen:", mlogger);
+                                        mLoggingService.GuardarLogError(ex, $"Error al descargar una imagen:", mLogger);
                                     }
                                 }
                                 else if (estilo.TipoCampo.Equals(TipoCampoOntologia.Archivo))
@@ -5309,7 +5321,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, $"Error al bloquear el recurso {resource_id}", mlogger);
+                    mLoggingService.GuardarLogError(ex, $"Error al bloquear el recurso {resource_id}", mLogger);
                     throw new GnossException($"The resource {resource_id} has been blocked by other updates for less than 30 seconds. Try again later ", HttpStatusCode.Conflict);
                 }
             }
@@ -5359,7 +5371,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, $"Error al desbloquear el recurso {resource_id}", mlogger);
+                    mLoggingService.GuardarLogError(ex, $"Error al desbloquear el recurso {resource_id}", mLogger);
                     throw new GnossException($"An error occurred. The resource {resource_id} can't be unlocked. Try again later ", HttpStatusCode.InternalServerError);
                 }
             }
@@ -5633,7 +5645,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         }
                         catch (Exception ex)
                         {
-                            mLoggingService.GuardarLogError(ex, mlogger);
+                            mLoggingService.GuardarLogError(ex, mLogger);
                         }
                     }
                 }
@@ -5666,7 +5678,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, mlogger);
+                    mLoggingService.GuardarLogError(ex, mLogger);
                 }
             }
         }
@@ -5695,7 +5707,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, mlogger);
+                    mLoggingService.GuardarLogError(ex, mLogger);
                 }
             }
         }
@@ -5728,7 +5740,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                     catch (Exception ex)
                     {
-                        mLoggingService.GuardarLogError(ex, mlogger);
+                        mLoggingService.GuardarLogError(ex, mLogger);
                     }
                 }
             }
@@ -5761,7 +5773,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                     catch (Exception ex)
                     {
-                        mLoggingService.GuardarLogError(ex, mlogger);
+                        mLoggingService.GuardarLogError(ex, mLogger);
                     }
                 }
             }
@@ -5795,7 +5807,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                     catch (Exception ex)
                     {
-                        mLoggingService.GuardarLogError(ex, mlogger);
+                        mLoggingService.GuardarLogError(ex, mLogger);
                     }
                 }
             }
@@ -6240,7 +6252,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("A resource already exists in the community with the identifier: " + parameters.resource_id, HttpStatusCode.BadRequest);
             }
 
-            GuardarLogTiempos("Tras cargar gestorDoc y el proyecto");
+            mLoggingService.GuardarLogTrace("Tras cargar gestorDoc y el proyecto", mLogger);
             Identidad identidad = pIdentidad;
             bool esAdminProyecto = false;
 
@@ -6290,7 +6302,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, true);
             }
 
-            GuardarLogTiempos("Tras cargar gestor identidad");
+            mLoggingService.GuardarLogTrace("Tras cargar gestor identidad", mLogger);
             Guid elementoVinculadoID = Guid.Empty;
             string rutaFichero = null;
 
@@ -6317,13 +6329,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 docCN.Dispose();
                 gestorDoc.CargarDocumentos(false);
 
-                GuardarLogTiempos("Tras obtener ontología");
+                mLoggingService.GuardarLogTrace("Tras obtener ontología",mLogger);
             }
 
             //Comprobar si la comunidad permite el tipo de recurso:
             ComprobarUsuarioEnProyectoAdmiteTipoRecurso(identidad.Clave, identidad.IdentidadMyGNOSS.Clave, FilaProy.ProyectoID, identidad.Usuario.Clave, (TiposDocumentacion)parameters.resource_type, elementoVinculadoID, false);
 
-            GuardarLogTiempos("Tras comprobar si usuario puede subir este rec en esta comunidad");
+            mLoggingService.GuardarLogTrace("Tras comprobar si usuario puede subir este rec en esta comunidad", mLogger);
 
             #region Tags automaticos servicio
 
@@ -6354,14 +6366,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                 }
 
-                GuardarLogTiempos("Tras Llamar al servicio automatico de tags");
+                mLoggingService.GuardarLogTrace("Tras Llamar al servicio automatico de tags", mLogger);
             }
 
             #endregion
 
             #region Fechacreacion
 
-            GuardarLogTiempos("Antes fecha creación");
+            mLoggingService.GuardarLogTrace("Antes fecha creación", mLogger);
 
             DateTime? fechaCreacion = null;
 
@@ -6387,7 +6399,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             string tags = UtilCadenas.CadenaFormatoTexto(listaTags);
 
-            GuardarLogTiempos("Antes de tipos docs");
+            mLoggingService.GuardarLogTrace("Antes de tipos docs", mLogger);
 
             if (parameters.resource_type == (short)TiposDocumentacion.Nota)
             {
@@ -6441,7 +6453,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 rutaFichero = parameters.resource_url;
             }
 
-            GuardarLogTiempos("Antes autores");
+            mLoggingService.GuardarLogTrace("Antes autores", mLogger);
 
             string autores;
 
@@ -6478,12 +6490,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             Elementos.Documentacion.Documento doc = gestorDoc.AgregarDocumento(documentoID, rutaFichero, parameters.title.Trim(), descripcion, tags, (TiposDocumentacion)parameters.resource_type, TipoEntidadVinculadaDocumento.Web, true, elementoVinculadoID, compartir, false, parameters.creator_is_author, autores, false, FilaProy.OrganizacionID, identidad.Clave);
 
-            GuardarLogTiempos("Tras Agregar doc al gestor documental");
+            mLoggingService.GuardarLogTrace("Tras Agregar doc al gestor documental", mLogger);
 
             //Agrego la comunidad a la que pertenece el documento:
             doc.FilaDocumento.ProyectoID = FilaProy.ProyectoID;
 
-            GuardarLogTiempos("Tras Agregar doc al gestor documental");
+            mLoggingService.GuardarLogTrace("Tras Agregar doc al gestor documental", mLogger);
 
             //Agrego la comunidad a la que pertenece el documento:
             doc.FilaDocumento.ProyectoID = FilaProy.ProyectoID;
@@ -6524,7 +6536,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     doc.FilaDocumento.NombreCategoriaDoc = imgRepreDoc;
                 }
 
-                GuardarLogTiempos("Tras guardar en virtuso formulario sem");
+                mLoggingService.GuardarLogTrace("Tras guardar en virtuso formulario sem", mLogger);
 
                 if (!string.IsNullOrEmpty(parameters.canonical_url))
                 {
@@ -6533,7 +6545,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 agregarCategoriasTesauro = !ontologia.ConfiguracionPlantilla.CategorizacionTesauroGnossNoObligatoria;
 
-                GuardarLogTiempos("Tras comprobar si categorias son obligatorias");
+                mLoggingService.GuardarLogTrace("Tras comprobar si categorias son obligatorias", mLogger);
             }
 
             //A partir de aquí, si algo va mal tengo que revertir los cambios hechos en la parte semántica
@@ -6549,7 +6561,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         listaCategorias.Add(categoria);
                     }
 
-                    GuardarLogTiempos("Tras agregar categorías");
+                    mLoggingService.GuardarLogTrace("Tras agregar categorías", mLogger);
                 }
 
                 gestorDoc.AgregarDocumento(listaCategorias, doc, identidad.Clave, false, Guid.Empty);
@@ -6577,7 +6589,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     doc.GestorDocumental.AgregarEditorARecurso(doc.Clave, identidad.PerfilID);
                 }
 
-                GuardarLogTiempos("Tras agregar editores");
+                mLoggingService.GuardarLogTrace("Tras agregar editores", mLogger);
 
                 //Ajusto la fecha de publicación:
                 foreach (DocumentoWebVinBaseRecursos row in gestorDoc.DataWrapperDocumentacion.ListaDocumentoWebVinBaseRecursos)
@@ -6585,7 +6597,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     row.FechaPublicacion = doc.FilaDocumento.FechaCreacion;
                 }
 
-                GuardarLogTiempos("Tras modificar fecha publicacion");
+                mLoggingService.GuardarLogTrace("Tras modificar fecha publicacion", mLogger);
 
                 if (!mIndexarRecursos)
                 {
@@ -6595,10 +6607,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                 }
 
-                GuardarLogTiempos("Tras gestionar indexado");
+                mLoggingService.GuardarLogTrace("Tras gestionar indexado", mLogger);
 
 
-                GuardarLogTiempos("Antes guardar en BD ");
+                mLoggingService.GuardarLogTrace("Antes guardar en BD ", mLogger);
 
                 List<Guid> listaProyActualizar = new List<Guid>();
                 listaProyActualizar.Add(FilaProy.ProyectoID);
@@ -6628,11 +6640,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     mEntityContext.TerminarTransaccionesPendientes(true);
                 }
 
-                GuardarLogTiempos("Tras Guardar en BD");
+                mLoggingService.GuardarLogTrace("Tras Guardar en BD", mLogger);
 
                 if (parameters.create_screenshot)
                 {
-                    GuardarLogTiempos("pCrearCaptura == true");
+                    mLoggingService.GuardarLogTrace("pCrearCaptura == true", mLogger);
 
                     if (doc.TipoDocumentacion == TiposDocumentacion.Hipervinculo || doc.TipoDocumentacion == TiposDocumentacion.Imagen || doc.TipoDocumentacion == TiposDocumentacion.Nota || doc.TipoDocumentacion == TiposDocumentacion.Video || doc.EsPresentacionIncrustada || doc.EsVideoIncrustado)
                     {
@@ -6656,7 +6668,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                             ControladorDocumentacion.CapturarImagenesWeb(documentosID);
 
-                            GuardarLogTiempos("Tras Caputra web");
+                            mLoggingService.GuardarLogTrace("Tras Caputra web", mLogger);
                         }
                         else if (doc.TipoDocumentacion == TiposDocumentacion.Nota || doc.EsVideoIncrustado || doc.EsPresentacionIncrustada || doc.TipoDocumentacion == TiposDocumentacion.Hipervinculo)
                         {
@@ -6678,7 +6690,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     mEntityContext.TerminarTransaccionesPendientes(false);
 
-                    mLoggingService.GuardarLogError(ex, $"SubirRecursoInt: Error al guardar modificaciones en BD Ácida. Se han revertido los cambios en Virtuoso y BD RDF del recurso {doc.Clave}", mlogger);
+                    mLoggingService.GuardarLogError(ex, $"SubirRecursoInt: Error al guardar modificaciones en BD Ácida. Se han revertido los cambios en Virtuoso y BD RDF del recurso {doc.Clave}", mLogger);
                 }
                 throw;
             }
@@ -6688,7 +6700,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (AgregarColaBase && (doc.FilaDocumento.Tipo != (short)TiposDocumentacion.Semantico || !usarReplicacion))
             {
-                GuardarLogTiempos("Antes de GuardarRecursoEnGrafoBusqueda");
+                mLoggingService.GuardarLogTrace("Antes de GuardarRecursoEnGrafoBusqueda", mLogger);
 
                 #region Guardado en el Grafo de búsqueda
 
@@ -6700,7 +6712,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 #endregion
 
-                GuardarLogTiempos("Tras GuardarRecursoEnGrafoBusqueda");
+                mLoggingService.GuardarLogTrace("Tras GuardarRecursoEnGrafoBusqueda", mLogger);
             }
 
             try
@@ -6723,13 +6735,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     ControladorDocumentacion.ActualizarGnossLive(FilaProy.ProyectoID, doc.Clave, AccionLive.Agregado, tipo, "base", PrioridadLive.Baja, mAvailableServices);
                     ControladorDocumentacion.ActualizarGnossLive(FilaProy.ProyectoID, identidad.Clave, AccionLive.RecursoAgregado, (int)TipoLive.Miembro, "base", PrioridadLive.Baja, mAvailableServices);
-                    GuardarLogTiempos("Tras Actualizar Live");
+                    mLoggingService.GuardarLogTrace("Tras Actualizar Live", mLogger);
                 }
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, "Error al insertar en la cola del Live", mlogger);
-                GuardarLogTiempos("Tras Actualizar Live con FALLO");
+                mLoggingService.GuardarLogError(ex, "Error al insertar en la cola del Live", mLogger);
+                mLoggingService.GuardarLogTrace("Tras Actualizar Live con FALLO", mLogger);
             }
 
             try
@@ -6755,11 +6767,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 baseComunidadColaSiteMapsCN.Dispose();
             }
 
-            GuardarLogTiempos("Tras llamar a InsertarFilaEnColaColaSitemaps");
+            mLoggingService.GuardarLogTrace("Tras llamar a InsertarFilaEnColaColaSitemaps", mLogger);
 
             #endregion
 
-            GuardarLogTiempos("Fin documento " + doc.Clave);
+            mLoggingService.GuardarLogTrace("Fin documento " + doc.Clave, mLogger);
             EscribirLogTiempos(doc.Clave);
             if (mIDEntidadPrincipal != null)
             {
@@ -7055,7 +7067,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         
                         agregarCategoriasTesauro = !ontologia.ConfiguracionPlantilla.CategorizacionTesauroGnossNoObligatoria;
 
-                        GuardarLogTiempos("Tras comprobar si categorias son obligatorias");
+                        mLoggingService.GuardarLogTrace("Tras comprobar si categorias son obligatorias", mLogger);
                     }
 
                     List<Guid> listaProyectosActualNumRec = new List<Guid>();
@@ -7134,12 +7146,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             }
                             catch (Exception exc)
                             {
-                                mLoggingService.GuardarLogError(exc, $"Error al revertir los cambios de virtuoso del recurso {parameters.resource_id}", mlogger);
+                                mLoggingService.GuardarLogError(exc, $"Error al revertir los cambios de virtuoso del recurso {parameters.resource_id}", mLogger);
                                 //throw;
                             }
                         }
 
-                        mLoggingService.GuardarLogError(ex, $"ModificarRecursoInt: Error al guardar modificaciones en BD Ácida. Se han revertido los cambios en Virtuoso y BD RDF del recurso {parameters.resource_id}", mlogger);
+                        mLoggingService.GuardarLogError(ex, $"ModificarRecursoInt: Error al guardar modificaciones en BD Ácida. Se han revertido los cambios en Virtuoso y BD RDF del recurso {parameters.resource_id}", mLogger);
                     }
                     throw;
                 }
@@ -7518,7 +7530,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, " Error en etiquetado automático", mlogger);
+                mLoggingService.GuardarLogError(ex, " Error en etiquetado automático", mLogger);
             }
             return new List<string>();
         }
@@ -7705,7 +7717,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     reader = null;
 
                     mInstanciasPrincipales = gestorOWL.LeerFicheroRDF(pOntologia, lineaRDF, true, true);
-                    GuardarLogTiempos(Environment.NewLine + "Leido RDF");
+                    mLoggingService.GuardarLogTrace(Environment.NewLine + "Leido RDF", mLogger);
                 }
                 catch (Exception ex)
                 {
@@ -7837,7 +7849,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     docCN.ActualizarDocumentacion();
                     docCN.Dispose();
 
-                    GuardarLogTiempos("Tras agregar fila a coladocumentoRow");
+                    mLoggingService.GuardarLogTrace("Tras agregar fila a coladocumentoRow", mLogger);
 
                     #endregion
 
@@ -7850,7 +7862,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         ModificarInstanciaPorNivel(pOntologia, eo.Propiedades, pDocumentoID, pPredCaptura, "", rutaRec, true, new GnossStringBuilder(), new GnossStringBuilder(), new GnossStringBuilder(), new GnossStringBuilder());
                     }
 
-                    GuardarLogTiempos("Tras modificar por nivel");
+                    mLoggingService.GuardarLogTrace("Tras modificar por nivel", mLogger);
                 }
 
                 //Guardo el RDF:
@@ -7919,7 +7931,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             }
                             catch (Exception ex)
                             {
-                                mLoggingService.GuardarLogError(ex, $"Error al revertir los cambios de virtuoso del recurso {pDocumentoID}", mlogger);
+                                mLoggingService.GuardarLogError(ex, $"Error al revertir los cambios de virtuoso del recurso {pDocumentoID}", mLogger);
                                 throw;
                             }
                         }
@@ -8438,7 +8450,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             }
                             catch (Exception ex)
                             {
-                                mLoggingService.GuardarLogError(ex, mlogger);
+                                mLoggingService.GuardarLogError(ex, mLogger);
                                 throw new GnossException("Incorrect attached files. GoogleDrive=" + TieneGoogleDriveConfigurado, HttpStatusCode.BadRequest);
                             }
                         }
@@ -8635,7 +8647,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, mlogger);
+                    mLoggingService.GuardarLogError(ex, mLogger);
                     throw new GnossException("The image has incorrect format. Ejemplo: [IMGPrincipal][240,]a27b1e80-9755-7ad5-2731-e2ac6be9b463.jpg", HttpStatusCode.BadRequest);
                 }
             }
@@ -9869,12 +9881,12 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception)
                 {
-                    mLoggingService.GuardarLogError($"Error al eliminar los datos de la cache del recurso {parameters.resource_id}", mlogger);
+                    mLoggingService.GuardarLogError($"Error al eliminar los datos de la cache del recurso {parameters.resource_id}", mLogger);
                 }
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError($"Error al actualizar virtuoso: {ex.Message}", mlogger);
+                mLoggingService.GuardarLogError($"Error al actualizar virtuoso: {ex.Message}", mLogger);
                 throw new GnossException($"Error: {ex.Message}", HttpStatusCode.InternalServerError);
             }
         }
@@ -10213,14 +10225,14 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         {
                             mEntityContext.TerminarTransaccionesPendientes(false);
                             //revertir cambios virtuoso con las instanciasPrincipales antiguas
-                            mLoggingService.GuardarLogError(ex, $"Error al guardar modificaciones en BD RDF. Se van a revertir los cambios en virtuoso del recurso {parameters.resource_id}", mlogger);
+                            mLoggingService.GuardarLogError(ex, $"Error al guardar modificaciones en BD RDF. Se van a revertir los cambios en virtuoso del recurso {parameters.resource_id}", mLogger);
                             ControladorDocumentacion.GuardarRDFEnVirtuoso(entidadesPrincAntiguas, nombreOntologia, UrlIntragnoss, "acid", FilaProy.ProyectoID, parameters.resource_id.ToString(), false, infoExtra_Replicacion, false, usarColaReplicacion, (short)PrioridadBase.ApiRecursos);
                             throw;
                         }
                     }
                     catch (Exception ex)
                     {
-                        mLoggingService.GuardarLogError(ex, $"Error al modificar recurso en BD RDF o Virtuoso. Se van a revertir los cambios en el ácido del recurso {parameters.resource_id}", mlogger);
+                        mLoggingService.GuardarLogError(ex, $"Error al modificar recurso en BD RDF o Virtuoso. Se van a revertir los cambios en el ácido del recurso {parameters.resource_id}", mLogger);
                         throw;
                     }
 
@@ -10229,7 +10241,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, $"Error al modificar recurso. Se van a revertir los cambios en el ácido del recurso {parameters.resource_id}", mlogger);
+                    mLoggingService.GuardarLogError(ex, $"Error al modificar recurso. Se van a revertir los cambios en el ácido del recurso {parameters.resource_id}", mLogger);
 
                     mEntityContext.TerminarTransaccionesPendientes(false);
 
@@ -10238,7 +10250,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
                 mEntityContext.TerminarTransaccionesPendientes(false);
                 throw;
             }
@@ -10495,7 +10507,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
             catch (Exception ex)
             {
-                mLoggingService.GuardarLogError(ex, mlogger);
+                mLoggingService.GuardarLogError(ex, mLogger);
             }
 
             return ontologia;
