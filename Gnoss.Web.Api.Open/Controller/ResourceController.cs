@@ -5837,16 +5837,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 				throw new GnossException($"The resource {pDocumentoID} does not exist in the community {Proyecto.NombreCorto}", HttpStatusCode.BadRequest);
 			}
 
-			pDocumentoOriginalID = docCN.ObtenerDocumentoOriginalIDPorID(pDocumentoID);
-			bool esUltimaVersion = docCN.ComprobarSiEsUltimaVersionDocumento(pDocumentoID);
-			bool esDocumentoOriginal = pDocumentoID == pDocumentoOriginalID;
-
-			if (!esUltimaVersion && !esDocumentoOriginal)
-			{
-				throw new GnossException($"You must provide the original resource ID or the ID of its latest version", HttpStatusCode.BadRequest);
-			}
-
-			pDocumentoUltimaVersionID = pDocumentoID;
+            if (docCN.ComprobarSiEsUltimaVersionDocumento(pDocumentoID))
+            {
+                pDocumentoOriginalID = docCN.ObtenerDocumentoOriginalIDPorID(pDocumentoID);
+                pDocumentoUltimaVersionID = pDocumentoID;
+            }
+            else
+            {
+                pDocumentoOriginalID = pDocumentoID;
+                pDocumentoUltimaVersionID = docCN.ObtenerUltimaVersionDeDocumento(pDocumentoID);
+            }             
 		}
 
         /// <summary>
