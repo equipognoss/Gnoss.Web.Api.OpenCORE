@@ -690,8 +690,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         [HttpGet, Route("get-resource-readers")]
         public KeyReaders GetResourceReaders(Guid resource_id)
         {
-            //List<string> lectores = new List<string>();
-            //Guid documentoID = (Guid)ComprobarParametros("resource_id", true, typeof(Guid));
             KeyReaders lectores = new KeyReaders();
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
@@ -705,7 +703,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 lectores.readers = new List<string>();
             }
 
-            foreach (AD.EntityModel.Models.Documentacion.NombrePerfil filaNombrePerfil in docDW.ListaNombrePerfil)
+            foreach (NombrePerfil filaNombrePerfil in docDW.ListaNombrePerfil)
             {
                 string nomLector = filaNombrePerfil.NombrePerfilAtributo;
 
@@ -720,7 +718,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 lectores.reader_groups = new List<ReaderGroup>();
             }
 
-            foreach (AD.EntityModel.Models.Documentacion.NombreGrupo filaNombreGrupo in docDW.ListaNombreGrupo)
+            foreach (NombreGrupo filaNombreGrupo in docDW.ListaNombreGrupo)
             {
                 string grupoLector = filaNombreGrupo.NombreGrupoAtributo;
                 if (lectores.reader_groups.Find(grupo => grupo.group_short_name.Equals(grupoLector)) == null)
@@ -736,7 +734,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 lectores.reader_groups = new List<ReaderGroup>();
             }
 
-            foreach (AD.EntityModel.Models.Documentacion.NombreGrupoOrg filaNombreGrupoOrg in docDW.ListaNombreGrupoOrg)
+            foreach (NombreGrupoOrg filaNombreGrupoOrg in docDW.ListaNombreGrupoOrg)
             {
                 string nombreOrg = filaNombreGrupoOrg.NombreOrganizacion;
                 string grupoLector = filaNombreGrupoOrg.NombreGrupo;
@@ -967,11 +965,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         /// <example>POST resource/get-editors</example>
         [HttpPost, Route("get-editors")]
         public List<KeyEditors> GetEditors(List<Guid> resource_id_list)
-        {
-            Dictionary<string, List<string>> dicDocsIDListaEditoresDocumentos = new Dictionary<string, List<string>>();
+        {            
             List<KeyEditors> documentosIDEditores = new List<KeyEditors>();
 
-            //resource_id_list = (List<Guid>)ComprobarParametros("resource_id_list", true, typeof(List<Guid>));
             if (resource_id_list == null || resource_id_list.Count == 0)
             {
                 throw new GnossException("The parameter 'resource_id_list' cannot be null or empty.", HttpStatusCode.BadRequest);
@@ -981,7 +977,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             DataWrapperDocumentacion dataWrapperDocumentacion = docCN.ObtenerEditoresYGruposEditoresDocumentos(resource_id_list);
             docCN.Dispose();
 
-            foreach (AD.EntityModel.Models.Documentacion.NombrePerfil filaNombrePerfil in dataWrapperDocumentacion.ListaNombrePerfil)
+            foreach (NombrePerfil filaNombrePerfil in dataWrapperDocumentacion.ListaNombrePerfil)
             {
                 string nomEditor = filaNombrePerfil.NombrePerfilAtributo;
                 Guid documentoID = filaNombrePerfil.DocumentoID;
@@ -1001,7 +997,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
 
-            foreach (AD.EntityModel.Models.Documentacion.NombreGrupo filaNombreGrupo in dataWrapperDocumentacion.ListaNombreGrupo)
+            foreach (NombreGrupo filaNombreGrupo in dataWrapperDocumentacion.ListaNombreGrupo)
             {
                 string nomGrEditor = filaNombreGrupo.NombreGrupoAtributo;
                 Guid documentoID = filaNombreGrupo.DocumentoID;
@@ -1033,7 +1029,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
 
-            foreach (AD.EntityModel.Models.Documentacion.NombreGrupoOrg filaNombreGrupoOrg in dataWrapperDocumentacion.ListaNombreGrupoOrg)
+            foreach (NombreGrupoOrg filaNombreGrupoOrg in dataWrapperDocumentacion.ListaNombreGrupoOrg)
             {
                 string nombreOrg = filaNombreGrupoOrg.NombreOrganizacion;
                 string nomGrEditor = filaNombreGrupoOrg.NombreGrupo;
@@ -1238,20 +1234,21 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             mNombreCortoComunidad = parameters.community_short_name;
-
+            GestorDocumental gestorDocumental = CargarGestorDocumental(FilaProy);            
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
-            GestorDocumental gestorDocumental = CargarGestorDocumental(FilaProy);
-            docCN.ObtenerDocumentoPorIDCargarTotal(parameters.resource_id, gestorDocumental.DataWrapperDocumentacion, true, true, null);
+            Guid ultimaVersionDocumentoID = docCN.ObtenerUltimaVersionDocumentoID(parameters.resource_id);
+            docCN.ObtenerDocumentoPorIDCargarTotal(ultimaVersionDocumentoID, gestorDocumental.DataWrapperDocumentacion, true, true, null);
             gestorDocumental.CargarDocumentos(false);
             docCN.Dispose();
 
-            if (!gestorDocumental.ListaDocumentos.ContainsKey(parameters.resource_id))
+            if (!gestorDocumental.ListaDocumentos.ContainsKey(ultimaVersionDocumentoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
+                throw new GnossException($"The resource {ultimaVersionDocumentoID} does not exist in the community {parameters.community_short_name}", HttpStatusCode.BadRequest);
             }
             else
             {
-                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
+                
+                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[ultimaVersionDocumentoID];
                 Identidad identidad = CargarIdentidad(gestorDocumental, FilaProy, UsuarioOAuth, true);
 
                 if (!EsAdministradorProyectoMyGnoss(UsuarioOAuth) && !documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false))
@@ -1273,44 +1270,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     Guardar(listaProyectosActualNumRec, gestorDocumental, documento);
 
-                    #region Actualizamos la cache
-                    try
-                    {
-                        //Borrar la caché de la ficha del recurso
-                        DocumentacionCL documentacionCL = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                        documentacionCL.BorrarControlFichaRecursos(documento.Clave);
-                        documentacionCL.Dispose();
+                    BorrarCacheFichaRecurso(documento.Clave);
 
-                        DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                        docCL.InvalidarPerfilesConRecursosPrivados(FilaProy.ProyectoID);
-                        docCL.Dispose();
-                    }
-                    catch (Exception) { }
-                    #endregion
-
-                    #region Live
-
-                    int tipo;
-                    switch (documento.TipoDocumentacion)
-                    {
-                        case TiposDocumentacion.Debate:
-                            tipo = (int)TipoLive.Debate;
-                            break;
-                        case TiposDocumentacion.Pregunta:
-                            tipo = (int)TipoLive.Pregunta;
-                            break;
-                        default:
-                            tipo = (int)TipoLive.Recurso;
-                            break;
-                    }
-
-                    if (AgregarColaLive || parameters.publish_home)
-                    {
-                        ControladorDocumentacion.ActualizarGnossLive(FilaProy.ProyectoID, documento.Clave, AccionLive.Editado, tipo, false, "base", PrioridadLive.Baja, Constantes.PRIVACIDAD_CAMBIADA, mAvailableServices);
-                        mLoggingService.GuardarLogTrace("Tras Actualizar Live", mLogger);
-                    }
-
-                    #endregion
+                    ActualizarLiveRecurso(documento.Clave, documento.TipoDocumentacion, parameters.publish_home);
 
                     ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDocumentacion>(), mLoggerFactory);
                     controDoc.mActualizarTodosProyectosCompartido = true;
@@ -1346,18 +1308,19 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             mNombreCortoComunidad = parameters.community_short_name;
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
+            Guid ultimaVersionDocumentoID = docCN.ObtenerUltimaVersionDocumentoID(parameters.resource_id);
             GestorDocumental gestorDocumental = CargarGestorDocumental(FilaProy);
-            docCN.ObtenerDocumentoPorIDCargarTotal(parameters.resource_id, gestorDocumental.DataWrapperDocumentacion, true, true, null);
+            docCN.ObtenerDocumentoPorIDCargarTotal(ultimaVersionDocumentoID, gestorDocumental.DataWrapperDocumentacion, true, true, null);
             gestorDocumental.CargarDocumentos(false);
             docCN.Dispose();
 
-            if (!gestorDocumental.ListaDocumentos.ContainsKey(parameters.resource_id))
+            if (!gestorDocumental.ListaDocumentos.ContainsKey(ultimaVersionDocumentoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
+                throw new GnossException($"The resource {ultimaVersionDocumentoID} does not exist in the community {parameters.community_short_name}", HttpStatusCode.BadRequest);
             }
             else
             {
-                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
+                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[ultimaVersionDocumentoID];
                 Identidad identidad = CargarIdentidad(gestorDocumental, FilaProy, UsuarioOAuth, true);
 
                 if (!EsAdministradorProyectoMyGnoss(UsuarioOAuth) && !documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false))
@@ -1369,7 +1332,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (privadoEditores)
                 {
-
                     ConfigurarLectoresAdd(documento, parameters.readers_list);
 
                     List<Guid> listaProyectosActualNumRec = new List<Guid>();
@@ -1381,21 +1343,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     Guardar(listaProyectosActualNumRec, gestorDocumental, documento);
 
-                    #region Actualizamos la cache
-                    try
-                    {
-                        //Borrar la caché de la ficha del recurso
-                        DocumentacionCL documentacionCL = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                        documentacionCL.BorrarControlFichaRecursos(documento.Clave);
-                        documentacionCL.Dispose();
-
-                        DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                        docCL.InvalidarPerfilesConRecursosPrivados(FilaProy.ProyectoID);
-                        docCL.Dispose();
-                    }
-                    catch (Exception) { }
-                    #endregion
-
+                    BorrarCacheFichaRecurso(documento.Clave);
 
                     ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDocumentacion>(), mLoggerFactory);
                     controDoc.mActualizarTodosProyectosCompartido = true;
@@ -1433,17 +1381,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             GestorDocumental gestorDocumental = CargarGestorDocumental(FilaProy);
-            docCN.ObtenerDocumentoPorIDCargarTotal(parameters.resource_id, gestorDocumental.DataWrapperDocumentacion, true, true, null);
+            Guid ultimaVersionDocumentoID = docCN.ObtenerUltimaVersionDocumentoID(parameters.resource_id);
+            docCN.ObtenerDocumentoPorIDCargarTotal(ultimaVersionDocumentoID, gestorDocumental.DataWrapperDocumentacion, true, true, null);
             gestorDocumental.CargarDocumentos(false);
             docCN.Dispose();
 
-            if (!gestorDocumental.ListaDocumentos.ContainsKey(parameters.resource_id))
+            if (!gestorDocumental.ListaDocumentos.ContainsKey(ultimaVersionDocumentoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
+                throw new GnossException($"The resource {ultimaVersionDocumentoID} does not exist in the community {parameters.community_short_name}", HttpStatusCode.BadRequest);
             }
             else
             {
-                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
+                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[ultimaVersionDocumentoID];
                 Identidad identidad = CargarIdentidad(gestorDocumental, FilaProy, UsuarioOAuth, true);
 
                 if (!EsAdministradorProyectoMyGnoss(UsuarioOAuth) && !documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false))
@@ -1466,21 +1415,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                     Guardar(listaProyectosActualNumRec, gestorDocumental, documento);
 
-                    #region Actualizamos la cache
-                    try
-                    {
-                        //Borrar la caché de la ficha del recurso
-                        DocumentacionCL documentacionCL = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                        documentacionCL.BorrarControlFichaRecursos(documento.Clave);
-                        documentacionCL.Dispose();
-
-                        DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                        docCL.InvalidarPerfilesConRecursosPrivados(FilaProy.ProyectoID);
-                        docCL.Dispose();
-                    }
-                    catch (Exception) { }
-                    #endregion
-
+                    BorrarCacheFichaRecurso(documento.Clave);
 
                     ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDocumentacion>(), mLoggerFactory);
                     controDoc.mActualizarTodosProyectosCompartido = true;
@@ -1516,17 +1451,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             GestorDocumental gestorDocumental = CargarGestorDocumental(FilaProy);
-            docCN.ObtenerDocumentoPorIDCargarTotal(parameters.resource_id, gestorDocumental.DataWrapperDocumentacion, true, true, null);
+            Guid ultimaVersionDocumentoID = docCN.ObtenerUltimaVersionDocumentoID(parameters.resource_id);
+            docCN.ObtenerDocumentoPorIDCargarTotal(ultimaVersionDocumentoID, gestorDocumental.DataWrapperDocumentacion, true, true, null);
             gestorDocumental.CargarDocumentos(false);
             docCN.Dispose();
 
-            if (!gestorDocumental.ListaDocumentos.ContainsKey(parameters.resource_id))
+            if (!gestorDocumental.ListaDocumentos.ContainsKey(ultimaVersionDocumentoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
+                throw new GnossException($"The resource {ultimaVersionDocumentoID} does not exist in the community {parameters.community_short_name}", HttpStatusCode.BadRequest);
             }
             else
             {
-                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
+                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[ultimaVersionDocumentoID];
                 Identidad identidad = CargarIdentidad(gestorDocumental, FilaProy, UsuarioOAuth, true);
 
                 if (!EsAdministradorProyectoMyGnoss(UsuarioOAuth) && !documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false))
@@ -1546,44 +1482,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 Guardar(listaProyectosActualNumRec, gestorDocumental, documento);
 
-                #region Actualizamos la cache
-                try
-                {
-                    //Borrar la caché de la ficha del recurso
-                    DocumentacionCL documentacionCL = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                    documentacionCL.BorrarControlFichaRecursos(documento.Clave);
-                    documentacionCL.Dispose();
+                BorrarCacheFichaRecurso(documento.Clave);
 
-                    DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                    docCL.InvalidarPerfilesConRecursosPrivados(FilaProy.ProyectoID);
-                    docCL.Dispose();
-                }
-                catch (Exception) { }
-                #endregion
-
-                #region Live
-
-                int tipo;
-                switch (documento.TipoDocumentacion)
-                {
-                    case TiposDocumentacion.Debate:
-                        tipo = (int)TipoLive.Debate;
-                        break;
-                    case TiposDocumentacion.Pregunta:
-                        tipo = (int)TipoLive.Pregunta;
-                        break;
-                    default:
-                        tipo = (int)TipoLive.Recurso;
-                        break;
-                }
-
-                if (AgregarColaLive || parameters.publish_home)
-                {
-                    ControladorDocumentacion.ActualizarGnossLive(FilaProy.ProyectoID, documento.Clave, AccionLive.Editado, tipo, "base", PrioridadLive.Baja, mAvailableServices);
-                    mLoggingService.GuardarLogDebug("Tras Actualizar Live", mLogger);
-                }
-
-                #endregion
+                ActualizarLiveRecurso(documento.Clave, documento.TipoDocumentacion, parameters.publish_home);
 
                 ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDocumentacion>(), mLoggerFactory);
                 controDoc.mActualizarTodosProyectosCompartido = true;
@@ -1618,17 +1519,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             GestorDocumental gestorDocumental = CargarGestorDocumental(FilaProy);
-            docCN.ObtenerDocumentoPorIDCargarTotal(parameters.resource_id, gestorDocumental.DataWrapperDocumentacion, true, true, null);
+            Guid ultimaVersionDocumentoID = docCN.ObtenerUltimaVersionDocumentoID(parameters.resource_id);
+            docCN.ObtenerDocumentoPorIDCargarTotal(ultimaVersionDocumentoID, gestorDocumental.DataWrapperDocumentacion, true, true, null);
             gestorDocumental.CargarDocumentos(false);
             docCN.Dispose();
 
-            if (!gestorDocumental.ListaDocumentos.ContainsKey(parameters.resource_id))
+            if (!gestorDocumental.ListaDocumentos.ContainsKey(ultimaVersionDocumentoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
+                throw new GnossException($"The resource {ultimaVersionDocumentoID} does not exist in the community {parameters.community_short_name}", HttpStatusCode.BadRequest);
             }
             else
             {
-                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
+                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[ultimaVersionDocumentoID];
                 Identidad identidad = CargarIdentidad(gestorDocumental, FilaProy, UsuarioOAuth, true);
 
                 if (!EsAdministradorProyectoMyGnoss(UsuarioOAuth) && !documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false))
@@ -1647,39 +1549,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 Guardar(listaProyectosActualNumRec, gestorDocumental, documento);
 
-                #region Actualizamos la cache
-                try
-                {
-                    //Borrar la caché de la ficha del recurso
-                    DocumentacionCL documentacionCL = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                    documentacionCL.BorrarControlFichaRecursos(documento.Clave);
-                    documentacionCL.Dispose();
+                BorrarCacheFichaRecurso(documento.Clave);
 
-                    DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                    docCL.InvalidarPerfilesConRecursosPrivados(FilaProy.ProyectoID);
-                    docCL.Dispose();
-                }
-                catch (Exception) { }
-                #endregion
-
-                #region Live
-
-                int tipo;
-                switch (documento.TipoDocumentacion)
-                {
-                    case TiposDocumentacion.Debate:
-                        tipo = (int)TipoLive.Debate;
-                        break;
-                    case TiposDocumentacion.Pregunta:
-                        tipo = (int)TipoLive.Pregunta;
-                        break;
-                    default:
-                        tipo = (int)TipoLive.Recurso;
-                        break;
-                }
-
-
-                #endregion
+                ActualizarLiveRecurso(documento.Clave, documento.TipoDocumentacion, parameters.publish_home);
 
                 ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDocumentacion>(), mLoggerFactory);
                 controDoc.mActualizarTodosProyectosCompartido = true;
@@ -1714,17 +1586,18 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             GestorDocumental gestorDocumental = CargarGestorDocumental(FilaProy);
-            docCN.ObtenerDocumentoPorIDCargarTotal(parameters.resource_id, gestorDocumental.DataWrapperDocumentacion, true, true, null);
+            Guid ultimaVersionDocumentoID = docCN.ObtenerUltimaVersionDocumentoID(parameters.resource_id);
+            docCN.ObtenerDocumentoPorIDCargarTotal(ultimaVersionDocumentoID, gestorDocumental.DataWrapperDocumentacion, true, true, null);
             gestorDocumental.CargarDocumentos(false);
             docCN.Dispose();
 
-            if (!gestorDocumental.ListaDocumentos.ContainsKey(parameters.resource_id))
+            if (!gestorDocumental.ListaDocumentos.ContainsKey(ultimaVersionDocumentoID))
             {
-                throw new GnossException("The resource " + parameters.resource_id + " does not exist in the community " + parameters.community_short_name, HttpStatusCode.BadRequest);
+                throw new GnossException($"The resource {ultimaVersionDocumentoID} does not exist in the community {parameters.community_short_name}", HttpStatusCode.BadRequest);
             }
             else
             {
-                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
+                Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[ultimaVersionDocumentoID];
                 Identidad identidad = CargarIdentidad(gestorDocumental, FilaProy, UsuarioOAuth, true);
 
                 if (!EsAdministradorProyectoMyGnoss(UsuarioOAuth) && !documento.TienePermisosEdicionIdentidad(identidad, null, Proyecto, Guid.Empty, false))
@@ -1743,38 +1616,9 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 Guardar(listaProyectosActualNumRec, gestorDocumental, documento);
 
-                #region Actualizamos la cache
-                try
-                {
-                    //Borrar la caché de la ficha del recurso
-                    DocumentacionCL documentacionCL = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                    documentacionCL.BorrarControlFichaRecursos(documento.Clave);
-                    documentacionCL.Dispose();
+                BorrarCacheFichaRecurso(documento.Clave);
 
-                    DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
-                    docCL.InvalidarPerfilesConRecursosPrivados(FilaProy.ProyectoID);
-                    docCL.Dispose();
-                }
-                catch (Exception) { }
-                #endregion
-
-                #region Live
-
-                int tipo;
-                switch (documento.TipoDocumentacion)
-                {
-                    case TiposDocumentacion.Debate:
-                        tipo = (int)TipoLive.Debate;
-                        break;
-                    case TiposDocumentacion.Pregunta:
-                        tipo = (int)TipoLive.Pregunta;
-                        break;
-                    default:
-                        tipo = (int)TipoLive.Recurso;
-                        break;
-                }
-
-                #endregion
+                ActualizarLiveRecurso(documento.Clave, documento.TipoDocumentacion, parameters.publish_home);
 
                 ControladorDocumentacion controDoc = new ControladorDocumentacion(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorDocumentacion>(), mLoggerFactory);
                 controDoc.mActualizarTodosProyectosCompartido = true;
@@ -2610,11 +2454,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         ControladorDocumentacion.ActualizarGnossLive(listaBRsConProyectos[baseRecursosID], documento.Clave, AccionLive.Eliminado, tipo, PrioridadLive.Alta, infoExtra, mAvailableServices);
                         ControladorDocumentacion.ActualizarGnossLive(listaBRsConProyectos[baseRecursosID], documento.ObtenerPublicadorEnBR(baseRecursosID), AccionLive.RecursoAgregado, (int)TipoLive.Miembro, PrioridadLive.Alta, mAvailableServices);
                     }
-
-                    //if (AgregarColaSuscripciones)
-                    //{
-                    //ControladorSuscripciones.AgregarElementoCola(listaBRsConProyectos[baseRecursosID], documento.Clave, AccionLive.Eliminado, (TipoLive)tipo);
-                    //}
                 }
 
                 #endregion
@@ -2968,8 +2807,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             Guardar(listaProyActualizar, gestorDoc, documentoEdicion);
 
-            //ControladorDocumentacion.EstablecePrivacidadRecursoEnMetaBuscadorDesdeServicio(documentoEdicion, identidad, true, "acid");
-
             #region Actualizar cola GnossLIVE
 
             int tipo;
@@ -3087,7 +2924,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     if (documentoEdicion.ListaProyectos.Contains(FilaProy.ProyectoID))
                     {
                         mLoggingService.GuardarLogError("The resource " + param.resource_id + " is already shared in the community " + param.destination_community_short_name + ".", mLogger);
-                        //throw new GnossException("The resource " + param.resource_id + " is already shared in the community " + param.destination_community_short_name + ".", HttpStatusCode.BadRequest);
                     }
 
                     //Comprobar si la comunidad permite el tipo de recurso:
@@ -3734,8 +3570,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             try
             {
-                //mLoggingService.GuardarLogError("Entra en  CreateComplexOntologyResource");
-
                 parameters.priority = (int)PrioridadBase.ApiRecursos;
                 if (parameters.end_of_load)
                 {
@@ -3903,8 +3737,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
 
-
             #region Actualizamos la cache
+            
             try
             {
                 //Borrar la caché de la ficha del recurso
@@ -3912,7 +3746,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 documentacionCL.BorrarControlFichaRecursos(parameters.resource_id);
                 documentacionCL.Dispose();
             }
-            catch (Exception) { }
+            catch (Exception) 
+            {
+                //Si no se puede borrar la caché no pasa nada
+            }
+
             #endregion
             docCN.Dispose();
 
@@ -7192,7 +7030,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     docCL.Dispose();
                 }
             }
-            catch (Exception) { }
+            catch (Exception) 
+            {
+                //Si no se puede borrar la caché no pasa nada
+            }
 
             #endregion
 
@@ -10382,11 +10223,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 throw new GnossException("The resource " + parameters.resource_id + " does not exist.", HttpStatusCode.BadRequest);
             }
 
-            Elementos.Documentacion.Documento documento = gestorDocumental.ListaDocumentos[parameters.resource_id];
-
             GestorDocumental gestorDoc = CargarGestorDocumental(FilaProy);
-            Identidad identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, true);
-            //DocumentacionCN docCN = new DocumentacionCN("acid");
+            Identidad identidad = CargarIdentidad(gestorDoc, FilaProy, UsuarioOAuth, true);            
             DocumentoWeb documentoEdicion = null;
             bool documentoBloqueado = ComprobarDocumentoEnEdicion(parameters.resource_id, identidad.Clave);
 
@@ -10521,14 +10359,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 {
                     if (propiedad.Tipo == TipoPropiedad.ObjectProperty && !string.IsNullOrEmpty(propiedad.Rango))
                     {
-                        foreach (string uriEntidad in propiedad.ValoresUnificados.Keys)
+                        foreach (string uriEntidad in propiedad.ValoresUnificados.Keys.Where(item => !mEntidadesABorrar.Contains(item)))
                         {
-                            if (!mEntidadesABorrar.Contains(uriEntidad))
-                            {
-                                mEntidadesABorrar.Add(uriEntidad);
-                                mURIEntidadesABorrar.Add(uriEntidad, propiedad.ValoresUnificados[uriEntidad].Uri);
-                                EliminarEntidadesAuxiliaresRelacionadas(propiedad.ValoresUnificados[uriEntidad]);
-                            }
+                            mEntidadesABorrar.Add(uriEntidad);
+                            mURIEntidadesABorrar.Add(uriEntidad, propiedad.ValoresUnificados[uriEntidad].Uri);
+                            EliminarEntidadesAuxiliaresRelacionadas(propiedad.ValoresUnificados[uriEntidad]);                           
                         }
                     }
                 }
@@ -10573,6 +10408,58 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             return string.Empty;
+        }
+
+        /// <summary>
+        /// Actualiza el recurso en la cola de GnossLive en caso de que se indique
+        /// </summary>
+        /// <param name="pDocumentoID">Identificador del documento</param>
+        /// <param name="pTipoDocumentacion">Tipo de documento</param>
+        /// <param name="pPublisHome">Si se debe publicar en la home</param>
+        private void ActualizarLiveRecurso(Guid pDocumentoID, TiposDocumentacion pTipoDocumentacion, bool pPublisHome)
+        {
+            int tipo;
+            switch (pTipoDocumentacion)
+            {
+                case TiposDocumentacion.Debate:
+                    tipo = (int)TipoLive.Debate;
+                    break;
+                case TiposDocumentacion.Pregunta:
+                    tipo = (int)TipoLive.Pregunta;
+                    break;
+                default:
+                    tipo = (int)TipoLive.Recurso;
+                    break;
+            }
+
+            if (AgregarColaLive || pPublisHome)
+            {
+                ControladorDocumentacion.ActualizarGnossLive(FilaProy.ProyectoID, pDocumentoID, AccionLive.Editado, tipo, false, "base", PrioridadLive.Baja, Constantes.PRIVACIDAD_CAMBIADA, mAvailableServices);
+                mLoggingService.GuardarLogTrace("Tras Actualizar Live", mLogger);
+            }
+        }
+
+        /// <summary>
+        /// Borra la caché de la ficha del recurso recién actualizado e invalida la caché de los perfiles que tengan recursos privados
+        /// </summary>
+        /// <param name="pRecursoID">Identificador del recurso a borrar caché</param>
+        private void BorrarCacheFichaRecurso(Guid pRecursoID)
+        {
+            try
+            {
+                //Borrar la caché de la ficha del recurso
+                DocumentacionCL documentacionCL = new DocumentacionCL("acid", "recursos", mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
+                documentacionCL.BorrarControlFichaRecursos(pRecursoID);
+                documentacionCL.Dispose();
+
+                DocumentacionCL docCL = new DocumentacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCL>(), mLoggerFactory);
+                docCL.InvalidarPerfilesConRecursosPrivados(FilaProy.ProyectoID);
+                docCL.Dispose();
+            }
+            catch (Exception)
+            {
+                //Si no se puede actualizar la caché no rompemos la ejecución
+            }
         }
 
         #endregion
