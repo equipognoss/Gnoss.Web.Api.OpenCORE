@@ -4050,7 +4050,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 facetaCN.CargarFacetaConfigProyRanfoFecha(ProyectoAD.MetaOrganizacion, proyectoID, dataWrapperFacetas);
 
                 ProyectoCN proyCN = new ProyectoCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ProyectoCN>(), mLoggerFactory);
-                Dictionary<string, Guid> ontologiasProyecto = proyCN.ObtenerOntologiasConIDPorNombreCortoProy(parameters.community_short_name);
+                Dictionary<string, Guid> ontologiasProyecto = proyCN.ObtenerOntologiasConIDPorNombreCortoProy(parameters.community_short_name, true);
                 Dictionary<string, Guid> mainResourIDResourceID = new Dictionary<string, Guid>();
 
                 parameters.triples.ForEach(massiveTriple =>
@@ -4201,7 +4201,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
         }
 
-        private void AddTripleToStringBuilder(StringBuilder pStringBuilder, string pSujeto, string pPredicado, string pObjeto, string pLanguage = null)
+        private static void AddTripleToStringBuilder(StringBuilder pStringBuilder, string pSujeto, string pPredicado, string pObjeto, string pLanguage = null)
         {
             string sujeto = pSujeto.Trim().TrimStart('<').TrimEnd('>');
             string predicado = pPredicado.TrimStart('<').TrimEnd('>');
@@ -4217,16 +4217,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 // Es una URI
                 objeto = $"<{objeto}>";
             }
-            else if (!objeto.StartsWith("\"") || !objeto.EndsWith("\""))
+            else if (!objeto.StartsWith('\"') || !objeto.EndsWith('\"'))
             {
                 // El objeto no está envuelto en dobles comillas, se las añado
-                objeto = $"\"{objeto.Replace("\"", "\\\"")}\"{pLanguage}";
+                objeto = $"\"\"\"{objeto.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"\"\"{pLanguage}";
             }
             else
             {
                 // El objeto está envuelto en dobles comillas, 
                 // por si acaso se las quito, reemplazo el resto de dobles comillas y se las vuelvo a poner
-                objeto = $"\"{objeto.Trim('\"').Replace("\"", "\\\"")}\"{pLanguage}";
+                objeto = $"\"\"\"{objeto.Trim('\"').Replace("\\", "\\\\").Replace("\"", "\\\"")}\"\"\"{pLanguage}";
             }
 
             pStringBuilder.AppendLine($"<{sujeto}> <{predicado}> {objeto}. ");
