@@ -263,7 +263,7 @@ namespace Gnoss.Web.Api.Open.Controller
 
 
                 Rol rol = new Rol();
-                if (pAmbito == AmbitoRol.Ecosistema)
+                if (pAmbito == AmbitoRol.Transversal)
                 {
                     rol.ProyectoID = ProyectoAD.MetaProyecto;
                 }
@@ -403,12 +403,6 @@ namespace Gnoss.Web.Api.Open.Controller
 
                 List<Rol> rolesProyecto = proyectoCN.ObtenerRolesDeProyecto(proyectoID);
                 Rol rolAsignar = rolesProyecto.FirstOrDefault(r => r.RolID == rolID);
-
-                if (parameters.pAmbito == AmbitoRol.Ecosistema)
-                {
-
-                }
-
 
                 if (rolAsignar == null)
                 {
