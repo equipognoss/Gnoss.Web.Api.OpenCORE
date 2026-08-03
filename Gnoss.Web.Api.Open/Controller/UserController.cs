@@ -715,7 +715,6 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         {
             try
             {
-
                 if (EsAdministradorProyectoMyGnoss(UsuarioOAuth))
                 {
                     if (user != null && !user.user_id.Equals(Guid.Empty) && user.community_id != Guid.Empty)
@@ -723,32 +722,35 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         UsuarioCN usuarioCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
                         if (usuarioCN.EstaUsuarioEnProyecto(user.user_id, user.community_id))
                         {
-                            IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
-                            Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(user.user_id, user.community_id);
-
-                            if (identidadID != Guid.Empty)
+                            Guid? usuarioIdEmail = usuarioCN.ObtenerUsuarioIDPorLoginOEmail(user.email);
+                            if (!usuarioIdEmail.HasValue || usuarioIdEmail.Value.Equals(user.user_id))
                             {
-                                GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+                                IdentidadCN identCN = new IdentidadCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<IdentidadCN>(), mLoggerFactory);
+                                Guid identidadID = identCN.ObtenerIdentidadUsuarioEnProyecto(user.user_id, user.community_id);
 
-                                if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+                                if (identidadID != Guid.Empty)
                                 {
-                                    Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
-                                    gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerDatosExtraProyectoOpcionIdentidadPorIdentidadID(identidadID));
-                                    gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerIdentidadesDePerfil(identidad.PerfilID));
-                                    gestorIdentidades.RecargarHijos();
-                                    identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                                    GestionIdentidades gestorIdentidades = new GestionIdentidades(identCN.ObtenerIdentidadPorID(identidadID, false), mLoggingService, mEntityContext, mConfigService, mServicesUtilVirtuosoAndReplication);
+
+                                    if (gestorIdentidades.ListaIdentidades.ContainsKey(identidadID))
+                                    {
+                                        Identidad identidad = gestorIdentidades.ListaIdentidades[identidadID];
+                                        gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerDatosExtraProyectoOpcionIdentidadPorIdentidadID(identidadID));
+                                        gestorIdentidades.DataWrapperIdentidad.Merge(identCN.ObtenerIdentidadesDePerfil(identidad.PerfilID));
+                                        gestorIdentidades.RecargarHijos();
+                                        identidad = gestorIdentidades.ListaIdentidades[identidadID];
 
                                     PersonaCN personaCN = new PersonaCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<PersonaCN>(), mLoggerFactory);
                                     gestorIdentidades.GestorPersonas = new GestionPersonas(personaCN.ObtenerPersonaPorID(identidad.PersonaID.Value), mLoggingService, mEntityContext);
                                     personaCN.Dispose();
                                     gestorIdentidades.GestorPersonas.CargarGestor();
 
-                                    //Empieza la edición
-                                    RellenarDatosPersona(identidad, user, "es");
+                                        //Empieza la edición
+                                        RellenarDatosPersona(identidad, user, "es");
 
-                                    Dictionary<int, string> dicDatosExtraProyectoVirtuoso = new Dictionary<int, string>();
-                                    Dictionary<int, string> dicDatosExtraEcosistemaVirtuoso = new Dictionary<int, string>();
-                                    GuardarDatosExtra(user.extra_data, identidad, dicDatosExtraProyectoVirtuoso, dicDatosExtraEcosistemaVirtuoso);
+                                        Dictionary<int, string> dicDatosExtraProyectoVirtuoso = new Dictionary<int, string>();
+                                        Dictionary<int, string> dicDatosExtraEcosistemaVirtuoso = new Dictionary<int, string>();
+                                        GuardarDatosExtra(user.extra_data, identidad, dicDatosExtraProyectoVirtuoso, dicDatosExtraEcosistemaVirtuoso);
 
                                     ParametroAplicacionCL paramCL = new ParametroAplicacionCL(mEntityContext, mLoggingService, mRedisCacheWrapper, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ParametroAplicacionCL>(), mLoggerFactory);
                                     GestorParametroAplicacion paramApliDS = new GestorParametroAplicacion();
@@ -763,32 +765,39 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                         DataWrapperProyecto dataWrapperProyecto = proyectoCN.ObtenerDatosExtraProyectoPorID(user.community_id);
                                         proyectoCN.Dispose();
 
-                                        if (user.community_id.Equals(ProyectoAD.MyGnoss))
-                                        {
-                                            ControladorIdentidades.AccionEnServicioExternoEcosistema(TipoAccionExterna.Edicion, user.community_id, user.user_id, user.name, user.last_name, user.email, user.password, paramApliDS, dataWrapperProyecto, dicDatosExtraEcosistemaVirtuoso, dicDatosExtraProyectoVirtuoso, user.aux_data);
+                                            if (user.community_id.Equals(ProyectoAD.MyGnoss))
+                                            {
+                                                ControladorIdentidades.AccionEnServicioExternoEcosistema(TipoAccionExterna.Edicion, user.community_id, user.user_id, user.name, user.last_name, user.email, user.password, paramApliDS, dataWrapperProyecto, dicDatosExtraEcosistemaVirtuoso, dicDatosExtraProyectoVirtuoso, user.aux_data);
+                                            }
+                                            else
+                                            {
+                                                ControladorIdentidades.AccionEnServicioExternoProyecto(TipoAccionExterna.Edicion, user.community_id, identidadID, user.user_id, user.name, user.last_name, user.email, user.password, user.aux_data, user.born_date, user.country_id, user.city, user.sex, user.join_community_date, dataWrapperProyecto, user.province_id, user.provice, user.postal_code);
+                                            }
                                         }
-                                        else
+
+                                        if (user.preferences != null)
                                         {
-                                            ControladorIdentidades.AccionEnServicioExternoProyecto(TipoAccionExterna.Edicion, user.community_id, identidadID, user.user_id, user.name, user.last_name, user.email, user.password, user.aux_data, user.born_date, user.country_id, user.city, user.sex, user.join_community_date, dataWrapperProyecto, user.province_id, user.provice, user.postal_code);
+                                            EditarSuscripciones(user.preferences.Select(preference => preference.category_id).ToList(), identidad);
                                         }
+
+                                        mEntityContext.SaveChanges();
+
+                                        List<Guid> listaProyectos = new List<Guid>();
+                                        listaProyectos.Add(user.community_id);
+                                        ControladorPersonas contrPers = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorPersonas>(), mLoggerFactory);
+                                        contrPers.ActualizarModeloBaseSimpleMultiple(identidad.Persona.Clave, listaProyectos, mAvailableServices);
+                                        EliminarCaches(identidad);
+
                                     }
-
-                                    if (user.preferences != null)
-                                    {
-                                        EditarSuscripciones(user.preferences.Select(preference => preference.category_id).ToList(), identidad);
-                                    }
-
-                                    mEntityContext.SaveChanges();
-
-                                    List<Guid> listaProyectos = new List<Guid>();
-                                    listaProyectos.Add(user.community_id);
-                                    ControladorPersonas contrPers = new ControladorPersonas(mLoggingService, mEntityContext, mConfigService, mRedisCacheWrapper, mGnossCache, mEntityContextBASE, mVirtuosoAD, mHttpContextAccessor, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<ControladorPersonas>(), mLoggerFactory);
-                                    contrPers.ActualizarModeloBaseSimpleMultiple(identidad.Persona.Clave, listaProyectos, mAvailableServices);
-                                    EliminarCaches(identidad);
                                 }
+
+                                identCN.Dispose();
+                                usuarioCN.Dispose();
                             }
-                            identCN.Dispose();
-                            usuarioCN.Dispose();
+                            else
+                            {
+                                throw new GnossException($"The email {user.email} is already in use", HttpStatusCode.BadRequest);
+                            }
                         }
                         else
                         {

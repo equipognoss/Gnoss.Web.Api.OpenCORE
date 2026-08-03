@@ -179,7 +179,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (!tienePermiso)
                 {
-                    string mensajeErrorNoAutorizado = "The ontology: " + pOntologia + " is not configured as an object of knowledge in any community managed by this user";
+                    string mensajeErrorNoAutorizado = $"The ontology: {pOntologia} is not configured as an object of knowledge in any community managed by this user";
                     throw new GnossException(mensajeErrorNoAutorizado, System.Net.HttpStatusCode.BadRequest);
                 }
             }
