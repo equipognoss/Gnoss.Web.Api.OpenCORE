@@ -2637,7 +2637,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             gestorIdentidades.RecargarHijos();
 
-            if (!fila.ProyectoID.Equals(ProyectoAD.MetaProyecto) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoFAQ) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoNoticias) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoDidactalia))
+            if (!fila.ProyectoID.Equals(ProyectoAD.MetaProyecto) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoFAQ) && !fila.ProyectoID.Equals(ProyectoAD.ProyectoNoticias))
             {
                 Guid organizacionID = fila.OrganizacionID;
                 Guid proyectoID = fila.ProyectoID;
