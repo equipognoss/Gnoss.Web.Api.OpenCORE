@@ -4,6 +4,7 @@ using Es.Riam.Gnoss.AD.EntityModelBASE;
 using Es.Riam.Gnoss.AD.Virtuoso;
 using Es.Riam.Gnoss.CL;
 using Es.Riam.Gnoss.CL.RelatedVirtuoso;
+using Es.Riam.Gnoss.HealthChecks;
 using Es.Riam.Gnoss.RabbitMQ;
 using Es.Riam.Gnoss.Util.Configuracion;
 using Es.Riam.Gnoss.Util.General;
@@ -25,7 +26,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Newtonsoft.Json;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 using System;
@@ -69,13 +70,12 @@ namespace Gnoss.Web.Api
 				x.MultipartBodyLengthLimit = 524288000; // In case of multipart
 			});
 			services.AddHttpContextAccessor();
-            services.AddScoped(typeof(UtilTelemetry));
             services.AddScoped(typeof(Usuario));
             services.AddScoped(typeof(UtilPeticion));
             services.AddScoped(typeof(Conexion));
             services.AddScoped(typeof(UtilGeneral));
             services.AddScoped(typeof(LoggingService));
-            services.AddScoped(typeof(RedisCacheWrapper));
+            services.AddSingleton(typeof(RedisCacheWrapper));
             services.AddScoped(typeof(Configuracion));
             services.AddScoped(typeof(GnossCache)); 
             services.AddScoped(typeof(VirtuosoAD));
@@ -141,12 +141,16 @@ namespace Gnoss.Web.Api
 
             UtilServicios.CargarIdiomasPlataforma(entity, loggingService, configService, servicesUtilVirtuosoAndReplication, redisCacheWrapper, loggerFactory);
 
-            ConfigurarApplicationInsights(configService);
-
             //Configuro la caché de lectura
             ConfigurarParametros(configService);
 
             EscribirLogTiempos("Application_Start Fin");
+            services.AddHealthChecks()
+                .AddGnossDatabaseHealthCheck<EntityContext>(bdType, configService.ObtenerSqlConnectionString())
+                .AddGnossRedisHealthCheck(configService.ObtenerConexionRedisIPMaster("redis"))
+                .AddGnossVirtuosoHealthCheck(configService.ObtenerVirtuosoConnectionString().ConnectionString)
+                .AddGnossRabbitMQHealthCheck(configService.ObtenerRabbitMQClient(RabbitMQClient.BD_SERVICIOS_WIN));
+
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "Gnoss.Web.Api", Version = "v1" });
@@ -198,8 +202,10 @@ namespace Gnoss.Web.Api
             app.UseAuthorization();
             app.UseGnossMiddleware();
 
+            var managementPort = Configuration.GetValue("ManagementPort", 8081);
             app.UseEndpoints(endpoints =>
             {
+                endpoints.MapGnossHealthEndpoints(managementPort);
                 endpoints.MapControllers();
             });
         }
@@ -258,34 +264,6 @@ namespace Gnoss.Web.Api
                 }
             }
             catch (Exception) { }
-        }
-
-        private void ConfigurarApplicationInsights(ConfigService configService)
-        {
-            string valor = configService.ObtenerImplementationKeyApiV3();
-
-            if (!string.IsNullOrEmpty(valor))
-            {
-                Microsoft.ApplicationInsights.Extensibility.TelemetryConfiguration.Active.InstrumentationKey = valor.ToLower();
-            }
-
-            if (UtilTelemetry.EstaConfiguradaTelemetria)
-            {
-                //Configuración de las trazas
-
-                string ubicacionTrazas = configService.ObtenerUbicacionTrazasApiV3();
-
-                int valorInt2 = 0;
-                if (int.TryParse(ubicacionTrazas, out valorInt2))
-                {
-                    if (Enum.IsDefined(typeof(UtilTelemetry.UbicacionLogsYTrazas), valorInt2))
-                    {
-                        LoggingService.UBICACIONTRAZA = (UtilTelemetry.UbicacionLogsYTrazas)valorInt2;
-                    }
-                }
-
-            }
-
         }
     }
 }

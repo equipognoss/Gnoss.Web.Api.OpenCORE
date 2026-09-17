@@ -50,17 +50,14 @@ using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Serilog.Core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
-using System.Web;
 using System.Xml;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
@@ -120,7 +117,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 UsuarioOAuth = ComprobarPermisosOauth(mHttpContextAccessor.HttpContext.Request);
                 if (UsuarioOAuth.Equals(Guid.Empty))
                 {
-                    mLoggingService.GuardarLog($"Firma incorrecta: {UtilOAuth.ObtenerUrlGetDePeticionOAuth(Request)}", mlogger);
+                    mLoggingService.GuardarLog($"Firma incorrecta: {UtilOAuth.ObtenerUrlGetDePeticionOAuth(Request, mConfigService.ObtenerUrlApi())}", mlogger);
 
                     controllerContext.Result = Unauthorized("Invalid OAuth signature");
                 }
@@ -197,7 +194,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     //mLoggingService.GuardarLogError($"Cabeceras: {mHttpContextAccessor.HttpContext.Request.Query["oauth_signature"]}");
                 }
 
-                string urlPeticionOauth = UtilOAuth.ObtenerUrlGetDePeticionOAuth(mHttpContextAccessor.HttpContext.Request);
+                string urlPeticionOauth = UtilOAuth.ObtenerUrlGetDePeticionOAuth(mHttpContextAccessor.HttpContext.Request, mConfigService.ObtenerUrlApi());
 
 
 
@@ -603,23 +600,15 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         }
 
 
-        protected Guid ComprobarUsuarioOauthHttpHttps(HttpRequest pPeticion, string pUrlApi)
+        protected Guid ComprobarUsuarioOauth(HttpRequest pPeticion)
         {
-            string UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi);
+            string UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, mConfigService.ObtenerUrlApi());
             //mLoggingService.GuardarLogError($"La URL de la peticion OAuth sin limpiar paramtros adicionales es: {UrlPeticionOauthOriginal}");
             string urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
             string servicioOauthUrl = mConfigService.ObtenerUrlServicio("urlOauth");
-            string result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
-            Guid usuarioID = JsonConvert.DeserializeObject<Guid>(result);
+            string result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp={pPeticion.Method}");
+            Guid usuarioID = JsonSerializer.Deserialize<Guid>(result);
 
-            if (usuarioID == Guid.Empty)
-            {
-                UrlPeticionOauthOriginal = UtilOAuth.ObtenerUrlGetDePeticionOAuth(pPeticion, pUrlApi, false);
-                //mLoggingService.GuardarLogError($"La URL de la peticion OAuth limpiando paramtros adicionales es: {UrlPeticionOauthOriginal}");
-                urlPeticionOauth = WebUtility.UrlEncode(UrlPeticionOauthOriginal);
-                result = CallWebMethods.CallGetApi(servicioOauthUrl, $"ServicioOauth/ObtenerUsuarioAPartirDeUrl?pUrl={urlPeticionOauth}&pMetodoHttp=GET");
-                usuarioID = JsonConvert.DeserializeObject<Guid>(result);
-            }
             return usuarioID;
         }
 
@@ -638,31 +627,13 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 try
                 {
-                    string urlApi = mConfigService.ObtenerUrlServicio("urlApi");
-                    Guid usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);
+                    salida = ComprobarUsuarioOauth(pPeticion);
 
-                    if (usuarioID == Guid.Empty)
-                    {
-                        string schemaReplace = "https";
-                        string replace = "http";
-                        if (mConfigService.PeticionHttps())
-                        {
-                            replace = "https";
-                            schemaReplace = "http";
-                        }
-                        urlApi = urlApi.Replace(replace, schemaReplace);
-                        mLoggingService.GuardarLog($"Uri de llamada {urlApi}", mlogger);
-                        usuarioID = ComprobarUsuarioOauthHttpHttps(pPeticion, urlApi);          
-                    }
-
-                    if (usuarioID != Guid.Empty)
-                    {
-                        salida = usuarioID;
-                    }
                 }
                 catch (Exception ex)
                 {
-                    mLoggingService.GuardarLogError(ex, $"Error al ComprobarPermisosOauth: {urlPeticionOauthOriginal}", mlogger);
+                    mLoggingService.GuardarLogError(ex, $"Error al ComprobarPermisosOauth: {urlPeticionOauthOriginal} headers recibidos {string.Join(", ", Request.Headers.Where(h => h.Key.StartsWith("X-Forwarded", StringComparison.OrdinalIgnoreCase)).Select(h => $"{h.Key}={h.Value}"))}", mlogger);
+                    
                 }
             }
             else
@@ -711,7 +682,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             if (pTipoObjecto.Equals(typeof(List<Guid>)))
             {
-                List<Guid> lista = JsonConvert.DeserializeObject<List<Guid>>(valorParam);
+                List<Guid> lista = JsonSerializer.Deserialize<List<Guid>>(valorParam);
                 foreach (Guid id in lista)
                 {
                     try

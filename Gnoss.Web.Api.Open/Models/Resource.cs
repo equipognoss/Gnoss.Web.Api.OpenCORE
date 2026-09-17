@@ -1020,6 +1020,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         [Required]
         public byte[] fileHash { get; set; }
+        /// <summary>
+        /// Community name
+        /// </summary>
+        [Required]
+        public string community_short_name { get; set; }
     }
 
     /// <summary>
@@ -1086,6 +1091,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// </summary>
         public string sql_rute { get; set; }
         /// <summary>
+        /// Images manifest rute rute
+        /// </summary>
+        public string images_manifest_rute { get; set; }
+        /// <summary>
         /// Ontology file bytes
         /// </summary>
         public byte[] ontology_bytes { get; set; }
@@ -1097,6 +1106,10 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models
         /// SQL file bytes
         /// </summary>
         public byte[] sql_bytes { get; set; }
+        /// <summary>
+        /// Images manifest bytes
+        /// </summary>
+        public byte[] images_manifest_bytes { get; set; }
         /// <summary>
         /// State of the package
         /// </summary>

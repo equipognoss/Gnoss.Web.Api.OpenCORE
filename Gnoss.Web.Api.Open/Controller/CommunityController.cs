@@ -16,6 +16,7 @@ using Es.Riam.Interfaces.InterfacesOpen;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Pipelines.Sockets.Unofficial;
 using Serilog.Core;
 using System;
 using System.Collections.Generic;
@@ -33,6 +34,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
     {
         private ILogger mlogger;
         private ILoggerFactory mLoggerFactory;
+
         public CommunityController(EntityContext entityContext, LoggingService loggingService, ConfigService configService, IHttpContextAccessor httpContextAccessor, RedisCacheWrapper redisCacheWrapper, VirtuosoAD virtuosoAD, EntityContextBASE entityContextBASE, GnossCache gnossCache, IServicesUtilVirtuosoAndReplication servicesUtilVirtuosoAndReplication, IAvailableServices availableServices, ILogger<CommunityController> logger, ILoggerFactory loggerFactory)
             : base(entityContext, loggingService, configService, httpContextAccessor, redisCacheWrapper, virtuosoAD, entityContextBASE, gnossCache, servicesUtilVirtuosoAndReplication, availableServices,logger,loggerFactory)
         {
@@ -65,6 +67,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (!proyID.Equals(Guid.Empty))
                 {
+                    if (!EsAdministradorProyecto(UsuarioOAuth, proyID))
+                    {
+                        throw new GnossException("Insufficient permissions", HttpStatusCode.Unauthorized);
+                    }
+
                     AD.EntityModel.Models.ProyectoDS.Proyecto filaProyecto = proyCL.ObtenerProyectoPorID(proyID).ListaProyecto[0];
 
                     comunidad.name = filaProyecto.Nombre;

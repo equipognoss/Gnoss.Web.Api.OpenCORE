@@ -29,11 +29,9 @@ using System.Linq;
 using System.Net;
 using Es.Riam.AbstractsOpen;
 using System.Text;
-using Universal.Common.Extensions;
 using System.Data;
 using static Es.Riam.Gnoss.Web.MVC.Models.Tesauro.TesauroModels;
 using Es.Riam.Gnoss.AD.EntityModel.Models.ProyectoDS;
-using Microsoft.Azure.Amqp.Framing;
 using Es.Riam.Interfaces.InterfacesOpen;
 using Microsoft.Extensions.Logging;
 
@@ -1043,7 +1041,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     pStringBuilderBusqueda.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#narrower> <{GenerarSujetoConcept(narrower, pUrlIntraGnoss, pSource)}> . ");
                 }
             }
-            if (!pSujetoPadre.IsNullOrEmpty())
+            if (!string.IsNullOrEmpty(pSujetoPadre))
             {
                 pStringBuilderOntologia.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#broader> <{GenerarSujetoString(pSujetoPadre, pUrlIntraGnoss)}> . ");
                 pStringBuilderBusqueda.AppendLine($"<{pSujeto}> <http://www.w3.org/2008/05/skos#broader> <{GenerarSujetoString(pSujetoPadre, pUrlIntraGnoss)}> . ");
@@ -1073,7 +1071,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             filaConfig.ProyectoID = pProyectoID;
             filaConfig.Tipo = 0;
             filaConfig.Editable = true;
-            filaConfig.Nombre = pSource.First().ToUpper() + pSource.Substring(1);
+            filaConfig.Nombre = pSource.First().ToString().ToUpper() + pSource.Substring(1);
             filaConfig.SourceTesSem = pSource;
             if (!string.IsNullOrEmpty(pSujeto))
             {

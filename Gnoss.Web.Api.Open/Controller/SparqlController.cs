@@ -9,7 +9,6 @@ using Es.Riam.Gnoss.Logica.Documentacion;
 using Es.Riam.Gnoss.Logica.Facetado;
 using Es.Riam.Gnoss.Logica.ServiciosGenerales;
 using Es.Riam.Gnoss.Recursos;
-using Es.Riam.Gnoss.Servicios;
 using Es.Riam.Gnoss.Util.Configuracion;
 using Es.Riam.Gnoss.Util.General;
 using Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Models;
@@ -17,15 +16,9 @@ using Es.Riam.Interfaces.InterfacesOpen;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using Microsoft.Net.Http.Headers;
-using Newtonsoft.Json;
-using Serilog.Core;
 using System;
 using System.Collections.Generic;
 using System.Net;
-using System.Net.Http;
-using System.Text;
-using System.Threading;
 
 namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 {
