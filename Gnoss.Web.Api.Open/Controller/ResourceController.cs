@@ -678,7 +678,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
             List<Guid> listaDocs = new List<Guid>();
-            listaDocs.Add(resource_id);
+            listaDocs.Add(docCN.ObtenerUltimaVersionDocumentoID(resource_id));
             DataWrapperDocumentacion docDW = docCN.ObtenerLectoresYGruposLectoresDocumentos(listaDocs);
             docCN.Dispose();
 
@@ -713,7 +713,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 }
             }
 
-            if (docDW.ListaNombreGrupoOrg != null && docDW.ListaNombreGrupoOrg.Count > 0)
+            if (docDW.ListaNombreGrupoOrg != null && docDW.ListaNombreGrupoOrg.Count > 0 && lectores.reader_groups == null)
             {
                 lectores.reader_groups = new List<ReaderGroup>();
             }
@@ -723,7 +723,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 string nombreOrg = filaNombreGrupoOrg.NombreOrganizacion;
                 string grupoLector = filaNombreGrupoOrg.NombreGrupo;
 
-                if (lectores.reader_groups.Find(grupo => grupo.group_short_name.Equals(grupoLector) && grupo.organization_short_name.Equals(nombreOrg)) == null)
+                if (lectores.reader_groups.Find(grupo => grupo.group_short_name.Equals(grupoLector) && nombreOrg.Equals(grupo.organization_short_name)) == null)
                 {
                     ReaderGroup readerGr = new ReaderGroup();
                     readerGr.group_short_name = grupoLector;
@@ -958,13 +958,19 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             }
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
-            DataWrapperDocumentacion dataWrapperDocumentacion = docCN.ObtenerEditoresYGruposEditoresDocumentos(resource_id_list);
+            Dictionary<Guid, Guid> lastVersionToRequestedId = new Dictionary<Guid, Guid>();
+            foreach (Guid resourceId in resource_id_list)
+            {
+                Guid lastVersionId = docCN.ObtenerUltimaVersionDocumentoID(resourceId);
+                lastVersionToRequestedId[lastVersionId] = resourceId;
+            }
+            DataWrapperDocumentacion dataWrapperDocumentacion = docCN.ObtenerEditoresYGruposEditoresDocumentos(lastVersionToRequestedId.Keys.ToList());
             docCN.Dispose();
 
             foreach (NombrePerfil filaNombrePerfil in dataWrapperDocumentacion.ListaNombrePerfil)
             {
                 string nomEditor = filaNombrePerfil.NombrePerfilAtributo;
-                Guid documentoID = filaNombrePerfil.DocumentoID;
+                Guid documentoID = lastVersionToRequestedId[filaNombrePerfil.DocumentoID];
 
                 KeyEditors editor = documentosIDEditores.Find(doc => doc.resource_id.Equals(documentoID));
                 if (editor == null)
@@ -984,7 +990,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             foreach (NombreGrupo filaNombreGrupo in dataWrapperDocumentacion.ListaNombreGrupo)
             {
                 string nomGrEditor = filaNombreGrupo.NombreGrupoAtributo;
-                Guid documentoID = filaNombreGrupo.DocumentoID;
+                Guid documentoID = lastVersionToRequestedId[filaNombreGrupo.DocumentoID];
 
                 KeyEditors grupoEditor = documentosIDEditores.Find(doc => doc.resource_id.Equals(documentoID));
                 if (grupoEditor == null)
@@ -995,20 +1001,16 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     documentosIDEditores.Add(grupoEditor);
                 }
 
-                EditorGroup grupo = null;
-                if (grupoEditor.editor_groups != null)
-                {
-                    grupo = grupoEditor.editor_groups.Find(gr => gr.group_short_name.Equals(nomGrEditor));
-                }
-                else
+                if (grupoEditor.editor_groups == null)
                 {
                     grupoEditor.editor_groups = new List<EditorGroup>();
-                    grupo = new EditorGroup();
-                    grupo.group_short_name = nomGrEditor;
                 }
 
-                if (grupo != null && !grupoEditor.editor_groups.Contains(grupo))
+                EditorGroup grupo = grupoEditor.editor_groups.Find(gr => gr.group_short_name.Equals(nomGrEditor));
+                if (grupo == null)
                 {
+                    grupo = new EditorGroup();
+                    grupo.group_short_name = nomGrEditor;
                     grupoEditor.editor_groups.Add(grupo);
                 }
             }
@@ -1017,7 +1019,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             {
                 string nombreOrg = filaNombreGrupoOrg.NombreOrganizacion;
                 string nomGrEditor = filaNombreGrupoOrg.NombreGrupo;
-                Guid documentoID = filaNombreGrupoOrg.DocumentoID;
+                Guid documentoID = lastVersionToRequestedId[filaNombreGrupoOrg.DocumentoID];
 
                 KeyEditors grupoOrgEditor = documentosIDEditores.Find(doc => doc.resource_id.Equals(documentoID));
 
@@ -5284,7 +5286,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
             List<ReaderEditor> documentosIDLectores = new List<ReaderEditor>();
 
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
-            List<Guid> listaDocs = new List<Guid>() { pDocumentoID };
+            List<Guid> listaDocs = new List<Guid>() { docCN.ObtenerUltimaVersionDocumentoID(pDocumentoID) };
             DataWrapperDocumentacion docDW = docCN.ObtenerLectoresYGruposLectoresDocumentos(listaDocs);
             docCN.Dispose();
 
@@ -5337,8 +5339,8 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
         private List<ReaderEditor> ObtenerListaAnonimaEditoresRecurso(Guid pDocumentoID)
         {
             List<ReaderEditor> documentosIDEditores = new List<ReaderEditor>();
-            List<Guid> listaDocID = new List<Guid>() { pDocumentoID };
             DocumentacionCN docCN = new DocumentacionCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<DocumentacionCN>(), mLoggerFactory);
+            List<Guid> listaDocID = new List<Guid>() { docCN.ObtenerUltimaVersionDocumentoID(pDocumentoID) };
             DataWrapperDocumentacion docDW = docCN.ObtenerEditoresYGruposEditoresDocumentos(listaDocID);
             docCN.Dispose();
             UsuarioCN usuCN = new UsuarioCN(mEntityContext, mLoggingService, mConfigService, mServicesUtilVirtuosoAndReplication, mLoggerFactory.CreateLogger<UsuarioCN>(), mLoggerFactory);
