@@ -5930,7 +5930,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
 
                 if (!pListaPermisosOntologias.Contains(pElementoVinculadoID))
                 {
-                    throw new GnossException("The user has no permission to upload resources of this ontology.", HttpStatusCode.BadRequest);
+                    UtilPermisos utilPermisos = new UtilPermisos(mEntityContext, mLoggingService, mConfigService, mLoggerFactory.CreateLogger<UtilPermisos>(), mLoggerFactory);
+                    if (!utilPermisos.IdentidadTienePermisoRecursoSemantico(pIdentidadID, pIdentidadEnMyGnossID, TipoPermisoRecursosSemanticos.Crear, pElementoVinculadoID))
+                    {
+                        throw new GnossException("The user has no permission to upload resources of this ontology.", HttpStatusCode.BadRequest);
+                    }
                 }
             }
             else
