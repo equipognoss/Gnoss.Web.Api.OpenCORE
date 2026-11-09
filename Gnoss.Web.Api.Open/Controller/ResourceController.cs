@@ -8276,11 +8276,11 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                         }
                         else
                         {
-                            string directorio = UtilArchivos.ContentDocumentosSem + "\\" + UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID);
+                            string directorio = Path.Combine(UtilArchivos.ContentDocumentosSem, UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID));
 
                             if (extension.Contains("@"))
                             {
-                                directorio = directorio + "\\" + extension.Substring(extension.IndexOf("@") + 1);
+                                directorio = Path.Combine(directorio, extension.Substring(extension.IndexOf("@") + 1));
                                 extension = extension.Substring(0, extension.IndexOf("@"));
                             }
 
@@ -8306,28 +8306,28 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                             string especialID = adjunto.file_rdf_property;
                             especialID = especialID.Substring(0, especialID.LastIndexOf("."));
                             especialID = especialID.Substring(especialID.LastIndexOf('/') + 1);
-                            string directorioViejo = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticasAntiguo + "\\" + pDocumentoID.ToString();
+                            string directorioViejo = Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticasAntiguo, pDocumentoID.ToString());
                             string[] imagenes = servicioImagenes.ObtenerIDsImagenesPorNombreImagen(directorioViejo, especialID);
 
                             if (imagenes != null)
                             {
                                 foreach (string imagen in imagenes)
                                 {
-                                    if (!servicioImagenes.BorrarImagenDeDirectorio(UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticasAntiguo + "\\" + pDocumentoID.ToString() + "\\" + imagen))
+                                    if (!servicioImagenes.BorrarImagenDeDirectorio(Path.Combine(directorioViejo, imagen)))
                                     {
                                         throw new GnossException("Error deleting image.", HttpStatusCode.BadRequest);
                                     }
                                 }
                             }
 
-                            string directorioNuevo = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticas + "\\" + UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID);
+                            string directorioNuevo = Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticas, UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID));
                             imagenes = servicioImagenes.ObtenerIDsImagenesPorNombreImagen(directorioNuevo, especialID);
 
                             if (imagenes != null)
                             {
                                 foreach (string imagen in imagenes)
                                 {
-                                    if (!servicioImagenes.BorrarImagenDeDirectorio(adjunto.file_rdf_property))
+                                    if (!servicioImagenes.BorrarImagenDeDirectorio(Path.Combine(directorioNuevo, imagen)))
                                     {
                                         throw new GnossException("Error deleting image.", HttpStatusCode.BadRequest);
                                     }
@@ -8366,7 +8366,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                                 imagenRepresentanteDoc = tamañosImgs + UtilArchivos.ContentImagenes + "/" + UtilArchivos.ContentImagenesDocumentos + "/" + UtilArchivos.ContentImagenesSemanticas + "/" + UtilArchivos.DirectorioDocumento(pDocumentoID) + "/" + especialID + extensionArchivo;
                             }
 
-                            if (!servicioImagenes.AgregarImagenADirectorio(adjunto.rdf_attached_file, UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticas + "\\" + UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID), especialID, extensionArchivo))
+                            if (!servicioImagenes.AgregarImagenADirectorio(adjunto.rdf_attached_file, Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticas, UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID)), especialID, extensionArchivo))
                             {
                                 throw new GnossException("Incorrect attached images.", HttpStatusCode.BadRequest);
                             }
@@ -9467,7 +9467,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                 ServicioImagenes servicioImagenes = new ServicioImagenes(mLoggingService, mConfigService, mLoggerFactory.CreateLogger<ServicioImagenes>(), mLoggerFactory);
                 servicioImagenes.Url = UrlServicioImagenes;
 
-                string directorio = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticasAntiguo + "\\" + pDocumentoID.ToString();
+                string directorio = Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticasAntiguo, pDocumentoID.ToString());
 
                 //obtiene todas las imágenes
                 string[] imagenes = servicioImagenes.ObtenerIDsImagenesPorNombreImagen(directorio, string.Empty);
@@ -9478,7 +9478,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     {
                         if (!pListaIdsMantener.Contains(imagen))
                         {
-                            if (!servicioImagenes.BorrarImagenDeDirectorio(UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticasAntiguo + "\\" + pDocumentoID.ToString() + "\\" + imagen))
+                            if (!servicioImagenes.BorrarImagenDeDirectorio(Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticasAntiguo, pDocumentoID.ToString(), imagen)))
                             {
                                 throw new GnossException("Error deleting image", HttpStatusCode.BadRequest);
                             }
@@ -9486,7 +9486,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     }
                 }
 
-                directorio = UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticas + "\\" + UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID);
+                directorio = Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticas, UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID));
 
                 //obtiene todas las imágenes
                 imagenes = servicioImagenes.ObtenerIDsImagenesPorNombreImagen(directorio, string.Empty);
@@ -9497,7 +9497,7 @@ namespace Es.Riam.Gnoss.Web.ServicioApiRecursosMVC.Controllers
                     {
                         if (!pListaIdsMantener.Contains(imagen))
                         {
-                            if (!servicioImagenes.BorrarImagenDeDirectorio(UtilArchivos.ContentImagenesDocumentos + "\\" + UtilArchivos.ContentImagenesSemanticas + "\\" + UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID) + "\\" + imagen))
+                            if (!servicioImagenes.BorrarImagenDeDirectorio(Path.Combine(UtilArchivos.ContentImagenesDocumentos, UtilArchivos.ContentImagenesSemanticas, UtilArchivos.DirectorioDocumentoFileSystem(pDocumentoID), imagen)))
                             {
                                 throw new GnossException("Error deleting image", HttpStatusCode.BadRequest);
                             }
